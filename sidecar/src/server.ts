@@ -84,11 +84,12 @@ export async function startServer(opts: ServerOptions): Promise<ServerHandle> {
 
   const server = Bun.serve(serveOptions);
 
+  const actualPort: number | null = (server as any).port ?? null;
   // Signal readiness on stderr (SidecarManager watches for this exact line).
   console.error("READY");
   log.info("listening", {
     socket: opts.socketPath ?? null,
-    port: opts.port ?? (server as any).port ?? null,
+    port: actualPort,
   });
 
   return {
@@ -103,6 +104,6 @@ export async function startServer(opts: ServerOptions): Promise<ServerHandle> {
         }
       }
     },
-    port: (server as any).port,
+    port: actualPort ?? undefined,
   };
 }
