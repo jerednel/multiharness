@@ -2,13 +2,13 @@ import { describe, it, expect, beforeAll, afterAll } from "bun:test";
 import { mkdtempSync, mkdirSync, readFileSync, existsSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Server } from "bun";
 import { startServer, type ServerHandle } from "../src/server.js";
 
 let dataDir: string;
 let worktree: string;
 let serverHandle: ServerHandle | null = null;
-let mockServer: Server | null = null;
+let mockServer: { stop: (closeActive?: boolean) => void; port: number | undefined } | null =
+  null;
 let mockBaseUrl = "";
 
 beforeAll(async () => {
@@ -48,7 +48,7 @@ beforeAll(async () => {
       return new Response("not found", { status: 404 });
     },
   });
-  mockBaseUrl = `http://127.0.0.1:${mockServer.port}/v1`;
+  mockBaseUrl = `http://127.0.0.1:${mockServer!.port}/v1`;
 
   serverHandle = await startServer({ port: 0, dataDir });
 });
