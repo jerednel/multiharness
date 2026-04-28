@@ -20,7 +20,7 @@ In scope:
 - Multi-project, multi-workspace UX with lifecycle state buckets matching the conductor.build screenshot (`backlog`, `in_progress`, `in_review`, `done`, `cancelled`)
 - Per-workspace git worktree management
 - Embedded Bun-based sidecar that hosts `pi-agent-core` and exposes a WebSocket-over-Unix-socket control API
-- Provider abstraction supporting OpenAI-compatible endpoints (incl. LM Studio), Anthropic, and "any custom OpenAI-compatible URL". Keys live in macOS Keychain.
+- Provider abstraction with three modes: (a) `pi-known` — first-class wiring for any provider in `pi-ai`'s curated registry (OpenRouter, OpenCode Zen + Go, OpenAI, Anthropic, DeepSeek, Mistral, Groq, Cerebras, xAI, MiniMax, Hugging Face, Fireworks, Cloudflare, etc.), with correct baseUrl / headers / cost / context-window metadata for free; (b) `openai-compatible` — fully manual config for any OpenAI-compatible endpoint (LM Studio, Ollama, vLLM, custom proxies); (c) `anthropic` — fully manual config for an Anthropic-compatible endpoint. Keys live in macOS Keychain.
 - Per-workspace agent view: conversation thread with inline tool-call cards, message composer
 - Per-workspace file panel with `All files` and `Changes` tabs (`Changes` shows diff vs base branch)
 - Per-workspace embedded terminal (PTY) with `cwd` = worktree
@@ -203,12 +203,23 @@ Implementation lives in `sidecar/src/tools/`. We borrow logic from `@mariozechne
 
 ### Provider mapping
 
-`pi-ai` already supports every endpoint we care about. Multiharness's `providers` table rows map to `pi-ai` configurations as follows:
+`pi-ai` already supports every endpoint we care about. Multiharness's `providers` table rows map to `pi-ai` configurations through three `kind`s:
 
-- `kind = 'anthropic'`: `getModel('anthropic', model_id)` with `apiKey` from Keychain, optional `baseUrl` override.
-- `kind = 'openai-compatible'`: `pi-ai`'s "any OpenAI-compatible API" pathway with the configured `base_url` (LM Studio, Ollama, vLLM, OpenAI itself, etc.) and `apiKey` from Keychain (may be empty for local).
+- `kind = 'pi-known'`: pi-ai's curated provider registry. The wire-level `ProviderConfig` carries `provider` (one of pi-ai's `KnownProvider` values — `openrouter`, `opencode`, `opencode-go`, `openai`, `anthropic`, `deepseek`, `mistral`, `groq`, `cerebras`, `xai`, `minimax`, `huggingface`, `fireworks`, `cloudflare-workers-ai`, etc.) and `modelId`. Internally we resolve via `getModel(provider, modelId)` which yields a `Model` populated with the correct `baseUrl`, request headers, and cost/context metadata. **Use this whenever the model is in pi-ai's registry** — it's the highest-fidelity path and saves us from maintaining our own URL/header table.
+- `kind = 'openai-compatible'`: fully manual config (`baseUrl`, optional `apiKey`) for OpenAI-compatible endpoints not in pi-ai's registry — LM Studio, Ollama, vLLM, custom proxies, or new OpenRouter models that haven't been added to pi-ai yet.
+- `kind = 'anthropic'`: fully manual config for an Anthropic-compatible endpoint (real Anthropic API or a self-hosted Claude proxy).
 
-A provider with `keychain_account = NULL` and `base_url = http://localhost:1234/v1` is seeded as "LM Studio (local)" on first launch.
+The sidecar exports a `PROVIDER_PRESETS` array surfaced by the Mac app's "Add provider" UI. Phase 1 presets:
+
+| Preset | Wire kind | Notes |
+|---|---|---|
+| LM Studio (local) | `openai-compatible` (`http://localhost:1234/v1`) | seeded on first launch, no key required |
+| Ollama (local) | `openai-compatible` (`http://localhost:11434/v1`) | no key required |
+| OpenRouter | `pi-known` (`provider: "openrouter"`) | docs link to openrouter.ai/keys |
+| OpenCode (Zen) | `pi-known` (`provider: "opencode"`) | |
+| OpenCode Go | `pi-known` (`provider: "opencode-go"`) | |
+| OpenAI | `pi-known` (`provider: "openai"`) | |
+| Anthropic | `pi-known` (`provider: "anthropic"`) | |
 
 ## Worktree management (Mac app)
 
