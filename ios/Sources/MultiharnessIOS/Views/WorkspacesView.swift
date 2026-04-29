@@ -4,6 +4,9 @@ import MultiharnessClient
 struct WorkspacesView: View {
     @Bindable var connection: ConnectionStore
     let onUnpair: () -> Void
+    let onSwitchMac: () -> Void
+    let onAddMac: () -> Void
+    let paired: [PairingStore.Pairing]
     @State private var showingNewWorkspace = false
     @State private var showingNewProject = false
     @State private var expandedProjectIds: Set<String> = []
@@ -34,6 +37,19 @@ struct WorkspacesView: View {
                         showingNewProject = true
                     } label: {
                         Label("Add project", systemImage: "folder.badge.plus")
+                    }
+                    Divider()
+                    if paired.count > 1 {
+                        Button {
+                            onSwitchMac()
+                        } label: {
+                            Label("Switch Mac (\(paired.count))", systemImage: "macbook")
+                        }
+                    }
+                    Button {
+                        onAddMac()
+                    } label: {
+                        Label("Add another Mac", systemImage: "plus.app")
                     }
                     Divider()
                     Button(role: .destructive) {
