@@ -211,9 +211,14 @@ private struct Composer: View {
                 }
             }
             HStack(alignment: .bottom, spacing: 8) {
-                TextEditor(text: $draft)
-                    .frame(minHeight: 60, maxHeight: 140)
+                TextField("Message", text: $draft, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .lineLimit(1...8)
+                    .padding(.horizontal, 8).padding(.vertical, 6)
                     .overlay(RoundedRectangle(cornerRadius: 6).stroke(.tertiary))
+                    .onSubmit {
+                        Task { await send() }
+                    }
                 Button {
                     Task { await send() }
                 } label: {
