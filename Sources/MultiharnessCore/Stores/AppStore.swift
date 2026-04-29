@@ -15,6 +15,10 @@ public final class AppStore {
 
     public init(env: AppEnvironment) {
         self.env = env
+        // Sync current status — sidecar.start() may have already fired before
+        // this store was constructed, in which case the callback below would
+        // never see the .running transition.
+        self.sidecarStatus = env.sidecar.status
         env.sidecar.onStatusChange = { [weak self] s in
             Task { @MainActor in self?.sidecarStatus = s }
         }
