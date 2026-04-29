@@ -1,14 +1,6 @@
 import Foundation
 import Observation
-
-public struct ConversationTurn: Identifiable, Sendable {
-    public enum Role: String, Sendable { case user, assistant, tool }
-    public var id: UUID = UUID()
-    public var role: Role
-    public var text: String
-    public var toolName: String?
-    public var streaming: Bool = false
-}
+import MultiharnessClient
 
 @MainActor
 @Observable

@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import MultiharnessClient
 
 /// Top-level app dependencies. Constructed once at app start, passed via @Environment.
 @MainActor

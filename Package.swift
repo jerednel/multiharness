@@ -4,9 +4,14 @@ import PackageDescription
 let package = Package(
     name: "Multiharness",
     platforms: [
-        .macOS(.v14)
+        .macOS(.v14),
+        .iOS(.v17),
     ],
     products: [
+        .library(
+            name: "MultiharnessClient",
+            targets: ["MultiharnessClient"]
+        ),
         .library(
             name: "MultiharnessCore",
             targets: ["MultiharnessCore"]
@@ -18,19 +23,28 @@ let package = Package(
     ],
     dependencies: [],
     targets: [
+        // Portable code that ships in BOTH the macOS app and the iOS companion:
+        // models, ConversationTurn, ControlClient (URLSessionWebSocketTask), Keychain wrapper.
+        .target(
+            name: "MultiharnessClient",
+            dependencies: [],
+            path: "Sources/MultiharnessClient"
+        ),
+        // macOS-only: persistence (SQLite), worktree (git subprocess),
+        // sidecar lifecycle, bookmarks, RemoteAccess (Bonjour register).
         .target(
             name: "MultiharnessCore",
-            dependencies: [],
+            dependencies: ["MultiharnessClient"],
             path: "Sources/MultiharnessCore"
         ),
         .executableTarget(
             name: "Multiharness",
-            dependencies: ["MultiharnessCore"],
+            dependencies: ["MultiharnessCore", "MultiharnessClient"],
             path: "Sources/Multiharness"
         ),
         .testTarget(
             name: "MultiharnessCoreTests",
-            dependencies: ["MultiharnessCore"],
+            dependencies: ["MultiharnessCore", "MultiharnessClient"],
             path: "Tests/MultiharnessCoreTests"
         ),
     ]
