@@ -137,18 +137,24 @@ public final class ConnectionStore: NSObject, ControlClientDelegate {
         }
     }
 
+    /// Returns the new project's ID so the caller can preselect it in a
+    /// follow-up "New workspace" flow.
+    @discardableResult
     public func createProject(
         name: String,
         repoPath: String,
         defaultBaseBranch: String?
-    ) async throws {
+    ) async throws -> String? {
         var params: [String: Any] = [
             "name": name,
             "repoPath": repoPath,
         ]
         if let b = defaultBaseBranch, !b.isEmpty { params["defaultBaseBranch"] = b }
-        _ = try await client.call(method: "project.create", params: params)
+        let result = try await client.call(method: "project.create", params: params)
+            as? [String: Any]
+        let newId = result?["id"] as? String
         await refreshWorkspaces()
+        return newId
     }
 
     // MARK: ControlClientDelegate

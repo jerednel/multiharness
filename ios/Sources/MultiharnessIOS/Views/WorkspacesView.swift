@@ -10,6 +10,10 @@ struct WorkspacesView: View {
     @State private var showingNewWorkspace = false
     @State private var showingNewProject = false
     @State private var expandedProjectIds: Set<String> = []
+    @State private var preselectedProjectId: String? = nil
+    /// Set when the user just added a project; on the project sheet's
+    /// dismissal we open the New Workspace sheet as a follow-up.
+    @State private var pendingAutoNewWorkspace = false
 
     var body: some View {
         Group {
@@ -28,6 +32,7 @@ struct WorkspacesView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Button {
+                        preselectedProjectId = nil
                         showingNewWorkspace = true
                     } label: {
                         Label("New workspace", systemImage: "plus.rectangle.on.rectangle")
@@ -64,10 +69,34 @@ struct WorkspacesView: View {
         }
         .refreshable { await connection.refreshWorkspaces() }
         .sheet(isPresented: $showingNewWorkspace) {
-            NewWorkspaceSheet(connection: connection, isPresented: $showingNewWorkspace)
+            NewWorkspaceSheet(
+                connection: connection,
+                isPresented: $showingNewWorkspace,
+                preselectedProjectId: preselectedProjectId
+            )
         }
-        .sheet(isPresented: $showingNewProject) {
-            NewProjectSheet(connection: connection, isPresented: $showingNewProject)
+        .sheet(
+            isPresented: $showingNewProject,
+            onDismiss: {
+                // If the project sheet just successfully added a project AND
+                // the system has at least one provider configured, fall
+                // straight into "New workspace" so the user doesn't have to
+                // re-open the menu. Cancel-without-add leaves the flag false.
+                if pendingAutoNewWorkspace,
+                   preselectedProjectId != nil,
+                   !connection.providers.isEmpty {
+                    showingNewWorkspace = true
+                }
+                pendingAutoNewWorkspace = false
+            }
+        ) {
+            NewProjectSheet(
+                connection: connection,
+                isPresented: $showingNewProject
+            ) { newProjectId in
+                preselectedProjectId = newProjectId
+                pendingAutoNewWorkspace = true
+            }
         }
     }
 
@@ -97,26 +126,38 @@ struct WorkspacesView: View {
 
     @ViewBuilder
     private var listView: some View {
-        if connection.workspaces.isEmpty {
+        if connection.projects.isEmpty {
             ContentUnavailableView(
-                "No workspaces",
-                systemImage: "rectangle.split.3x1",
-                description: Text("Create a workspace on your Mac to see it here.")
+                "No projects yet",
+                systemImage: "folder.badge.plus",
+                description: Text("Tap ⋯ → Add project to get started.")
             )
         } else {
             List {
                 ForEach(groupedByProject(), id: \.project.id) { group in
                     Section {
-                        DisclosureGroup(isExpanded: binding(for: group.project.id)) {
-                            ForEach(group.workspaces) { ws in
-                                NavigationLink(value: ws) {
-                                    HStack(spacing: 8) {
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text(ws.name).font(.body)
-                                            Text(ws.branchName).font(.caption2).foregroundStyle(.secondary)
+                        DisclosureGroup(
+                            isExpanded: binding(for: group.project.id, autoExpand: group.workspaces.isEmpty)
+                        ) {
+                            if group.workspaces.isEmpty {
+                                Button {
+                                    preselectedProjectId = group.project.id
+                                    showingNewWorkspace = true
+                                } label: {
+                                    Label("New workspace", systemImage: "plus.rectangle.on.rectangle")
+                                }
+                                .disabled(connection.providers.isEmpty)
+                            } else {
+                                ForEach(group.workspaces) { ws in
+                                    NavigationLink(value: ws) {
+                                        HStack(spacing: 8) {
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                Text(ws.name).font(.body)
+                                                Text(ws.branchName).font(.caption2).foregroundStyle(.secondary)
+                                            }
+                                            Spacer()
+                                            LifecyclePill(state: ws.lifecycleState)
                                         }
-                                        Spacer()
-                                        LifecyclePill(state: ws.lifecycleState)
                                     }
                                 }
                             }
@@ -141,32 +182,39 @@ struct WorkspacesView: View {
         }
     }
 
-    private func binding(for projectId: String) -> Binding<Bool> {
+    /// Empty projects auto-expand so the inline "New workspace" button is
+    /// immediately visible after the user adds a project. The `expandedProjectIds`
+    /// set stores the user's explicit override — its meaning flips depending on
+    /// the default: for non-empty projects, presence = expanded; for empty
+    /// projects, presence = "user collapsed me, leave me alone".
+    private func binding(for projectId: String, autoExpand: Bool) -> Binding<Bool> {
         Binding(
-            get: { expandedProjectIds.contains(projectId) },
+            get: {
+                let inSet = expandedProjectIds.contains(projectId)
+                return autoExpand ? !inSet : inSet
+            },
             set: { newValue in
-                if newValue { expandedProjectIds.insert(projectId) }
+                let store = autoExpand ? !newValue : newValue
+                if store { expandedProjectIds.insert(projectId) }
                 else { expandedProjectIds.remove(projectId) }
             }
         )
     }
 
-    /// Returns groups of workspaces under each project. Projects with no
-    /// workspaces are skipped. Within each project, workspaces are sorted
-    /// by lifecycle priority then by name.
+    /// Groups workspaces under each project. Projects with no workspaces are
+    /// kept so the user can still see them and add a workspace inline.
     private func groupedByProject() -> [(project: RemoteProject, workspaces: [RemoteWorkspace])] {
         let order = ["in_progress", "in_review", "done", "backlog", "cancelled"]
         let priority = Dictionary(uniqueKeysWithValues: order.enumerated().map { ($1, $0) })
         var buckets: [String: [RemoteWorkspace]] = [:]
         for w in connection.workspaces { buckets[w.projectId, default: []].append(w) }
-        return connection.projects.compactMap { p in
+        return connection.projects.map { p in
             let arr = buckets[p.id, default: []].sorted { a, b in
                 let pa = priority[a.lifecycleState, default: 99]
                 let pb = priority[b.lifecycleState, default: 99]
                 if pa != pb { return pa < pb }
                 return a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
             }
-            guard !arr.isEmpty else { return nil }
             return (p, arr)
         }
     }

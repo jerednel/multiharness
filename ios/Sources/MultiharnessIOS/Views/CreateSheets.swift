@@ -4,6 +4,7 @@ import MultiharnessClient
 struct NewWorkspaceSheet: View {
     @Bindable var connection: ConnectionStore
     @Binding var isPresented: Bool
+    var preselectedProjectId: String? = nil
 
     @State private var name: String = ""
     @State private var baseBranch: String = ""
@@ -93,7 +94,7 @@ struct NewWorkspaceSheet: View {
             }
         }
         .onAppear {
-            projectId = connection.projects.first?.id ?? ""
+            projectId = preselectedProjectId ?? connection.projects.first?.id ?? ""
             providerId = connection.providers.first?.id ?? ""
             Task { await loadModels() }
         }
@@ -147,6 +148,9 @@ struct NewWorkspaceSheet: View {
 struct NewProjectSheet: View {
     @Bindable var connection: ConnectionStore
     @Binding var isPresented: Bool
+    /// Called with the new project's ID after a successful add. Lets the
+    /// parent kick off a follow-up "New workspace" flow.
+    var onCreated: ((String) -> Void)? = nil
 
     @State private var name: String = ""
     @State private var repoPath: String = ""
@@ -241,11 +245,12 @@ struct NewProjectSheet: View {
         error = nil
         defer { working = false }
         do {
-            try await connection.createProject(
+            let newId = try await connection.createProject(
                 name: name,
                 repoPath: repoPath,
                 defaultBaseBranch: baseBranch
             )
+            if let newId { onCreated?(newId) }
             isPresented = false
         } catch {
             self.error = String(describing: error)
