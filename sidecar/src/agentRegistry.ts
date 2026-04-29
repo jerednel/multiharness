@@ -6,9 +6,12 @@ import type { BuildMode } from "./prompts.js";
 
 export type CreateOptions = {
   workspaceId: string;
+  projectId: string;
   worktreePath: string;
   buildMode: BuildMode;
   providerConfig: ProviderConfig;
+  projectContext?: string;
+  workspaceContext?: string;
 };
 
 export class AgentRegistry {
@@ -51,6 +54,22 @@ export class AgentRegistry {
 
   list(): string[] {
     return [...this.sessions.keys()];
+  }
+
+  /** Push a new workspace context to a single session if present. No-op
+   *  when no session exists (the next agent.create will pick up the new
+   *  value from the persisted DB). */
+  applyWorkspaceContext(workspaceId: string, text: string): void {
+    this.sessions.get(workspaceId)?.setWorkspaceContext(text);
+  }
+
+  /** Push a new project context to every session whose projectId matches. */
+  applyProjectContext(projectId: string, text: string): void {
+    for (const s of this.sessions.values()) {
+      if (s.projectId === projectId) {
+        s.setProjectContext(text);
+      }
+    }
   }
 
   async dispose(workspaceId: string): Promise<void> {
