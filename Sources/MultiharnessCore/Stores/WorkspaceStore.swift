@@ -11,7 +11,7 @@ public final class WorkspaceStore {
     /// Cache of the latest `agent_end` timestamp observed in each workspace's
     /// messages.jsonl. Populated on `load(projectId:)` and updated by callers
     /// (e.g. AgentRegistryStore) on live `agent_end` events.
-    public var lastAssistantAt: [UUID: Date] = [:]
+    public private(set) var lastAssistantAt: [UUID: Date] = [:]
 
     private let env: AppEnvironment
 

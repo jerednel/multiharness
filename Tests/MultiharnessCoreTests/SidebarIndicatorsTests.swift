@@ -69,4 +69,16 @@ final class SidebarIndicatorsTests: XCTestCase {
         let updated = store.workspaces.first { $0.id == ws.id }!
         XCTAssertFalse(store.unseen(updated))
     }
+
+    func testRecordAssistantEndFlipsUnseen() throws {
+        let (env, store, ws) = try makeFixture()
+        try env.persistence.db.executeUpdate(
+            "UPDATE workspaces SET last_viewed_at = 0 WHERE id = ?;"
+        ) { $0.bind(1, ws.id.uuidString) }
+        store.load(projectId: ws.projectId)
+        let initial = store.workspaces.first { $0.id == ws.id }!
+        XCTAssertFalse(store.unseen(initial))
+        store.recordAssistantEnd(workspaceId: ws.id)
+        XCTAssertTrue(store.unseen(initial))
+    }
 }
