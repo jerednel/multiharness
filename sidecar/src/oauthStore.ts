@@ -149,6 +149,29 @@ const CONSOLE_API_KEY_MINT_URL =
   "https://api.anthropic.com/api/oauth/claude_cli/create_api_key";
 
 /**
+ * Run the Anthropic OAuth dance, then mint a Console API key from the
+ * resulting access token. The OAuth tokens are deliberately discarded —
+ * the only artifact we keep is the minted API key, which the caller is
+ * expected to stash in the Mac's Keychain.
+ */
+export async function startAnthropicConsoleLogin(
+  onAuth: (url: string) => void,
+): Promise<{ apiKey: string }> {
+  const creds = await loginAnthropic({
+    onAuth: (info: { url: string }) => {
+      log.info("anthropic console oauth url", { url: info.url });
+      onAuth(info.url);
+    },
+    onPrompt: async () => {
+      throw new Error("interactive prompt not supported in sidecar OAuth flow");
+    },
+    onProgress: (msg: string) => log.info("anthropic console oauth progress", { msg }),
+  });
+  const apiKey = await mintAnthropicApiKey(creds.access);
+  return { apiKey };
+}
+
+/**
  * Exchange an Anthropic OAuth access token for a real Console API key
  * (`sk-ant-api03-…`). The minted key is owned by the user's Console org
  * and bills as ordinary API usage from that point on.
