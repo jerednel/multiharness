@@ -91,6 +91,7 @@ struct RootView: View {
                 if appStore.selectedProject != nil {
                     WorkspaceSidebar(
                         workspaceStore: workspaceStore,
+                        agentRegistry: agentRegistry,
                         selection: Binding(
                             get: { workspaceStore.selectedWorkspaceId },
                             set: { workspaceStore.selectedWorkspaceId = $0 }
@@ -117,6 +118,7 @@ struct RootView: View {
                     AllProjectsSidebar(
                         appStore: appStore,
                         workspaceStore: workspaceStore,
+                        agentRegistry: agentRegistry,
                         selection: Binding(
                             get: { workspaceStore.selectedWorkspaceId },
                             set: { newID in
