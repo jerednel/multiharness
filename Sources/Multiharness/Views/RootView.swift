@@ -60,6 +60,9 @@ struct RootView: View {
         .onChange(of: appStore.sidebarMode) { _, new in
             reloadForMode(new)
         }
+        .onChange(of: workspaceStore.selectedWorkspaceId) { _, newId in
+            if let newId { workspaceStore.markViewed(newId) }
+        }
     }
 
     private var navigationTitle: String {
