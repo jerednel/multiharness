@@ -31,6 +31,9 @@ struct ReconcileSheet: View {
                 prepareError = String(describing: error)
             }
         }
+        .onDisappear {
+            coordinator?.abort()
+        }
     }
 
     @ViewBuilder
@@ -44,8 +47,17 @@ struct ReconcileSheet: View {
             switch c.phase {
             case .ready:
                 triggerScreen(c)
-            case .running, .completed, .aborted, .failed:
+            case .running, .completed, .aborted:
                 progressScreen(c)
+            case .failed(let message, _):
+                VStack(alignment: .leading, spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle").foregroundStyle(.yellow)
+                    Text(message)
+                    if !c.rows.isEmpty {
+                        Divider()
+                        progressScreen(c)
+                    }
+                }
             }
         } else {
             ProgressView()

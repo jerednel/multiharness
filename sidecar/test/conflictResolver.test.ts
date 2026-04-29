@@ -80,4 +80,18 @@ describe("resolveConflictHunk", () => {
     );
     expect(out.outcome).toBe("declined");
   });
+
+  it("declines responses that exceed the 10-char floor but fall under the 20% threshold", async () => {
+    // fileContext is 200 chars; 20% threshold = 40 chars; floor is 10.
+    // Response of 25 chars: passes the 10-char floor, fails the 20% rule.
+    const longContext = "x".repeat(200);
+    const out = await resolveConflictHunk(
+      { providerConfig: cfg, filePath: "a.txt", fileContext: longContext },
+      fakeComplete("y".repeat(25)),
+    );
+    expect(out.outcome).toBe("declined");
+    if (out.outcome === "declined") {
+      expect(out.reason).toContain("too short");
+    }
+  });
 });

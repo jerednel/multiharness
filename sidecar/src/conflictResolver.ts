@@ -28,15 +28,17 @@ export async function resolveConflictHunk(
   const { providerConfig, fileContext, oauthStore, signal } = args;
   const apiKey = await resolveApiKey(providerConfig, oauthStore);
   const model = buildModel(providerConfig);
+  const timeoutSignal = AbortSignal.timeout(60_000);
+  const effectiveSignal = signal
+    ? AbortSignal.any([signal, timeoutSignal])
+    : timeoutSignal;
   const result = await completeFn(
     model as any,
     {
       systemPrompt: SYSTEM_PROMPT,
-      messages: [
-        { role: "user", content: [{ type: "text", text: fileContext }], timestamp: Date.now() },
-      ],
+      messages: [{ role: "user", content: [{ type: "text", text: fileContext }], timestamp: Date.now() }],
     },
-    { apiKey, signal, maxTokens: 8192 },
+    { apiKey, signal: effectiveSignal, maxTokens: 8192 },
   );
   const text = extractText(result);
   if (!text) return { outcome: "declined", reason: "model returned no text" };

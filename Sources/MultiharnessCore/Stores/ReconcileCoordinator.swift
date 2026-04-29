@@ -170,6 +170,7 @@ public final class ReconcileCoordinator {
                 rows[rowIndex].state = .committed
                 rows[rowIndex].log.append("merged clean")
             } catch {
+                try? env.worktree.mergeAbort(worktreePath: worktreePath)
                 rows[rowIndex].state = .failed("commit failed: \(error)")
             }
 
@@ -178,6 +179,11 @@ public final class ReconcileCoordinator {
             rows[rowIndex].log.append("\(unmergedFiles.count) files conflict")
 
             for file in unmergedFiles {
+                if aborted {
+                    try? env.worktree.mergeAbort(worktreePath: worktreePath)
+                    rows[rowIndex].state = .failed("aborted")
+                    return
+                }
                 if env.worktree.isLikelyBinary(worktreePath: worktreePath, path: file) {
                     rows[rowIndex].log.append("\(file): skipped (binary)")
                     continue
@@ -232,6 +238,7 @@ public final class ReconcileCoordinator {
                     try env.worktree.commit(worktreePath: worktreePath, message: "Reconcile: merge \(source.branchName)")
                     rows[rowIndex].state = .committed
                 } catch {
+                    try? env.worktree.mergeAbort(worktreePath: worktreePath)
                     rows[rowIndex].state = .failed("commit failed: \(error)")
                 }
             } else {
