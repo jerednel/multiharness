@@ -25,11 +25,23 @@ export class DataReader {
     return this.db != null;
   }
 
-  listProjects(): Array<{ id: string; name: string; defaultBuildMode: string | null }> {
+  listProjects(): Array<{
+    id: string;
+    name: string;
+    defaultBuildMode: string | null;
+    contextInstructions: string;
+  }> {
     if (!this.db) return [];
     const rows = this.db
-      .query("SELECT id, name, default_build_mode AS defaultBuildMode FROM projects ORDER BY created_at ASC;")
-      .all() as Array<{ id: string; name: string; defaultBuildMode: string | null }>;
+      .query(
+        "SELECT id, name, default_build_mode AS defaultBuildMode, context_instructions AS contextInstructions FROM projects ORDER BY created_at ASC;",
+      )
+      .all() as Array<{
+        id: string;
+        name: string;
+        defaultBuildMode: string | null;
+        contextInstructions: string;
+      }>;
     return rows;
   }
 
@@ -48,6 +60,7 @@ export class DataReader {
     baseBranch: string;
     lifecycleState: string;
     projectId: string;
+    contextInstructions: string;
   }> {
     if (!this.db) return [];
     const rows = this.db
@@ -58,7 +71,8 @@ export class DataReader {
           branch_name AS branchName,
           base_branch AS baseBranch,
           lifecycle_state AS lifecycleState,
-          project_id AS projectId
+          project_id AS projectId,
+          context_instructions AS contextInstructions
         FROM workspaces
         WHERE archived_at IS NULL
         ORDER BY created_at DESC;
@@ -70,6 +84,7 @@ export class DataReader {
         baseBranch: string;
         lifecycleState: string;
         projectId: string;
+        contextInstructions: string;
       }>;
     return rows;
   }
