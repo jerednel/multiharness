@@ -28,6 +28,14 @@ cd "$IOS_DIR"
 echo "==> Regenerating Xcode project from project.yml"
 xcodegen generate >/dev/null
 
+if [ "${MULTIHARNESS_RESET_XCODE_CACHES:-0}" = "1" ]; then
+  echo "==> Hard-resetting Xcode caches (DerivedData + workspace state)"
+  rm -rf ~/Library/Developer/Xcode/DerivedData/MultiharnessIOS-*
+  rm -rf MultiharnessIOS.xcodeproj/project.xcworkspace/xcuserdata
+  rm -rf MultiharnessIOS.xcodeproj/project.xcworkspace/xcshareddata/swiftpm
+  rm -rf MultiharnessIOS.xcodeproj/xcuserdata
+fi
+
 echo "==> Resolving Swift package dependencies"
 xcodebuild -project MultiharnessIOS.xcodeproj \
     -scheme MultiharnessIOS \
