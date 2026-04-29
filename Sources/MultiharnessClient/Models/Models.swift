@@ -136,7 +136,7 @@ public struct Workspace: Codable, Identifiable, Sendable, Equatable, Hashable {
         archivedAt: Date? = nil,
         nameSource: NameSource = .random,
         contextInstructions: String = "",
-        lastViewedAt: Date? = nil
+        lastViewedAt: Date? = Date()
     ) {
         self.id = id
         self.projectId = projectId

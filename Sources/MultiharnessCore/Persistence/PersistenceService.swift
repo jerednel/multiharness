@@ -168,7 +168,7 @@ public final class PersistenceService: @unchecked Sendable {
             st.bind(13, w.archivedAt)
             st.bind(14, w.nameSource.rawValue)
             st.bind(15, w.contextInstructions)
-            st.bind(16, w.lastViewedAt ?? Date())
+            st.bind(16, w.lastViewedAt)
         }
     }
 
@@ -213,6 +213,8 @@ public final class PersistenceService: @unchecked Sendable {
         }
     }
 
+    /// Updates `last_viewed_at` for the given workspace to now. Idempotent;
+    /// silently no-ops when the id doesn't exist.
     public func markWorkspaceViewed(id: UUID) throws {
         try db.executeUpdate(
             "UPDATE workspaces SET last_viewed_at = ? WHERE id = ?;"

@@ -207,7 +207,7 @@ final class PersistenceTests: XCTestCase {
         XCTAssertEqual(try svc.listWorkspaces(projectId: proj.id).first?.contextInstructions, "")
     }
 
-    func testMigrationV6BackfillsLastViewedAt() throws {
+    func testNewWorkspaceGetsLastViewedAtOnInsert() throws {
         let dir = try tempDir()
         let svc = try PersistenceService(dataDir: dir)
         let proj = Project(name: "P", slug: "p", repoPath: "/tmp/p")
