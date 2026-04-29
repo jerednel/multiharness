@@ -86,6 +86,7 @@ struct AllProjectsSidebar: View {
             ForEach(appStore.projects) { project in
                 ProjectDisclosure(
                     project: project,
+                    appStore: appStore,
                     workspaceStore: workspaceStore,
                     onQuickCreate: { onQuickCreate(project) },
                     onReconcile: { pendingReconcileProject = project }
@@ -109,20 +110,24 @@ struct AllProjectsSidebar: View {
 
 private struct ProjectDisclosure: View {
     let project: Project
+    @Bindable var appStore: AppStore
     @Bindable var workspaceStore: WorkspaceStore
     let onQuickCreate: () -> Void
     let onReconcile: () -> Void
 
     @State private var isExpanded: Bool
     @State private var groupByStatus: Bool
+    @State private var showSettings = false
 
     init(
         project: Project,
+        appStore: AppStore,
         workspaceStore: WorkspaceStore,
         onQuickCreate: @escaping () -> Void,
         onReconcile: @escaping () -> Void
     ) {
         self.project = project
+        self.appStore = appStore
         self.workspaceStore = workspaceStore
         self.onQuickCreate = onQuickCreate
         self.onReconcile = onReconcile
@@ -147,6 +152,17 @@ private struct ProjectDisclosure: View {
         .onChange(of: groupByStatus) { _, new in
             UserDefaults.standard.set(new, forKey: Self.groupKey(project.id))
         }
+        .sheet(isPresented: $showSettings) {
+            ProjectSettingsSheet(
+                project: currentProject,
+                appStore: appStore,
+                onClose: { showSettings = false }
+            )
+        }
+    }
+
+    private var currentProject: Project {
+        appStore.projects.first(where: { $0.id == project.id }) ?? project
     }
 
     @ViewBuilder
@@ -157,6 +173,8 @@ private struct ProjectDisclosure: View {
             Spacer()
             Menu {
                 Toggle("Group by status", isOn: $groupByStatus)
+                Divider()
+                Button("Project settings…") { showSettings = true }
             } label: {
                 Image(systemName: "line.3.horizontal.decrease")
                     .font(.caption)
