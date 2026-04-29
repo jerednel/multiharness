@@ -18,6 +18,7 @@ public final class AppStore {
         }
     }
     public static let sidebarModeDefaultsKey = "MultiharnessSidebarMode"
+    public static let anthropicConsoleProviderName = "Claude (API Usage Billing)"
     public var sidecarStatus: SidecarManager.Status = .stopped
     public var lastError: String?
     /// Increments every time the sidecar (re)binds. Views observe this to
@@ -456,11 +457,11 @@ public final class AppStore {
                 let apiKey = dict["apiKey"] as? String,
                 apiKey.hasPrefix("sk-ant-api")
             else {
-                anthropicConsoleLoginError = "sidecar returned an unexpected payload"
+                anthropicConsoleLoginError = "sidecar returned an unexpected payload: \(String(describing: result))"
                 return
             }
             addProvider(
-                name: "Claude (API Usage Billing)",
+                name: Self.anthropicConsoleProviderName,
                 kind: .piKnown,
                 piProvider: "anthropic",
                 baseUrl: nil,
