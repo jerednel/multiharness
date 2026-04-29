@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import MultiharnessClient
 import MultiharnessCore
 
 struct WorkspaceDetailView: View {
@@ -254,12 +255,18 @@ private struct TurnCard: View {
                 }
                 Spacer()
             }
-            Text(turn.text)
-                .font(.body)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(10)
-                .background(messageBackground, in: RoundedRectangle(cornerRadius: 8))
-                .textSelection(.enabled)
+            Group {
+                if turn.role == .assistant {
+                    MarkdownMessageText(turn.text)
+                } else {
+                    Text(turn.text)
+                        .textSelection(.enabled)
+                }
+            }
+            .font(.body)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(10)
+            .background(messageBackground, in: RoundedRectangle(cornerRadius: 8))
         }
     }
 
