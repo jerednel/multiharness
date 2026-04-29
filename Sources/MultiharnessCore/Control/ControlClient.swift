@@ -79,15 +79,30 @@ public final class ControlClient: NSObject, @unchecked Sendable, URLSessionWebSo
     }
 
     public func call(method: String, params: [String: Any]) async throws -> Any? {
-        // Block briefly for the WebSocket to actually open. URLSessionWebSocketTask
-        // accepts send() before the connection is up, but the underlying TCP socket
-        // returns ENOTCONN — surfaced to callers as "Socket is not connected".
-        if !isOpen {
-            try await awaitConnected()
+        // URLSessionWebSocketTask accepts send() before the connection is up,
+        // and silently leaves a dead socket in place after a remote drop —
+        // both surface to callers as "Socket is not connected" (ENOTCONN).
+        // Strategy: ensure connected, send; on a "not connected" error,
+        // reconnect once and retry the same message.
+        let frame: [String: Any] = ["method": method, "params": params]
+        do {
+            return try await sendFramed(frame)
+        } catch {
+            if Self.isNotConnected(error) {
+                reconnect()
+                try await awaitConnected()
+                return try await sendFramed(frame)
+            }
+            throw error
         }
+    }
+
+    private func sendFramed(_ frame: [String: Any]) async throws -> Any? {
+        if !isOpen { try await awaitConnected() }
         let id = UUID().uuidString
-        let frame: [String: Any] = ["id": id, "method": method, "params": params]
-        let data = try JSONSerialization.data(withJSONObject: frame, options: [])
+        var withId = frame
+        withId["id"] = id
+        let data = try JSONSerialization.data(withJSONObject: withId, options: [])
         guard let text = String(data: data, encoding: .utf8) else {
             throw ControlError.encodeFailed
         }
@@ -110,6 +125,32 @@ public final class ControlClient: NSObject, @unchecked Sendable, URLSessionWebSo
                 }
             }
         }
+    }
+
+    private func reconnect() {
+        // Tear down the dead task, mark closed, open a fresh one. Any pending
+        // requests on the old task get dropped — this is best-effort.
+        task?.cancel(with: .abnormalClosure, reason: nil)
+        queue.async {
+            self.isOpen = false
+            self.pending.removeAll()
+        }
+        connect()
+    }
+
+    private static func isNotConnected(_ error: Error) -> Bool {
+        let nse = error as NSError
+        if nse.domain == NSPOSIXErrorDomain && nse.code == 57 { return true }
+        // URLSession sometimes wraps ENOTCONN under NSURLErrorDomain with -1005
+        // ("network connection was lost") or -1004 ("could not connect").
+        if nse.domain == NSURLErrorDomain {
+            return nse.code == NSURLErrorNetworkConnectionLost
+                || nse.code == NSURLErrorCannotConnectToHost
+                || nse.code == NSURLErrorNotConnectedToInternet
+        }
+        // The user-visible string contains the POSIX message verbatim in
+        // some delegate paths.
+        return nse.localizedDescription.lowercased().contains("socket is not connected")
     }
 
     private func listen() {
