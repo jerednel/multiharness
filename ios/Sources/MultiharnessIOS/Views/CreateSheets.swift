@@ -11,6 +11,8 @@ struct NewWorkspaceSheet: View {
     @State private var projectId: String = ""
     @State private var providerId: String = ""
     @State private var modelId: String = ""
+    @State private var buildMode: BuildMode = .primary
+    @State private var makeProjectDefault: Bool = false
     @State private var manualMode = false
     @State private var loadedModels: [DiscoveredModel] = []
     @State private var loadingModels = false
@@ -29,6 +31,19 @@ struct NewWorkspaceSheet: View {
                         }
                     }
                     TextField("Base branch (e.g. main)", text: $baseBranch)
+                }
+                Section("Build target") {
+                    Picker("Build target", selection: $buildMode) {
+                        ForEach(BuildMode.allCases, id: \.self) { m in
+                            Text(m.label).tag(m)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    Toggle(
+                        "Make default for this project",
+                        isOn: $makeProjectDefault
+                    )
+                    .disabled(buildMode == effectiveProjectDefault())
                 }
                 Section {
                     Picker("Provider", selection: $providerId) {
@@ -96,6 +111,7 @@ struct NewWorkspaceSheet: View {
         .onAppear {
             projectId = preselectedProjectId ?? connection.projects.first?.id ?? ""
             providerId = connection.providers.first?.id ?? ""
+            buildMode = effectiveProjectDefault()
             Task { await loadModels() }
         }
         .onChange(of: providerId) { _, _ in
@@ -104,6 +120,17 @@ struct NewWorkspaceSheet: View {
             modelLoadError = nil
             Task { await loadModels() }
         }
+        .onChange(of: projectId) { _, _ in
+            buildMode = effectiveProjectDefault()
+            makeProjectDefault = false
+        }
+        .onChange(of: buildMode) { _, newValue in
+            if newValue == effectiveProjectDefault() { makeProjectDefault = false }
+        }
+    }
+
+    private func effectiveProjectDefault() -> BuildMode {
+        connection.projects.first(where: { $0.id == projectId })?.defaultBuildMode ?? .primary
     }
 
     @MainActor
@@ -131,12 +158,16 @@ struct NewWorkspaceSheet: View {
         error = nil
         defer { working = false }
         do {
+            let storedMode: BuildMode? =
+                buildMode == effectiveProjectDefault() ? nil : buildMode
             try await connection.createWorkspace(
                 projectId: projectId,
                 name: name,
                 baseBranch: baseBranch,
                 providerId: providerId,
-                modelId: modelId
+                modelId: modelId,
+                buildMode: storedMode,
+                makeProjectDefault: makeProjectDefault
             )
             isPresented = false
         } catch {
