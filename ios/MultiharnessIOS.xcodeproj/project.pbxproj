@@ -17,6 +17,7 @@
 		C692339C5D5B18178BC0A045 /* QRScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2508B2990E575F586D8E6830 /* QRScannerView.swift */; };
 		CB00A24741C9882474E3AA99 /* WorkspaceDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F970F56F4F3B5B839A3C392C /* WorkspaceDetailView.swift */; };
 		D862250D0DF95EE38666D6DC /* PairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29073A5DE9D5EE7CE5129B04 /* PairingView.swift */; };
+		ECBDDBD74C66A26CF7CF8263 /* CreateSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 535C55D1D0C280DF95F8DA33 /* CreateSheets.swift */; };
 		EEBFF7FC24C8C9FB5B3AC548 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9839A87870E46B4E1749BEFC /* RootView.swift */; };
 /* End PBXBuildFile section */
 
@@ -26,6 +27,7 @@
 		2F96F45BEEC202FC095E9F5C /* App.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App.swift; sourceTree = "<group>"; };
 		39CC0952E705BC2342609787 /* gwangju */ = {isa = PBXFileReference; lastKnownFileType = folder; name = gwangju; path = ..; sourceTree = SOURCE_ROOT; };
 		4B19617671007E21225D2A51 /* PairingStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingStore.swift; sourceTree = "<group>"; };
+		535C55D1D0C280DF95F8DA33 /* CreateSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateSheets.swift; sourceTree = "<group>"; };
 		53F7B5701FD21794DAE10EBC /* ConnectionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionStore.swift; sourceTree = "<group>"; };
 		624C83AA83D7BBD38CB2D799 /* MultiharnessIOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = MultiharnessIOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		6DF76228C3777F798E4B8408 /* WorkspacesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspacesView.swift; sourceTree = "<group>"; };
@@ -96,6 +98,7 @@
 		FB3EAF6000F52116F79DF1C1 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				535C55D1D0C280DF95F8DA33 /* CreateSheets.swift */,
 				C8F8840BC008DA280D106A3E /* DiscoveryBrowser.swift */,
 				29073A5DE9D5EE7CE5129B04 /* PairingView.swift */,
 				2508B2990E575F586D8E6830 /* QRScannerView.swift */,
@@ -172,6 +175,7 @@
 			files = (
 				3186CDDAFC48493B5715DF1F /* App.swift in Sources */,
 				26F8E52332D8F4C793011171 /* ConnectionStore.swift in Sources */,
+				ECBDDBD74C66A26CF7CF8263 /* CreateSheets.swift in Sources */,
 				72DAFA81CC94D8C2C55489C5 /* DiscoveryBrowser.swift in Sources */,
 				A8F86A624BDF83FB10348C60 /* PairingStore.swift in Sources */,
 				D862250D0DF95EE38666D6DC /* PairingView.swift in Sources */,

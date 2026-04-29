@@ -23,8 +23,7 @@ struct NewWorkspaceSheet: View {
                             Text(p.name).tag(p.id)
                         }
                     }
-                    TextField(currentProject?.defaultBaseBranch ?? "main",
-                              text: $baseBranch)
+                    TextField("Base branch (e.g. main)", text: $baseBranch)
                 }
                 Section("Model") {
                     Picker("Provider", selection: $providerId) {
@@ -59,10 +58,6 @@ struct NewWorkspaceSheet: View {
             projectId = connection.projects.first?.id ?? ""
             providerId = connection.providers.first?.id ?? ""
         }
-    }
-
-    private var currentProject: RemoteProject? {
-        connection.projects.first(where: { $0.id == projectId })
     }
 
     private var canCreate: Bool {
