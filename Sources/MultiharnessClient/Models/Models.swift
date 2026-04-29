@@ -55,6 +55,7 @@ public struct Project: Codable, Identifiable, Sendable, Equatable, Hashable {
     public var defaultBaseBranch: String
     public var defaultProviderId: UUID?
     public var defaultModelId: String?
+    public var defaultBuildMode: BuildMode?
     public var createdAt: Date
     /// macOS security-scoped bookmark to the repo URL. Captured from
     /// `NSOpenPanel`'s implicit grant; resolved at app launch to suppress
@@ -69,6 +70,7 @@ public struct Project: Codable, Identifiable, Sendable, Equatable, Hashable {
         defaultBaseBranch: String = "main",
         defaultProviderId: UUID? = nil,
         defaultModelId: String? = nil,
+        defaultBuildMode: BuildMode? = nil,
         createdAt: Date = Date(),
         repoBookmark: Data? = nil
     ) {
@@ -79,6 +81,7 @@ public struct Project: Codable, Identifiable, Sendable, Equatable, Hashable {
         self.defaultBaseBranch = defaultBaseBranch
         self.defaultProviderId = defaultProviderId
         self.defaultModelId = defaultModelId
+        self.defaultBuildMode = defaultBuildMode
         self.createdAt = createdAt
         self.repoBookmark = repoBookmark
     }
