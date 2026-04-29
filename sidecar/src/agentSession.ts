@@ -19,6 +19,7 @@ export type RequestRename = (workspaceId: string, name: string) => Promise<void>
 
 export type AgentSessionOptions = {
   workspaceId: string;
+  projectId: string;
   worktreePath: string;
   buildMode: BuildMode;
   providerConfig: ProviderConfig;
@@ -27,6 +28,8 @@ export type AgentSessionOptions = {
   oauthStore?: OAuthStore;
   nameSource: NameSource;
   requestRename?: RequestRename;
+  projectContext?: string;
+  workspaceContext?: string;
 };
 
 const PERSIST_EVENTS = new Set<AgentEvent["type"]>([
@@ -42,18 +45,27 @@ export class AgentSession {
   private readonly writer: JsonlWriter;
   private readonly unsubscribe: () => void;
   private seq = 0;
+  private projectContext: string;
+  private workspaceContext: string;
   /// True iff this workspace's display name is still the random
   /// adjective-noun placeholder. Flipped to false before kicking off the
   /// AI rename so a fast second prompt can't double-fire.
   private aiRenameEligible: boolean;
 
+  readonly workspaceId: string;
+  readonly projectId: string;
+
   constructor(private readonly opts: AgentSessionOptions) {
+    this.workspaceId = opts.workspaceId;
+    this.projectId = opts.projectId;
+    this.projectContext = opts.projectContext ?? "";
+    this.workspaceContext = opts.workspaceContext ?? "";
     this.aiRenameEligible = opts.nameSource === "random";
     const cfg = opts.providerConfig;
     const staticKey = apiKeyFor(cfg);
     this.agent = new Agent({
       initialState: {
-        systemPrompt: buildSystemPrompt(opts.buildMode),
+        systemPrompt: this.composeSystemPrompt(),
         model: buildModel(cfg) as any,
         tools: buildTools(opts.worktreePath),
       },
@@ -123,6 +135,36 @@ export class AgentSession {
 
   abort(): void {
     this.agent.abort();
+  }
+
+  setWorkspaceContext(text: string): void {
+    this.workspaceContext = text;
+    this.agent.state.systemPrompt = this.composeSystemPrompt();
+  }
+
+  setProjectContext(text: string): void {
+    this.projectContext = text;
+    this.agent.state.systemPrompt = this.composeSystemPrompt();
+  }
+
+  /** Exposed for testing. */
+  currentSystemPrompt(): string {
+    return this.agent.state.systemPrompt;
+  }
+
+  private composeSystemPrompt(): string {
+    const parts: string[] = [buildSystemPrompt(this.opts.buildMode)];
+    if (this.projectContext.trim()) {
+      parts.push(
+        `<project_instructions>\n${this.projectContext}\n</project_instructions>`,
+      );
+    }
+    if (this.workspaceContext.trim()) {
+      parts.push(
+        `<workspace_instructions>\n${this.workspaceContext}\n</workspace_instructions>`,
+      );
+    }
+    return parts.join("\n\n");
   }
 
   async dispose(): Promise<void> {

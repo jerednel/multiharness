@@ -108,6 +108,7 @@ describe("e2e: server + websocket + mock provider", () => {
 
     await call("agent.create", {
       workspaceId: "w1",
+      projectId: "p1",
       worktreePath: worktree,
       buildMode: "primary",
       providerConfig: {

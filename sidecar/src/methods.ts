@@ -13,7 +13,6 @@ import {
   startOpenAICodexLogin,
   type OAuthStore,
 } from "./oauthStore.js";
-import { formatEvent } from "./rpc.js";
 
 const VERSION = "0.1.0";
 
@@ -32,6 +31,7 @@ export function registerMethods(
 
   d.register("agent.create", async (p) => {
     const workspaceId = requireString(p, "workspaceId");
+    const projectId = requireString(p, "projectId");
     const worktreePath = requireString(p, "worktreePath");
     const buildModeRaw = requireString(p, "buildMode");
     if (buildModeRaw !== "primary" && buildModeRaw !== "shadowed") {
@@ -42,12 +42,23 @@ export function registerMethods(
     if (!providerConfig || typeof providerConfig !== "object") {
       throw new Error("providerConfig must be an object");
     }
+    const projectContext = typeof p.projectContext === "string" ? p.projectContext : "";
+    const workspaceContext = typeof p.workspaceContext === "string" ? p.workspaceContext : "";
     const nameSourceRaw = typeof p.nameSource === "string" ? p.nameSource : undefined;
     const nameSource =
       nameSourceRaw === "random" || nameSourceRaw === "named"
         ? (nameSourceRaw as "random" | "named")
         : undefined;
-    await registry.create({ workspaceId, worktreePath, buildMode, providerConfig, nameSource });
+    await registry.create({
+      workspaceId,
+      projectId,
+      worktreePath,
+      buildMode,
+      providerConfig,
+      nameSource,
+      projectContext,
+      workspaceContext,
+    });
     return { ok: true };
   });
 
@@ -102,6 +113,21 @@ export function registerMethods(
       fileContext,
       oauthStore,
     });
+  });
+
+  // Push a context update to any live session. No-op when no session exists.
+  d.register("agent.applyWorkspaceContext", async (p) => {
+    const workspaceId = requireString(p, "workspaceId");
+    const text = typeof p.contextInstructions === "string" ? p.contextInstructions : "";
+    registry.applyWorkspaceContext(workspaceId, text);
+    return { ok: true };
+  });
+
+  d.register("agent.applyProjectContext", async (p) => {
+    const projectId = requireString(p, "projectId");
+    const text = typeof p.contextInstructions === "string" ? p.contextInstructions : "";
+    registry.applyProjectContext(projectId, text);
+    return { ok: true };
   });
 
   // Read-only views into the Mac app's persisted state, served to iOS.
@@ -170,8 +196,10 @@ export function registerMethods(
   // SQLite, git, NSOpenPanel, etc.) and the Mac's response comes back here.
   for (const m of [
     "workspace.create",
+    "workspace.setContext",
     "project.scan",
     "project.create",
+    "project.setContext",
     "models.listForProvider",
     "fs.list",
   ]) {

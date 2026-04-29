@@ -43,7 +43,7 @@ struct WorkspaceDetailView: View {
             }
             .frame(minWidth: 480)
 
-            Inspector(workspace: workspace, env: env)
+            Inspector(workspace: workspace, env: env, appStore: appStore)
                 .frame(minWidth: 320, idealWidth: 380, maxWidth: 600)
         }
         .task(id: workspace.id) {
@@ -369,6 +369,21 @@ private struct Composer: View {
 }
 
 private struct Inspector: View {
+    let workspace: Workspace
+    let env: AppEnvironment
+    @Bindable var appStore: AppStore
+
+    var body: some View {
+        TabView {
+            FilesTab(workspace: workspace, env: env)
+                .tabItem { Label("Files", systemImage: "doc.text") }
+            ContextTab(workspace: workspace, appStore: appStore)
+                .tabItem { Label("Context", systemImage: "text.alignleft") }
+        }
+    }
+}
+
+private struct FilesTab: View {
     let workspace: Workspace
     let env: AppEnvironment
     @State private var status: WorktreeStatus?

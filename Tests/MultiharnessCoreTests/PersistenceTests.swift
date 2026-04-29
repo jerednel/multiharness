@@ -155,4 +155,55 @@ final class PersistenceTests: XCTestCase {
         XCTAssertNil(loaded.first?.buildMode)
         XCTAssertNil(try svc.listProjects().first(where: { $0.id == proj.id })?.defaultBuildMode)
     }
+
+    func testProjectContextInstructionsRoundtrip() throws {
+        let dir = try tempDir()
+        let svc = try PersistenceService(dataDir: dir)
+        let proj = Project(
+            name: "P",
+            slug: "p",
+            repoPath: "/tmp/p",
+            contextInstructions: "Always use pnpm in this repo."
+        )
+        try svc.upsertProject(proj)
+        let loaded = try svc.listProjects()
+        XCTAssertEqual(loaded.first?.contextInstructions, "Always use pnpm in this repo.")
+    }
+
+    func testWorkspaceContextInstructionsRoundtrip() throws {
+        let dir = try tempDir()
+        let svc = try PersistenceService(dataDir: dir)
+        let proj = Project(name: "P", slug: "p", repoPath: "/tmp/p")
+        try svc.upsertProject(proj)
+        let prov = ProviderRecord(name: "L", kind: .openaiCompatible, baseUrl: "http://x")
+        try svc.upsertProvider(prov)
+        let ws = Workspace(
+            projectId: proj.id,
+            name: "W", slug: "w",
+            branchName: "u/w", baseBranch: "main", worktreePath: "/tmp/w",
+            providerId: prov.id, modelId: "m",
+            contextInstructions: "Prefer SwiftUI over UIKit here."
+        )
+        try svc.upsertWorkspace(ws)
+        let loaded = try svc.listWorkspaces(projectId: proj.id)
+        XCTAssertEqual(loaded.first?.contextInstructions, "Prefer SwiftUI over UIKit here.")
+    }
+
+    func testEmptyContextInstructionsDefaultIsEmptyString() throws {
+        let dir = try tempDir()
+        let svc = try PersistenceService(dataDir: dir)
+        let proj = Project(name: "P", slug: "p", repoPath: "/tmp/p")
+        try svc.upsertProject(proj)
+        let prov = ProviderRecord(name: "L", kind: .openaiCompatible, baseUrl: "http://x")
+        try svc.upsertProvider(prov)
+        let ws = Workspace(
+            projectId: proj.id,
+            name: "W", slug: "w",
+            branchName: "u/w", baseBranch: "main", worktreePath: "/tmp/w",
+            providerId: prov.id, modelId: "m"
+        )
+        try svc.upsertWorkspace(ws)
+        XCTAssertEqual(try svc.listProjects().first?.contextInstructions, "")
+        XCTAssertEqual(try svc.listWorkspaces(projectId: proj.id).first?.contextInstructions, "")
+    }
 }

@@ -82,10 +82,13 @@ public final class AppStore {
         let mode = workspace.effectiveBuildMode(in: project)
         let params: [String: Any] = [
             "workspaceId": workspace.id.uuidString,
+            "projectId": project.id.uuidString,
             "worktreePath": workspace.worktreePath,
             "buildMode": mode.rawValue,
             "providerConfig": cfg,
             "nameSource": workspace.nameSource.rawValue,
+            "projectContext": project.contextInstructions,
+            "workspaceContext": workspace.contextInstructions,
         ]
         do {
             _ = try await client.call(method: "agent.create", params: params)
@@ -104,6 +107,46 @@ public final class AppStore {
         updated.defaultBuildMode = mode
         try env.persistence.upsertProject(updated)
         projects[idx] = updated
+    }
+
+    /// Persist a new workspace-level context override and push it to the
+    /// live agent session if one is running. Safe to call when no session
+    /// is live — the next `agent.create` will read the fresh value from SQLite.
+    @MainActor
+    public func setWorkspaceContext(workspaceId: UUID, text: String) async throws {
+        var loaded = try env.persistence.listWorkspaces(projectId: nil)
+        guard let idx = loaded.firstIndex(where: { $0.id == workspaceId }) else { return }
+        loaded[idx].contextInstructions = text
+        try env.persistence.upsertWorkspace(loaded[idx])
+        if let client = env.control {
+            _ = try? await client.call(
+                method: "agent.applyWorkspaceContext",
+                params: [
+                    "workspaceId": workspaceId.uuidString,
+                    "contextInstructions": text,
+                ]
+            )
+        }
+    }
+
+    /// Persist a new project-level context override and push it to every
+    /// live agent session inside that project.
+    @MainActor
+    public func setProjectContext(projectId: UUID, text: String) async throws {
+        guard let idx = projects.firstIndex(where: { $0.id == projectId }) else { return }
+        var updated = projects[idx]
+        updated.contextInstructions = text
+        try env.persistence.upsertProject(updated)
+        projects[idx] = updated
+        if let client = env.control {
+            _ = try? await client.call(
+                method: "agent.applyProjectContext",
+                params: [
+                    "projectId": projectId.uuidString,
+                    "contextInstructions": text,
+                ]
+            )
+        }
     }
 
     public init(env: AppEnvironment) {

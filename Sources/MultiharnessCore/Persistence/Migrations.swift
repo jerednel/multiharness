@@ -59,6 +59,11 @@ public struct Migrations {
         // v4: track whether a workspace is still using its random adjective-noun
         // name so the sidecar knows to AI-rename it after the first prompt.
         "ALTER TABLE workspaces ADD COLUMN name_source TEXT NOT NULL DEFAULT 'random';",
+        // v5: per-project and per-workspace context injection
+        """
+        ALTER TABLE projects   ADD COLUMN context_instructions TEXT NOT NULL DEFAULT '';
+        ALTER TABLE workspaces ADD COLUMN context_instructions TEXT NOT NULL DEFAULT '';
+        """,
     ]
 
     public static func apply(_ db: Database) throws {

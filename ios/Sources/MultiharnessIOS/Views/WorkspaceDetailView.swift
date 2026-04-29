@@ -5,9 +5,25 @@ struct WorkspaceDetailView: View {
     @Bindable var connection: ConnectionStore
     let workspace: RemoteWorkspace
     @State private var draft = ""
+    @State private var contextExpanded = false
+
+    private var project: RemoteProject? {
+        connection.projects.first(where: { $0.id == workspace.projectId })
+    }
+
+    private var hasContext: Bool {
+        !workspace.contextInstructions.isEmpty
+            || !(project?.contextInstructions.isEmpty ?? true)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
+            if hasContext {
+                contextDisclosure
+                    .padding(.horizontal, 12)
+                    .padding(.top, 8)
+                Divider()
+            }
             if let agent = connection.agents[workspace.id] {
                 ConversationList(agent: agent, workspaceId: workspace.id)
             } else {
@@ -27,6 +43,34 @@ struct WorkspaceDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task(id: workspace.id) {
             await connection.openWorkspace(workspace)
+        }
+    }
+
+    @ViewBuilder
+    private var contextDisclosure: some View {
+        DisclosureGroup(isExpanded: $contextExpanded) {
+            VStack(alignment: .leading, spacing: 10) {
+                if let p = project, !p.contextInstructions.isEmpty {
+                    Text("Project").font(.caption).bold().foregroundStyle(.secondary)
+                    Text(p.contextInstructions)
+                        .font(.system(.footnote, design: .monospaced))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .textSelection(.enabled)
+                }
+                if !workspace.contextInstructions.isEmpty {
+                    Text("Workspace").font(.caption).bold().foregroundStyle(.secondary)
+                    Text(workspace.contextInstructions)
+                        .font(.system(.footnote, design: .monospaced))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .textSelection(.enabled)
+                }
+            }
+            .padding(.top, 4)
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "text.alignleft").font(.caption)
+                Text("Context").font(.caption).bold()
+            }
         }
     }
 }
