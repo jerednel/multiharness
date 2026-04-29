@@ -155,10 +155,26 @@ struct NewProjectSheet: View {
     @State private var loadingScan = false
     @State private var error: String?
     @State private var working = false
+    @State private var browsePath = NavigationPath()
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $browsePath) {
             Form {
+                Section("Browse") {
+                    NavigationLink(value: BrowseDestination.root) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Browse for a folder")
+                            if !repoPath.isEmpty {
+                                Text(repoPath)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                    .truncationMode(.head)
+                            }
+                        }
+                    }
+                }
+
                 Section("Pick a discovered repository") {
                     if loadingScan {
                         HStack { ProgressView(); Text("Scanning…").font(.caption) }
@@ -191,13 +207,12 @@ struct NewProjectSheet: View {
                         }
                     }
                 }
-                Section("Or enter a path") {
+
+                Section("Details") {
                     TextField("Display name", text: $name)
-                    TextField("/Users/<you>/dev/<repo>", text: $repoPath)
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
                     TextField("Default base branch", text: $baseBranch)
                 }
+
                 if let err = error {
                     Section { Text(err).font(.caption).foregroundStyle(.red) }
                 }
@@ -215,9 +230,23 @@ struct NewProjectSheet: View {
                     .disabled(working || !canCreate)
                 }
             }
+            .navigationDestination(for: BrowseDestination.self) { _ in
+                BrowseFolderView(
+                    connection: connection,
+                    initialPath: nil,
+                    onPick: { picked in
+                        let basename = (picked as NSString).lastPathComponent
+                        if name.isEmpty { name = basename }
+                        repoPath = picked
+                        browsePath = NavigationPath()
+                    }
+                )
+            }
             .task { await scan() }
         }
     }
+
+    private enum BrowseDestination: Hashable { case root }
 
     private var canCreate: Bool {
         !name.trimmingCharacters(in: .whitespaces).isEmpty
