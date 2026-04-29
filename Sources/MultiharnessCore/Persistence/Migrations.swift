@@ -56,6 +56,11 @@ public struct Migrations {
         ALTER TABLE projects ADD COLUMN default_build_mode TEXT;
         ALTER TABLE workspaces ADD COLUMN build_mode TEXT;
         """,
+        // v4: per-project and per-workspace context injection
+        """
+        ALTER TABLE projects   ADD COLUMN context_instructions TEXT NOT NULL DEFAULT '';
+        ALTER TABLE workspaces ADD COLUMN context_instructions TEXT NOT NULL DEFAULT '';
+        """,
     ]
 
     public static func apply(_ db: Database) throws {
