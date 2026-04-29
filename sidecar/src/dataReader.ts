@@ -25,11 +25,11 @@ export class DataReader {
     return this.db != null;
   }
 
-  listProjects(): Array<{ id: string; name: string }> {
+  listProjects(): Array<{ id: string; name: string; defaultBuildMode: string | null }> {
     if (!this.db) return [];
     const rows = this.db
-      .query("SELECT id, name FROM projects ORDER BY created_at ASC;")
-      .all() as Array<{ id: string; name: string }>;
+      .query("SELECT id, name, default_build_mode AS defaultBuildMode FROM projects ORDER BY created_at ASC;")
+      .all() as Array<{ id: string; name: string; defaultBuildMode: string | null }>;
     return rows;
   }
 
