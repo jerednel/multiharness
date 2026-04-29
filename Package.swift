@@ -21,13 +21,17 @@ let package = Package(
             targets: ["Multiharness"]
         ),
     ],
-    dependencies: [],
+    dependencies: [
+        .package(url: "https://github.com/gonzalezreal/swift-markdown-ui", from: "2.4.0"),
+    ],
     targets: [
         // Portable code that ships in BOTH the macOS app and the iOS companion:
         // models, ConversationTurn, ControlClient (URLSessionWebSocketTask), Keychain wrapper.
         .target(
             name: "MultiharnessClient",
-            dependencies: [],
+            dependencies: [
+                .product(name: "MarkdownUI", package: "swift-markdown-ui"),
+            ],
             path: "Sources/MultiharnessClient"
         ),
         // macOS-only: persistence (SQLite), worktree (git subprocess),

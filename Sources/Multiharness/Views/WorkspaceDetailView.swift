@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import MultiharnessClient
 import MultiharnessCore
 
 struct WorkspaceDetailView: View {
@@ -24,7 +25,7 @@ struct WorkspaceDetailView: View {
                 }
                 Divider()
                 if let store = agentRegistry.ensureStore(workspaceId: workspace.id) {
-                    ConversationView(store: store)
+                    ConversationView(store: store, workspaceId: workspace.id)
                     Divider()
                     Composer(
                         workspace: workspace,
@@ -124,6 +125,7 @@ private struct LifecycleBadge: View {
 
 private struct ConversationView: View {
     @Bindable var store: AgentStore
+    let workspaceId: UUID
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -146,6 +148,13 @@ private struct ConversationView: View {
             .onChange(of: store.isStreaming) { _, streaming in
                 if streaming {
                     withAnimation { proxy.scrollTo(thinkingCardId, anchor: .bottom) }
+                }
+            }
+            .onChange(of: workspaceId, initial: true) { _, _ in
+                if let last = store.turns.last {
+                    proxy.scrollTo(last.id, anchor: .bottom)
+                } else if store.isStreaming {
+                    proxy.scrollTo(thinkingCardId, anchor: .bottom)
                 }
             }
         }
@@ -240,12 +249,18 @@ private struct TurnCard: View {
                 }
                 Spacer()
             }
-            Text(turn.text)
-                .font(.body)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(10)
-                .background(messageBackground, in: RoundedRectangle(cornerRadius: 8))
-                .textSelection(.enabled)
+            Group {
+                if turn.role == .assistant {
+                    MarkdownMessageText(turn.text)
+                } else {
+                    Text(turn.text)
+                        .textSelection(.enabled)
+                }
+            }
+            .font(.body)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(10)
+            .background(messageBackground, in: RoundedRectangle(cornerRadius: 8))
         }
     }
 
