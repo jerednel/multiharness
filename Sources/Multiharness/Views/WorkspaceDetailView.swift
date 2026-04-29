@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import MultiharnessCore
 
 struct WorkspaceDetailView: View {
@@ -272,8 +273,12 @@ private struct Composer: View {
                     .lineLimit(1...8)
                     .padding(.horizontal, 8).padding(.vertical, 6)
                     .overlay(RoundedRectangle(cornerRadius: 6).stroke(.tertiary))
-                    .onSubmit {
+                    .onKeyPress(.return) {
+                        if NSEvent.modifierFlags.contains(.shift) {
+                            return .ignored                    // Shift+Enter → default newline
+                        }
                         Task { await send() }
+                        return .handled                        // Enter → send, swallow newline
                     }
                 Button {
                     Task { await send() }
