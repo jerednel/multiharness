@@ -33,6 +33,9 @@ public final class AppStore {
     /// True while a ChatGPT (OpenAI Codex) OAuth login is in flight.
     public var openaiLoginInProgress: Bool = false
     public var openaiLoginError: String?
+    /// True while an Anthropic Console (API Usage Billing) login is in flight.
+    public var anthropicConsoleLoginInProgress: Bool = false
+    public var anthropicConsoleLoginError: String?
 
     private let env: AppEnvironment
     public var appEnv: AppEnvironment { env }
@@ -427,6 +430,45 @@ public final class AppStore {
             }
         } catch {
             openaiLoginError = String(describing: error)
+        }
+    }
+
+    /// Kick off the Anthropic Console OAuth flow. Unlike Pro/Max, the
+    /// sidecar mints a real Console API key (sk-ant-api03-…) and returns
+    /// it; we stash the key in Keychain and register a normal pi-known
+    /// anthropic provider. Subsequent calls bill as API usage on the
+    /// user's Console org.
+    public func signInWithAnthropicConsole() async {
+        guard let client = env.control else {
+            anthropicConsoleLoginError = "control client not connected"
+            return
+        }
+        anthropicConsoleLoginInProgress = true
+        anthropicConsoleLoginError = nil
+        defer { anthropicConsoleLoginInProgress = false }
+        do {
+            let result = try await client.call(
+                method: "auth.anthropic.console.start",
+                params: [:]
+            )
+            guard
+                let dict = result as? [String: Any],
+                let apiKey = dict["apiKey"] as? String,
+                apiKey.hasPrefix("sk-ant-api")
+            else {
+                anthropicConsoleLoginError = "sidecar returned an unexpected payload"
+                return
+            }
+            addProvider(
+                name: "Claude (API Usage Billing)",
+                kind: .piKnown,
+                piProvider: "anthropic",
+                baseUrl: nil,
+                defaultModelId: nil,
+                apiKey: apiKey
+            )
+        } catch {
+            anthropicConsoleLoginError = String(describing: error)
         }
     }
 
