@@ -119,6 +119,23 @@ public final class ConnectionStore: NSObject, ControlClientDelegate {
         await refreshWorkspaces()
     }
 
+    /// Display-name-only rename. Routed through the sidecar's
+    /// `workspace.rename` (relayed to the Mac, which persists). The
+    /// sidecar broadcasts a `workspace_updated` event after the relay
+    /// returns, which our delegate handler picks up to refresh the local
+    /// `workspaces` cache.
+    public func requestRename(workspaceId: String, newName: String) async throws {
+        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        _ = try await client.call(
+            method: "workspace.rename",
+            params: [
+                "workspaceId": workspaceId,
+                "name": trimmed,
+            ]
+        )
+    }
+
     public func scanRepos() async throws -> [(name: String, path: String)] {
         let result = try await client.call(method: "project.scan", params: [:]) as? [String: Any]
         let arr = result?["repos"] as? [[String: Any]] ?? []
