@@ -133,6 +133,9 @@ private struct ConversationView: View {
                     ForEach(store.turns) { turn in
                         TurnCard(turn: turn).id(turn.id)
                     }
+                    if store.isStreaming {
+                        ThinkingCard().id(thinkingCardId)
+                    }
                 }
                 .padding(16)
             }
@@ -141,7 +144,28 @@ private struct ConversationView: View {
                     withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
                 }
             }
+            .onChange(of: store.isStreaming) { _, streaming in
+                if streaming {
+                    withAnimation { proxy.scrollTo(thinkingCardId, anchor: .bottom) }
+                }
+            }
         }
+    }
+
+    private let thinkingCardId = "thinking-card"
+}
+
+private struct ThinkingCard: View {
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "sparkles").foregroundStyle(.purple)
+            Text("Agent").font(.caption).bold().foregroundStyle(.secondary)
+            ProgressView().scaleEffect(0.6).frame(width: 14, height: 14)
+            Spacer()
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.purple.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
     }
 }
 
