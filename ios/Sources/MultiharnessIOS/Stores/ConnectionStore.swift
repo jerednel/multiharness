@@ -125,6 +125,22 @@ public final class ConnectionStore: NSObject, ControlClientDelegate {
         }
     }
 
+    public func listFolders(path: String?) async throws -> FolderListing {
+        var params: [String: Any] = [:]
+        if let p = path, !p.isEmpty { params["path"] = p }
+        let result = try await client.call(method: "fs.list", params: params) as? [String: Any]
+        let resolvedPath = (result?["path"] as? String) ?? (path ?? "")
+        let parent = result?["parent"] as? String  // missing or NSNull → nil
+        let arr = (result?["entries"] as? [[String: Any]]) ?? []
+        let entries = arr.compactMap { dict -> FolderEntry? in
+            guard let name = dict["name"] as? String,
+                  let path = dict["path"] as? String else { return nil }
+            let isGit = (dict["isGitRepo"] as? Bool) ?? false
+            return FolderEntry(name: name, path: path, isGitRepo: isGit)
+        }
+        return FolderListing(path: resolvedPath, parent: parent, entries: entries)
+    }
+
     public func fetchModels(providerId: String) async throws -> [DiscoveredModel] {
         let result = try await client.call(
             method: "models.listForProvider",
@@ -223,4 +239,17 @@ public struct RemoteProvider: Identifiable, Sendable, Hashable {
         self.id = id
         self.name = name
     }
+}
+
+public struct FolderEntry: Identifiable, Sendable, Hashable {
+    public let name: String
+    public let path: String
+    public let isGitRepo: Bool
+    public var id: String { path }
+}
+
+public struct FolderListing: Sendable {
+    public let path: String
+    public let parent: String?
+    public let entries: [FolderEntry]
 }
