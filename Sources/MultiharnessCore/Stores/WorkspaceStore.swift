@@ -69,7 +69,8 @@ public final class WorkspaceStore {
         baseBranch: String,
         provider: ProviderRecord,
         modelId: String,
-        gitUserName: String
+        gitUserName: String,
+        buildMode: BuildMode? = nil
     ) throws -> Workspace {
         let slug = slugify(name)
         let branch = "\(slugify(gitUserName))/\(slug)"
@@ -88,7 +89,8 @@ public final class WorkspaceStore {
             baseBranch: baseBranch,
             worktreePath: path.path,
             providerId: provider.id,
-            modelId: modelId
+            modelId: modelId,
+            buildMode: buildMode
         )
         try env.persistence.upsertWorkspace(ws)
         workspaces.insert(ws, at: 0)
