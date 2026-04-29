@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Bun uses JavaScriptCore's JIT. Hardened runtime blocks executable
+       memory allocation by default; this entitlement lets it run. -->
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+  <!-- Bun loads its own bundled dylibs (libuSockets, libdeflate, etc.)
+       which aren't signed by Apple's chain. -->
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+  <!-- Allow attaching to debug the binary in development. -->
+  <key>com.apple.security.get-task-allow</key>
+  <true/>
+</dict>
+</plist>

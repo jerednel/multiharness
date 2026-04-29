@@ -82,8 +82,20 @@ else
   echo "==> Signing with '$IDENT'"
 fi
 codesign --remove-signature "$APP_DIR" 2>/dev/null || true
-codesign --force --sign "$IDENT" --options runtime "$CONTENTS/Resources/multiharness-sidecar"
+# Sign the sidecar binary FIRST with JIT entitlements (Bun uses JavaScriptCore's
+# JIT — hardened runtime kills the process otherwise).
+codesign --force --sign "$IDENT" \
+    --options runtime \
+    --entitlements "$(cd "$(dirname "$0")" && pwd)/sidecar.entitlements" \
+    "$CONTENTS/Resources/multiharness-sidecar"
+# Then the outer app — no entitlements needed here, Swift binary doesn't JIT.
 codesign --force --deep --sign "$IDENT" --options runtime "$APP_DIR"
+# Re-sign the sidecar a second time after --deep to make sure --deep didn't
+# strip its entitlements.
+codesign --force --sign "$IDENT" \
+    --options runtime \
+    --entitlements "$(cd "$(dirname "$0")" && pwd)/sidecar.entitlements" \
+    "$CONTENTS/Resources/multiharness-sidecar"
 
 echo "==> Done: $APP_DIR"
 ls -la "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
