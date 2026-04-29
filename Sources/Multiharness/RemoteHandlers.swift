@@ -30,6 +30,50 @@ enum RemoteHandlers {
         await relay.register(method: "fs.list") { params in
             try await Self.fsList(params: params)
         }
+        await relay.register(method: "workspace.setContext") { params in
+            try await Self.workspaceSetContext(
+                params: params, env: env, appStore: appStore
+            )
+        }
+        await relay.register(method: "project.setContext") { params in
+            try await Self.projectSetContext(
+                params: params, env: env, appStore: appStore
+            )
+        }
+    }
+
+    // MARK: - workspace.setContext
+
+    @MainActor
+    private static func workspaceSetContext(
+        params: [String: Any],
+        env: AppEnvironment,
+        appStore: AppStore
+    ) async throws -> Any? {
+        guard let idStr = params["workspaceId"] as? String,
+              let id = UUID(uuidString: idStr) else {
+            throw RemoteError.bad("workspaceId required (UUID string)")
+        }
+        let text = (params["contextInstructions"] as? String) ?? ""
+        try await appStore.setWorkspaceContext(workspaceId: id, text: text)
+        return ["ok": true]
+    }
+
+    // MARK: - project.setContext
+
+    @MainActor
+    private static func projectSetContext(
+        params: [String: Any],
+        env: AppEnvironment,
+        appStore: AppStore
+    ) async throws -> Any? {
+        guard let idStr = params["projectId"] as? String,
+              let id = UUID(uuidString: idStr) else {
+            throw RemoteError.bad("projectId required (UUID string)")
+        }
+        let text = (params["contextInstructions"] as? String) ?? ""
+        try await appStore.setProjectContext(projectId: id, text: text)
+        return ["ok": true]
     }
 
     // MARK: - models.listForProvider
