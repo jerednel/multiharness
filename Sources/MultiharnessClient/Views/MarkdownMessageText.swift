@@ -12,7 +12,6 @@ public struct MarkdownMessageText: View {
         Markdown(text)
             .markdownTheme(.multiharnessChat)
             .textSelection(.enabled)
-            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
