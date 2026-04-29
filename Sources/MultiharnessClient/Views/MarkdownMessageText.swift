@@ -69,7 +69,7 @@ private extension Theme {
         .codeBlock { configuration in
             ScrollView(.horizontal, showsIndicators: false) {
                 configuration.label
-                    .fixedSize(horizontal: false, vertical: true)
+                    .fixedSize(horizontal: true, vertical: true)
                     .relativeLineSpacing(.em(0.20))
                     .markdownTextStyle {
                         FontFamilyVariant(.monospaced)
