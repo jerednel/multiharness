@@ -9,6 +9,7 @@ import { parseFrame, formatEvent } from "./rpc.js";
 import { log } from "./logger.js";
 import { Relay } from "./relay.js";
 import { OAuthStore } from "./oauthStore.js";
+import { WorkspaceActivityTracker } from "./workspaceActivity.js";
 
 export type ServerOptions = {
   socketPath?: string;
@@ -49,14 +50,39 @@ export async function startServer(opts: ServerOptions): Promise<ServerHandle> {
 
   type WS = ServerWebSocket<undefined>;
   const clients = new Set<WS>();
-  const sink = (workspaceId: string, ev: { type: string }) => {
-    const frame = formatEvent(ev.type, { workspaceId, ...(ev as Record<string, unknown>) });
+  const tracker = new WorkspaceActivityTracker(opts.dataDir);
+
+  function broadcast(frame: string): void {
     for (const c of clients) {
       try {
         c.send(frame);
       } catch (e) {
         log.warn("send failed", { err: String(e) });
       }
+    }
+  }
+
+  const sink = (workspaceId: string, ev: { type: string }) => {
+    // Fan out the original event to all clients first so order-of-events
+    // observed by clients matches what AgentSession produced.
+    const frame = formatEvent(ev.type, { workspaceId, ...(ev as Record<string, unknown>) });
+    broadcast(frame);
+
+    // Mirror agent start/end into the tracker, then push a workspace.activity
+    // event so iOS workspace lists update without polling.
+    if (workspaceId && (ev.type === "agent_start" || ev.type === "agent_end")) {
+      tracker.observe(workspaceId, ev.type);
+      const activity = formatEvent("workspace.activity", {
+        workspaceId,
+        isStreaming: tracker.isStreaming(workspaceId),
+        // unseen is recomputed against per-workspace lastViewedAt by the
+        // recipient — sidecar can't know lastViewedAt without re-querying
+        // SQLite, and clients already cache it from their last
+        // remote.workspaces snapshot. So just send isStreaming and the
+        // latest lastAssistantAt, letting the client decide.
+        lastAssistantAt: tracker.lastAssistantAt(workspaceId),
+      });
+      broadcast(activity);
     }
   };
 
@@ -76,7 +102,7 @@ export async function startServer(opts: ServerOptions): Promise<ServerHandle> {
       await dispatcher.invoke("workspace.rename", { workspaceId, name });
     },
   );
-  registerMethods(dispatcher, registry, opts.dataDir, relay, oauthStore, sink);
+  registerMethods(dispatcher, registry, opts.dataDir, relay, oauthStore, sink, tracker);
 
   const expectedAuth = opts.authToken ? `Bearer ${opts.authToken}` : null;
   const isPrivateBind =

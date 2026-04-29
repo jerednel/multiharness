@@ -6,6 +6,7 @@ import { resolveConflictHunk } from "./conflictResolver.js";
 import { log } from "./logger.js";
 import { DataReader } from "./dataReader.js";
 import type { Relay } from "./relay.js";
+import type { WorkspaceActivityTracker } from "./workspaceActivity.js";
 import {
   hasAnthropicCreds,
   hasOpenAICodexCreds,
@@ -25,6 +26,7 @@ export function registerMethods(
   relay: Relay,
   oauthStore: OAuthStore,
   sink: EventEmit,
+  tracker: WorkspaceActivityTracker,
 ): void {
   const reader = new DataReader(dataDir);
   d.register("health.ping", () => ({ pong: true, version: VERSION }));
@@ -131,11 +133,18 @@ export function registerMethods(
   });
 
   // Read-only views into the Mac app's persisted state, served to iOS.
-  d.register("remote.workspaces", () => ({
-    workspaces: reader.listWorkspaces(),
-    projects: reader.listProjects(),
-    providers: reader.listProviders(),
-  }));
+  d.register("remote.workspaces", () => {
+    const workspaces = reader.listWorkspaces().map((w) => ({
+      ...w,
+      isStreaming: tracker.isStreaming(w.id),
+      unseen: tracker.isUnseen(w.id, w.lastViewedAt),
+    }));
+    return {
+      workspaces,
+      projects: reader.listProjects(),
+      providers: reader.listProviders(),
+    };
+  });
 
   d.register("remote.history", async (p) => {
     const workspaceId = requireString(p, "workspaceId");
