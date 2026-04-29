@@ -275,10 +275,15 @@ private struct Composer: View {
                     .overlay(RoundedRectangle(cornerRadius: 6).stroke(.tertiary))
                     .onKeyPress(.return) {
                         if NSEvent.modifierFlags.contains(.shift) {
-                            return .ignored                    // Shift+Enter → default newline
+                            // The system's default for Shift+Return on a vertical
+                            // TextField is "extend selection" rather than insert a
+                            // newline — so we insert one ourselves at the end of
+                            // the draft.
+                            draft.append("\n")
+                            return .handled
                         }
                         Task { await send() }
-                        return .handled                        // Enter → send, swallow newline
+                        return .handled                        // Enter → send
                     }
                 Button {
                     Task { await send() }
