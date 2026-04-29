@@ -42,7 +42,12 @@ export function registerMethods(
     if (!providerConfig || typeof providerConfig !== "object") {
       throw new Error("providerConfig must be an object");
     }
-    await registry.create({ workspaceId, worktreePath, buildMode, providerConfig });
+    const nameSourceRaw = typeof p.nameSource === "string" ? p.nameSource : undefined;
+    const nameSource =
+      nameSourceRaw === "random" || nameSourceRaw === "named"
+        ? (nameSourceRaw as "random" | "named")
+        : undefined;
+    await registry.create({ workspaceId, worktreePath, buildMode, providerConfig, nameSource });
     return { ok: true };
   });
 
@@ -174,6 +179,27 @@ export function registerMethods(
       return await relay.dispatch(m, params);
     });
   }
+
+  // workspace.rename is relayed but also broadcasts a workspace_updated
+  // event so iOS clients (which only know about workspaces via the cached
+  // remote.workspaces snapshot) can reflect the new name without a refetch.
+  d.register("workspace.rename", async (params) => {
+    const result = await relay.dispatch("workspace.rename", params);
+    if (result && typeof result === "object") {
+      const r = result as Record<string, unknown>;
+      const wsId = typeof r.workspaceId === "string" ? r.workspaceId : "";
+      const name = typeof r.name === "string" ? r.name : "";
+      if (wsId && name) {
+        sink(wsId, {
+          type: "workspace_updated",
+          name,
+          nameSource:
+            typeof r.nameSource === "string" ? r.nameSource : "named",
+        } as unknown as Parameters<EventEmit>[1]);
+      }
+    }
+    return result;
+  });
 }
 
 function requireString(p: Record<string, unknown>, name: string): string {

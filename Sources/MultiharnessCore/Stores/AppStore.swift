@@ -85,6 +85,7 @@ public final class AppStore {
             "worktreePath": workspace.worktreePath,
             "buildMode": mode.rawValue,
             "providerConfig": cfg,
+            "nameSource": workspace.nameSource.rawValue,
         ]
         do {
             _ = try await client.call(method: "agent.create", params: params)
