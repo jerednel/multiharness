@@ -24,6 +24,10 @@ cp "$BIN_DIR/$BUNDLE_NAME" "$CONTENTS/MacOS/$BUNDLE_NAME"
 cp sidecar/dist/multiharness-sidecar "$CONTENTS/Resources/multiharness-sidecar"
 chmod +x "$CONTENTS/MacOS/$BUNDLE_NAME" "$CONTENTS/Resources/multiharness-sidecar"
 
+if [ -f assets/AppIcon.icns ]; then
+  cp assets/AppIcon.icns "$CONTENTS/Resources/AppIcon.icns"
+fi
+
 cat > "$CONTENTS/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -35,6 +39,7 @@ cat > "$CONTENTS/Info.plist" <<PLIST
   <key>CFBundleVersion</key><string>1</string>
   <key>CFBundleShortVersionString</key><string>0.1.0</string>
   <key>CFBundleExecutable</key><string>$BUNDLE_NAME</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>NSHighResolutionCapable</key><true/>
