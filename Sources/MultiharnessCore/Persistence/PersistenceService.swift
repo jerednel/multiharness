@@ -195,6 +195,26 @@ public final class PersistenceService: @unchecked Sendable {
         }
     }
 
+    // MARK: - Settings
+
+    public func getSetting(_ key: String) throws -> String? {
+        let rows = try db.query(
+            "SELECT value FROM settings WHERE key = ?;",
+            bind: { $0.bind(1, key) },
+            rowMap: { $0.string(0) }
+        )
+        return rows.first ?? nil
+    }
+
+    public func setSetting(_ key: String, value: String) throws {
+        try db.executeUpdate(
+            "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value;"
+        ) { st in
+            st.bind(1, key)
+            st.bind(2, value)
+        }
+    }
+
     // MARK: - JSONL message log
 
     public func messagesPath(workspaceId: UUID) -> URL {

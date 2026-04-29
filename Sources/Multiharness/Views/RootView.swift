@@ -33,7 +33,7 @@ struct RootView: View {
             NewProjectSheet(appStore: appStore, isPresented: $showingNewProject)
         }
         .sheet(isPresented: $showingSettings) {
-            SettingsSheet(appStore: appStore, isPresented: $showingSettings)
+            SettingsSheet(env: env, appStore: appStore, isPresented: $showingSettings)
         }
         .frame(minWidth: 1100, minHeight: 700)
     }

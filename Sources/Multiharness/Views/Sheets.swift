@@ -1,6 +1,8 @@
 import SwiftUI
 import MultiharnessCore
 import AppKit
+import CoreImage
+import CoreImage.CIFilterBuiltins
 
 struct NewProjectSheet: View {
     @Bindable var appStore: AppStore
@@ -230,20 +232,60 @@ struct ProviderRow: View {
 }
 
 struct SettingsSheet: View {
+    let env: AppEnvironment
     @Bindable var appStore: AppStore
     @Binding var isPresented: Bool
+    @State private var tab: SettingsTab = .providers
 
+    enum SettingsTab: Hashable { case providers, remote }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 0) {
+                tabButton("Providers", .providers)
+                tabButton("Remote access", .remote)
+                Spacer()
+            }
+            Divider()
+            switch tab {
+            case .providers:
+                ProvidersTab(appStore: appStore)
+            case .remote:
+                RemoteAccessTab(env: env)
+            }
+            Spacer()
+            HStack {
+                Spacer()
+                Button("Done") { isPresented = false }.keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20).frame(width: 640, height: 640)
+    }
+
+    @ViewBuilder
+    private func tabButton(_ label: String, _ value: SettingsTab) -> some View {
+        Button { tab = value } label: {
+            Text(label).font(.body)
+                .padding(.horizontal, 12).padding(.vertical, 6)
+                .background(tab == value ? Color.accentColor.opacity(0.18) : .clear,
+                            in: RoundedRectangle(cornerRadius: 6))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct ProvidersTab: View {
+    @Bindable var appStore: AppStore
     @State private var selectedPresetId: String = ""
     @State private var manualName: String = ""
     @State private var manualBaseUrl: String = ""
     @State private var manualKind: ProviderKind = .openaiCompatible
     @State private var apiKey: String = ""
-    @State private var error: String?
     @State private var expandedProviderId: UUID?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Providers").font(.title2).bold()
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Providers").font(.title3).bold()
             ScrollView {
                 VStack(spacing: 4) {
                     ForEach(appStore.providers) { p in
@@ -258,7 +300,7 @@ struct SettingsSheet: View {
                     }
                 }
             }
-            .frame(minHeight: 200, maxHeight: 360)
+            .frame(minHeight: 180, maxHeight: 280)
             Divider()
             Text("Add provider").font(.headline)
             Picker("Preset", selection: $selectedPresetId) {
@@ -280,18 +322,12 @@ struct SettingsSheet: View {
                 }
                 SecureField("API key (stored in Keychain)", text: $apiKey)
             }
-            if let err = error {
-                Text(err).font(.caption).foregroundStyle(.red)
-            }
             HStack {
                 Spacer()
-                Button("Done") { isPresented = false }
                 Button("Add") { addProvider() }
                     .disabled(manualName.trimmingCharacters(in: .whitespaces).isEmpty)
-                    .keyboardShortcut(.defaultAction)
             }
         }
-        .padding(24).frame(width: 600, height: 620)
     }
 
     private func applyPreset(_ id: String) {
@@ -318,5 +354,91 @@ struct SettingsSheet: View {
             apiKey: apiKey.isEmpty ? nil : apiKey
         )
         manualName = ""; manualBaseUrl = ""; apiKey = ""; selectedPresetId = ""
+    }
+}
+
+private struct RemoteAccessTab: View {
+    let env: AppEnvironment
+    @State private var working = false
+    @State private var localToggle = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Remote access").font(.title3).bold()
+            Text("Allow an iOS companion app on your local network to control this Multiharness instance. Authentication is via a generated bearer token. There is no TLS — use only on trusted networks.")
+                .font(.callout).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Toggle(isOn: $localToggle) {
+                Text(env.remoteAccess.enabled ? "Enabled" : "Disabled")
+            }
+            .toggleStyle(.switch)
+            .disabled(working)
+            .onChange(of: localToggle) { _, on in
+                guard on != env.remoteAccess.enabled else { return }
+                Task {
+                    working = true
+                    await env.setRemoteAccessEnabled(on)
+                    working = false
+                }
+            }
+            .onAppear { localToggle = env.remoteAccess.enabled }
+
+            if env.remoteAccess.enabled {
+                Divider()
+                if let pairing = env.remoteAccess.pairingString() {
+                    PairingPanel(pairingString: pairing)
+                } else {
+                    Text("Waiting for sidecar to bind…").font(.callout).foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+}
+
+private struct PairingPanel: View {
+    let pairingString: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Pair an iOS device").font(.headline)
+            HStack(alignment: .top, spacing: 16) {
+                if let qr = makeQR(pairingString) {
+                    Image(nsImage: qr)
+                        .interpolation(.none)
+                        .resizable()
+                        .frame(width: 180, height: 180)
+                        .background(Color.white, in: RoundedRectangle(cornerRadius: 6))
+                }
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Scan in Multiharness for iOS, or paste this string into the manual pairing field.")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(pairingString)
+                        .font(.system(.caption, design: .monospaced))
+                        .padding(8)
+                        .background(.quaternary, in: RoundedRectangle(cornerRadius: 4))
+                        .textSelection(.enabled)
+                    Button("Copy") {
+                        let pb = NSPasteboard.general
+                        pb.clearContents()
+                        pb.setString(pairingString, forType: .string)
+                    }
+                }
+            }
+        }
+    }
+
+    private func makeQR(_ s: String) -> NSImage? {
+        guard let data = s.data(using: .utf8),
+              let filter = CIFilter(name: "CIQRCodeGenerator") else { return nil }
+        filter.setValue(data, forKey: "inputMessage")
+        filter.setValue("M", forKey: "inputCorrectionLevel")
+        guard let ci = filter.outputImage else { return nil }
+        let scale: CGFloat = 12
+        let scaled = ci.transformed(by: .init(scaleX: scale, y: scale))
+        let rep = NSCIImageRep(ciImage: scaled)
+        let img = NSImage(size: rep.size)
+        img.addRepresentation(rep)
+        return img
     }
 }

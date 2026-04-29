@@ -11,6 +11,17 @@ import { log } from "./logger.js";
 export type ServerOptions = {
   socketPath?: string;
   port?: number;
+  /**
+   * Hostname / IP to bind. Defaults to "127.0.0.1" so the server is loopback-
+   * only unless the operator explicitly opens it (e.g. "0.0.0.0" for LAN).
+   * Ignored when socketPath is set.
+   */
+  bind?: string;
+  /**
+   * Optional bearer token. If set, every WebSocket upgrade must carry
+   * `Authorization: Bearer <token>`. Required when bind is non-loopback.
+   */
+  authToken?: string;
   dataDir: string;
 };
 
@@ -51,8 +62,22 @@ export async function startServer(opts: ServerOptions): Promise<ServerHandle> {
   const dispatcher = new Dispatcher();
   registerMethods(dispatcher, registry);
 
+  const expectedAuth = opts.authToken ? `Bearer ${opts.authToken}` : null;
+  const isPrivateBind =
+    !opts.port || !opts.bind || opts.bind === "127.0.0.1" || opts.bind === "localhost";
+  if (!isPrivateBind && !expectedAuth) {
+    throw new Error("non-loopback bind requires authToken (refusing to expose unauthenticated control API)");
+  }
+
   const serveOptions: any = {
     fetch(req: Request, server: any) {
+      if (expectedAuth) {
+        const got = req.headers.get("authorization");
+        if (got !== expectedAuth) {
+          log.warn("rejected upgrade — bad token");
+          return new Response("unauthorized", { status: 401 });
+        }
+      }
       if (server.upgrade(req)) return;
       return new Response("multiharness-sidecar; use a WebSocket client", { status: 426 });
     },
@@ -80,7 +105,10 @@ export async function startServer(opts: ServerOptions): Promise<ServerHandle> {
     },
   };
   if (opts.socketPath) serveOptions.unix = opts.socketPath;
-  if (opts.port != null) serveOptions.port = opts.port;
+  if (opts.port != null) {
+    serveOptions.port = opts.port;
+    serveOptions.hostname = opts.bind ?? "127.0.0.1";
+  }
 
   const server = Bun.serve(serveOptions);
 

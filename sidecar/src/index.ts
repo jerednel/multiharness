@@ -34,7 +34,9 @@ if (portEnv && (port == null || Number.isNaN(port))) {
   process.exit(2);
 }
 
-const handle = await startServer({ socketPath, port, dataDir });
+const bind = process.env.MULTIHARNESS_BIND;
+const authToken = process.env.MULTIHARNESS_AUTH_TOKEN;
+const handle = await startServer({ socketPath, port, bind, authToken, dataDir });
 
 const shutdown = async () => {
   log.info("shutting down");

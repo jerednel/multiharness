@@ -16,6 +16,12 @@ public final class SidecarManager {
     public var onPortBound: ((Int) -> Void)?
 
     public let dataDir: URL
+    /// "127.0.0.1" by default. Set to "0.0.0.0" to expose on LAN.
+    public var bindAddress: String = "127.0.0.1"
+    /// Required when `bindAddress` is non-loopback. The sidecar refuses to
+    /// start unauthenticated on a non-loopback bind.
+    public var authToken: String?
+
     private var process: Process?
     private var stderrPipe: Pipe?
     private var stderrBuffer = Data()
@@ -67,11 +73,14 @@ public final class SidecarManager {
 
         let p = Process()
         p.executableURL = binary
+        var sidecarEnv: [String: String] = [
+            "MULTIHARNESS_PORT": "0",
+            "MULTIHARNESS_DATA_DIR": dataDir.path,
+            "MULTIHARNESS_BIND": bindAddress,
+        ]
+        if let token = authToken { sidecarEnv["MULTIHARNESS_AUTH_TOKEN"] = token }
         p.environment = ProcessInfo.processInfo.environment.merging(
-            [
-                "MULTIHARNESS_PORT": "0",
-                "MULTIHARNESS_DATA_DIR": dataDir.path,
-            ],
+            sidecarEnv,
             uniquingKeysWith: { _, new in new }
         )
         let stderr = Pipe()
