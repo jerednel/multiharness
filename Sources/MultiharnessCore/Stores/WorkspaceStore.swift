@@ -8,6 +8,11 @@ public final class WorkspaceStore {
     public var selectedWorkspaceId: UUID?
     public var lastError: String?
 
+    /// Cache of the latest `agent_end` timestamp observed in each workspace's
+    /// messages.jsonl. Populated on `load(projectId:)` and updated by callers
+    /// (e.g. AgentRegistryStore) on live `agent_end` events.
+    public var lastAssistantAt: [UUID: Date] = [:]
+
     private let env: AppEnvironment
 
     public init(env: AppEnvironment) {
@@ -20,6 +25,15 @@ public final class WorkspaceStore {
             if let id = selectedWorkspaceId, !workspaces.contains(where: { $0.id == id }) {
                 selectedWorkspaceId = nil
             }
+            // Refresh lastAssistantAt for every loaded workspace. Reads JSONL
+            // off-disk; cheap because each file is small (<1MB typical).
+            var fresh: [UUID: Date] = [:]
+            for w in workspaces {
+                if let ts = try? env.persistence.lastAssistantAt(workspaceId: w.id) {
+                    fresh[w.id] = ts
+                }
+            }
+            self.lastAssistantAt = fresh
         } catch {
             lastError = String(describing: error)
         }
@@ -60,6 +74,36 @@ public final class WorkspaceStore {
     public func selected() -> Workspace? {
         guard let id = selectedWorkspaceId else { return nil }
         return workspaces.first(where: { $0.id == id })
+    }
+
+    /// Mark a workspace as just-viewed: persist now() to last_viewed_at and
+    /// reflect it in the in-memory copy so unseen(_:) flips to false
+    /// immediately. Safe to call repeatedly.
+    public func markViewed(_ id: UUID) {
+        do {
+            try env.persistence.markWorkspaceViewed(id: id)
+            if let idx = workspaces.firstIndex(where: { $0.id == id }) {
+                workspaces[idx].lastViewedAt = Date()
+            }
+        } catch {
+            lastError = String(describing: error)
+        }
+    }
+
+    /// True iff this workspace's most recent `agent_end` happened after the
+    /// user last viewed it. Returns false when there's been no agent activity
+    /// at all.
+    public func unseen(_ ws: Workspace) -> Bool {
+        guard let lastEnd = lastAssistantAt[ws.id] else { return false }
+        guard let viewed = ws.lastViewedAt else { return true }
+        return lastEnd > viewed
+    }
+
+    /// Record a fresh `agent_end` for a workspace at the current wall-clock.
+    /// Called by AgentRegistryStore when it sees an `agent_end` event from
+    /// the sidecar.
+    public func recordAssistantEnd(workspaceId: UUID) {
+        lastAssistantAt[workspaceId] = Date()
     }
 
     @discardableResult
