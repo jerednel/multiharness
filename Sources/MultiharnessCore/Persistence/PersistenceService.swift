@@ -24,8 +24,8 @@ public final class PersistenceService: @unchecked Sendable {
     public func upsertProject(_ p: Project) throws {
         try db.executeUpdate(
             """
-            INSERT INTO projects (id, name, slug, repo_path, default_base_branch, default_provider_id, default_model_id, created_at, repo_bookmark)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO projects (id, name, slug, repo_path, default_base_branch, default_provider_id, default_model_id, default_build_mode, created_at, repo_bookmark)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
               name=excluded.name,
               slug=excluded.slug,
@@ -33,6 +33,7 @@ public final class PersistenceService: @unchecked Sendable {
               default_base_branch=excluded.default_base_branch,
               default_provider_id=excluded.default_provider_id,
               default_model_id=excluded.default_model_id,
+              default_build_mode=excluded.default_build_mode,
               repo_bookmark=excluded.repo_bookmark;
             """
         ) { st in
@@ -43,14 +44,15 @@ public final class PersistenceService: @unchecked Sendable {
             st.bind(5, p.defaultBaseBranch)
             st.bind(6, p.defaultProviderId?.uuidString)
             st.bind(7, p.defaultModelId)
-            st.bind(8, p.createdAt)
-            st.bind(9, p.repoBookmark)
+            st.bind(8, p.defaultBuildMode?.rawValue)
+            st.bind(9, p.createdAt)
+            st.bind(10, p.repoBookmark)
         }
     }
 
     public func listProjects() throws -> [Project] {
         try db.query(
-            "SELECT id, name, slug, repo_path, default_base_branch, default_provider_id, default_model_id, created_at, repo_bookmark FROM projects ORDER BY created_at ASC;",
+            "SELECT id, name, slug, repo_path, default_base_branch, default_provider_id, default_model_id, default_build_mode, created_at, repo_bookmark FROM projects ORDER BY created_at ASC;",
             rowMap: { st in
                 Project(
                     id: UUID(uuidString: st.requiredString(0))!,
@@ -60,8 +62,9 @@ public final class PersistenceService: @unchecked Sendable {
                     defaultBaseBranch: st.requiredString(4),
                     defaultProviderId: st.string(5).flatMap { UUID(uuidString: $0) },
                     defaultModelId: st.string(6),
-                    createdAt: st.requiredDate(7),
-                    repoBookmark: st.data(8)
+                    defaultBuildMode: st.string(7).flatMap(BuildMode.init(rawValue:)),
+                    createdAt: st.requiredDate(8),
+                    repoBookmark: st.data(9)
                 )
             }
         )
