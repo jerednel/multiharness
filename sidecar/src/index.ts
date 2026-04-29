@@ -19,6 +19,15 @@ if (!dataDir) {
 
 startParentPidWatchdog();
 
+// Defensive: never let an uncaught exception or unhandled rejection bring
+// the sidecar down silently. Both still get logged so we can investigate.
+process.on("uncaughtException", (err) => {
+  log.error("uncaughtException", { err: String(err), stack: (err as Error).stack });
+});
+process.on("unhandledRejection", (reason) => {
+  log.error("unhandledRejection", { reason: String(reason) });
+});
+
 const port = portEnv ? Number.parseInt(portEnv, 10) : undefined;
 if (portEnv && (port == null || Number.isNaN(port))) {
   console.error(`FATAL: MULTIHARNESS_PORT is not a number: ${portEnv}`);

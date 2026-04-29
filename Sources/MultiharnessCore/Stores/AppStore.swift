@@ -10,6 +10,9 @@ public final class AppStore {
     public var selectedProjectId: UUID?
     public var sidecarStatus: SidecarManager.Status = .stopped
     public var lastError: String?
+    /// Increments every time the sidecar (re)binds. Views observe this to
+    /// re-run their per-workspace `agent.create` after a sidecar restart.
+    public var sidecarBindingVersion: Int = 0
 
     private let env: AppEnvironment
 

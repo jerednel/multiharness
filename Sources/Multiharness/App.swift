@@ -38,13 +38,29 @@ struct MultiharnessApp: App {
         do {
             let dataDir = PersistenceService.defaultDataDir()
             let env = try AppEnvironment(dataDir: dataDir)
-            let port = try await env.sidecar.start()
-            let client = ControlClient(port: port)
-            client.delegate = agentRegistry
-            client.connect()
-            env.attachControl(client)
-
             let app = AppStore(env: env)
+            // Wire control-rebind BEFORE start() so the very first onPortBound
+            // event (fired by start) drives the same path as later restarts.
+            env.onControlChanged = { [weak app, weak agentRegistry] client in
+                client.delegate = agentRegistry
+                if let app {
+                    app.sidecarBindingVersion += 1
+                }
+                // Re-point each per-workspace store at the new client. Active
+                // sidecar sessions don't survive a restart, so the next prompt
+                // will trigger a fresh agent.create through ensureSession's
+                // .task(id: bindingVersion) hook.
+                if let agentRegistry {
+                    for store in agentRegistry.stores.values {
+                        store.bind(control: client)
+                    }
+                }
+            }
+
+            _ = try await env.sidecar.start()
+            // start() fires onPortBound which triggers onControlChanged above,
+            // so env.control is set by the time we get here.
+
             app.load()
             BuiltinSeeds.ensureBuiltinProviders(app: app)
 

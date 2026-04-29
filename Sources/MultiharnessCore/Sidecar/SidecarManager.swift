@@ -11,11 +11,20 @@ public final class SidecarManager {
 
     public private(set) var status: Status = .stopped
     public var onStatusChange: ((Status) -> Void)?
+    /// Fires whenever a freshly-started (or restarted) sidecar is ready,
+    /// carrying the new port. Consumers should re-bind their ControlClient.
+    public var onPortBound: ((Int) -> Void)?
 
     public let dataDir: URL
     private var process: Process?
     private var stderrPipe: Pipe?
     private var stderrBuffer = Data()
+
+    /// True when `stop()` was called explicitly. Used to suppress auto-restart.
+    private var explicitStop = false
+    /// Increments on each unintended exit; used for backoff.
+    private var restartAttempts = 0
+    private var restartTask: Task<Void, Never>?
 
     public init(dataDir: URL) {
         self.dataDir = dataDir
@@ -50,6 +59,7 @@ public final class SidecarManager {
 
     public func start() async throws -> Int {
         if case .running(let port) = status { return port }
+        explicitStop = false
         guard let binary = Self.locateBinary() else {
             throw SidecarError.binaryNotFound
         }
@@ -69,8 +79,6 @@ public final class SidecarManager {
         p.standardOutput = Pipe()
 
         let portWaiter = PortWaiter()
-        // Use FileHandle.readabilityHandler — fires on a private GCD queue when
-        // data becomes available. No async Tasks, no executor scheduling games.
         stderr.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let chunk = handle.availableData
             if chunk.isEmpty {
@@ -81,14 +89,60 @@ public final class SidecarManager {
         }
         stderrPipe = stderr
 
+        // Detect unintended exits and trigger auto-restart.
+        p.terminationHandler = { [weak self] proc in
+            // Hops onto MainActor — terminationHandler fires on a private queue.
+            Task { @MainActor [weak self] in
+                self?.onProcessExit(code: proc.terminationStatus)
+            }
+        }
+
         try p.run()
         process = p
         setStatus(.starting)
 
         // Wait up to 5 seconds for the READY line to be observed.
         let port = try await waitForReady(portWaiter: portWaiter, timeout: 5.0)
+        restartAttempts = 0    // success → reset backoff
         setStatus(.running(port: port))
+        onPortBound?(port)
         return port
+    }
+
+    private func onProcessExit(code: Int32) {
+        // Tear down the dead pipe so it doesn't leak.
+        stderrPipe?.fileHandleForReading.readabilityHandler = nil
+        stderrPipe = nil
+        let wasExplicit = explicitStop
+        process = nil
+        if wasExplicit {
+            setStatus(.stopped)
+            return
+        }
+        setStatus(.crashed(reason: "exit \(code)"))
+        // Schedule a restart with capped exponential backoff.
+        restartAttempts += 1
+        let delaySec = min(pow(2.0, Double(restartAttempts - 1)), 30.0)
+        FileHandle.standardError.write(
+            "[sidecar-mgr] crashed (exit \(code)); restarting in \(delaySec)s (attempt \(restartAttempts))\n"
+                .data(using: .utf8) ?? Data()
+        )
+        restartTask?.cancel()
+        restartTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(delaySec * 1_000_000_000))
+            guard let self else { return }
+            do {
+                _ = try await self.start()
+            } catch {
+                FileHandle.standardError.write(
+                    "[sidecar-mgr] restart failed: \(error)\n".data(using: .utf8) ?? Data()
+                )
+                // The next exit (which won't fire again because we never started)
+                // would normally re-arm. Since start() failed, we manually
+                // schedule another attempt by re-entering onProcessExit.
+                self.onProcessExit(code: -1)
+            }
+        }
     }
 
     nonisolated private func appendStderr(chunk: Data, waiter: PortWaiter) {
@@ -112,19 +166,21 @@ public final class SidecarManager {
     }
 
     public func stop() {
-        guard let p = process else { return }
+        explicitStop = true
+        restartTask?.cancel()
+        restartTask = nil
+        guard let p = process else {
+            setStatus(.stopped)
+            return
+        }
         p.terminate()
-        // Best-effort wait, then escalate.
+        // terminationHandler will hop in onProcessExit and call setStatus(.stopped).
         DispatchQueue.global().async {
             usleep(2_000_000)
             if p.isRunning { p.interrupt() }
             usleep(2_000_000)
             if p.isRunning { kill(p.processIdentifier, SIGKILL) }
         }
-        process = nil
-        stderrPipe?.fileHandleForReading.readabilityHandler = nil
-        stderrPipe = nil
-        setStatus(.stopped)
     }
 
     public func ping() async throws -> Bool {
@@ -163,16 +219,6 @@ public final class SidecarManager {
         let suffix = line[range.upperBound...]
         let digits = suffix.drop { !$0.isNumber }.prefix { $0.isNumber }
         return Int(digits)
-    }
-
-    private func handleSidecarExit() async {
-        await MainActor.run {
-            if let p = self.process, !p.isRunning {
-                let code = p.terminationStatus
-                self.process = nil
-                self.setStatus(.crashed(reason: "exit \(code)"))
-            }
-        }
     }
 
     private func setStatus(_ s: Status) {

@@ -55,4 +55,18 @@ export class AgentRegistry {
   async disposeAll(): Promise<void> {
     for (const id of [...this.sessions.keys()]) await this.dispose(id);
   }
+
+  /** Push a synthetic error event through the sink so the UI can stop showing
+   *  "Streaming…" forever when a prompt fails before any agent_end fires. */
+  emitError(workspaceId: string, message: string): void {
+    this.sink(workspaceId, {
+      type: "agent_error",
+      message,
+    } as unknown as Parameters<EventSink>[1]);
+    // Also synthesize agent_end so the UI's isStreaming flag clears.
+    this.sink(workspaceId, {
+      type: "agent_end",
+      messages: [],
+    } as unknown as Parameters<EventSink>[1]);
+  }
 }

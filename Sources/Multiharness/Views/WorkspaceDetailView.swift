@@ -19,6 +19,9 @@ struct WorkspaceDetailView: View {
             VStack(alignment: .leading, spacing: 0) {
                 WorkspaceBanner(workspace: workspace)
                     .padding(.horizontal, 16).padding(.vertical, 10)
+                if case let .crashed(reason) = appStore.sidecarStatus {
+                    SidecarCrashBanner(reason: reason)
+                }
                 Divider()
                 if let store = agentRegistry.ensureStore(workspaceId: workspace.id) {
                     ConversationView(store: store)
@@ -27,7 +30,7 @@ struct WorkspaceDetailView: View {
                         workspace: workspace,
                         store: store,
                         appStore: appStore,
-                        sessionReady: sessionReady,
+                        sessionReady: sessionReady && isSidecarHealthy,
                         sessionError: sessionError
                     )
                     .padding(12)
@@ -45,6 +48,16 @@ struct WorkspaceDetailView: View {
         .task(id: workspace.id) {
             await ensureSession()
         }
+        // Re-create the sidecar session whenever the sidecar (re)binds —
+        // a fresh sidecar process means our previous AgentSession is gone.
+        .task(id: appStore.sidecarBindingVersion) {
+            await ensureSession()
+        }
+    }
+
+    private var isSidecarHealthy: Bool {
+        if case .running = appStore.sidecarStatus { return true }
+        return false
     }
 
     @MainActor
@@ -153,6 +166,23 @@ private struct ConversationView: View {
     }
 
     private let thinkingCardId = "thinking-card"
+}
+
+private struct SidecarCrashBanner: View {
+    let reason: String
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.white)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Sidecar crashed").font(.callout).bold().foregroundStyle(.white)
+                Text("\(reason). Auto-restarting…").font(.caption).foregroundStyle(.white.opacity(0.85))
+            }
+            Spacer()
+            ProgressView().controlSize(.small).tint(.white)
+        }
+        .padding(.horizontal, 16).padding(.vertical, 10)
+        .background(Color.red)
+    }
 }
 
 private struct ThinkingCard: View {

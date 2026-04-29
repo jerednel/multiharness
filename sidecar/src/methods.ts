@@ -2,6 +2,7 @@ import type { Dispatcher } from "./dispatcher.js";
 import type { AgentRegistry } from "./agentRegistry.js";
 import type { ProviderConfig } from "./providers.js";
 import { listModels } from "./providers.js";
+import { log } from "./logger.js";
 
 const VERSION = "0.1.0";
 
@@ -23,15 +24,24 @@ export function registerMethods(d: Dispatcher, registry: AgentRegistry): void {
   d.register("agent.prompt", async (p) => {
     const workspaceId = requireString(p, "workspaceId");
     const message = requireString(p, "message");
-    // Don't await Agent.prompt — let it run; events stream over the WebSocket.
-    // Errors surface via the event stream as message_end with stopReason "error".
-    void registry.get(workspaceId).prompt(message);
+    // Don't await — events stream over the WebSocket. Catch all errors so
+    // a misbehaving provider/tool can never crash the sidecar; report them
+    // through the registry's sink as an `agent_error` event the UI can render.
+    registry.get(workspaceId).prompt(message).catch((err) => {
+      const reason = err instanceof Error ? err.message : String(err);
+      log.error("agent.prompt failed", { workspaceId, err: reason });
+      registry.emitError(workspaceId, reason);
+    });
     return { ok: true };
   });
 
   d.register("agent.continue", async (p) => {
     const workspaceId = requireString(p, "workspaceId");
-    void registry.get(workspaceId).continueRun();
+    registry.get(workspaceId).continueRun().catch((err) => {
+      const reason = err instanceof Error ? err.message : String(err);
+      log.error("agent.continue failed", { workspaceId, err: reason });
+      registry.emitError(workspaceId, reason);
+    });
     return { ok: true };
   });
 

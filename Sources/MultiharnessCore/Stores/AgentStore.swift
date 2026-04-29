@@ -69,6 +69,16 @@ public final class AgentStore {
             if let lastIdx = turns.indices.last {
                 turns[lastIdx].streaming = false
             }
+        case "agent_error":
+            let msg = (event.payload["message"] as? String) ?? "agent error"
+            lastError = msg
+            assistantTurnPending = false
+            // Surface the error as a turn so it survives in the transcript.
+            turns.append(ConversationTurn(
+                role: .assistant,
+                text: "⚠️ " + msg,
+                streaming: false
+            ))
         case "tool_execution_start":
             let name = event.payload["toolName"] as? String ?? "tool"
             let args = event.payload["args"]
