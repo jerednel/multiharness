@@ -1,9 +1,7 @@
 import Foundation
 
 public struct Migrations {
-    public static let all: [String] = [
-        // v1: initial schema
-        """
+    private static let v1 = """
         CREATE TABLE IF NOT EXISTS schema_version (
           version INTEGER PRIMARY KEY
         );
@@ -47,7 +45,12 @@ public struct Migrations {
           key TEXT PRIMARY KEY,
           value TEXT NOT NULL
         );
-        """,
+        """
+
+    public static let all: [String] = [
+        v1,
+        // v2: persist security-scoped bookmark for the repo path
+        "ALTER TABLE projects ADD COLUMN repo_bookmark BLOB;",
     ]
 
     public static func apply(_ db: Database) throws {

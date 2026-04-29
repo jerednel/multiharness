@@ -29,6 +29,13 @@ public final class AppStore {
         do {
             self.projects = try env.persistence.listProjects()
             self.providers = try env.persistence.listProviders()
+            // Reactivate persisted security-scoped bookmarks so subprocesses
+            // (git, file reads) stop re-prompting for Documents/Desktop access.
+            for proj in projects {
+                if let bm = proj.repoBookmark {
+                    _ = BookmarkScope.shared.resolve(id: proj.id, bookmark: bm)
+                }
+            }
             if selectedProjectId == nil {
                 selectedProjectId = projects.first?.id
             }
@@ -37,16 +44,33 @@ public final class AppStore {
         }
     }
 
-    public func addProject(name: String, repoPath: String, defaultBaseBranch: String) {
+    /// Add a project from a URL the user just picked via NSOpenPanel — this is
+    /// the moment to capture a security-scoped bookmark while the implicit
+    /// grant is still active.
+    public func addProject(name: String, repoURL: URL, defaultBaseBranch: String) {
+        var bookmark: Data?
+        do {
+            bookmark = try BookmarkScope.makeBookmark(for: repoURL)
+        } catch {
+            // If bookmarking fails (e.g. URL is no longer accessible), fall
+            // through and persist with no bookmark — we'll re-prompt later.
+            FileHandle.standardError.write(
+                "[app] bookmark for \(repoURL.path) failed: \(error)\n".data(using: .utf8) ?? Data()
+            )
+        }
         let p = Project(
             name: name,
             slug: slugify(name),
-            repoPath: repoPath,
-            defaultBaseBranch: defaultBaseBranch.isEmpty ? "main" : defaultBaseBranch
+            repoPath: repoURL.path,
+            defaultBaseBranch: defaultBaseBranch.isEmpty ? "main" : defaultBaseBranch,
+            repoBookmark: bookmark
         )
         do {
             try env.persistence.upsertProject(p)
             projects.append(p)
+            if let bm = bookmark {
+                _ = BookmarkScope.shared.resolve(id: p.id, bookmark: bm)
+            }
             if selectedProjectId == nil { selectedProjectId = p.id }
         } catch {
             lastError = String(describing: error)
@@ -55,6 +79,7 @@ public final class AppStore {
 
     public func removeProject(_ project: Project) {
         do {
+            BookmarkScope.shared.release(id: project.id)
             try env.persistence.deleteProject(id: project.id)
             projects.removeAll { $0.id == project.id }
             if selectedProjectId == project.id {

@@ -7,7 +7,7 @@ struct NewProjectSheet: View {
     @Binding var isPresented: Bool
 
     @State private var name: String = ""
-    @State private var repoPath: String = ""
+    @State private var repoURL: URL?
     @State private var baseBranch: String = "main"
     @State private var error: String?
 
@@ -17,8 +17,11 @@ struct NewProjectSheet: View {
             Form {
                 TextField("Name", text: $name)
                 HStack {
-                    TextField("Repo path", text: $repoPath)
+                    Text(repoURL?.path ?? "(none)")
                         .truncationMode(.head)
+                        .lineLimit(1)
+                        .foregroundStyle(repoURL == nil ? .secondary : .primary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     Button("Browse…") {
                         let panel = NSOpenPanel()
                         panel.canChooseFiles = false
@@ -26,7 +29,7 @@ struct NewProjectSheet: View {
                         panel.allowsMultipleSelection = false
                         panel.prompt = "Select repo"
                         if panel.runModal() == .OK, let url = panel.url {
-                            repoPath = url.path
+                            repoURL = url
                             if name.isEmpty { name = url.lastPathComponent }
                         }
                     }
@@ -41,27 +44,29 @@ struct NewProjectSheet: View {
                 Button("Cancel") { isPresented = false }
                 Button("Create") { commit() }
                     .keyboardShortcut(.defaultAction)
-                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty
-                              || repoPath.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || repoURL == nil)
             }
         }
         .padding(24).frame(width: 520)
     }
 
     private func commit() {
-        let trimmedPath = repoPath.trimmingCharacters(in: .whitespaces)
+        guard let url = repoURL else {
+            error = "Pick a repo directory."
+            return
+        }
         var isDir: ObjCBool = false
-        let exists = FileManager.default.fileExists(atPath: trimmedPath, isDirectory: &isDir)
+        let exists = FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
         guard exists, isDir.boolValue else {
             error = "Repo path does not exist or is not a directory."
             return
         }
-        let gitDir = (trimmedPath as NSString).appendingPathComponent(".git")
+        let gitDir = url.appendingPathComponent(".git").path
         guard FileManager.default.fileExists(atPath: gitDir) else {
             error = "Selected directory is not a git repository (no .git found)."
             return
         }
-        appStore.addProject(name: name, repoPath: trimmedPath, defaultBaseBranch: baseBranch)
+        appStore.addProject(name: name, repoURL: url, defaultBaseBranch: baseBranch)
         isPresented = false
     }
 }

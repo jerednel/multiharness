@@ -32,6 +32,10 @@ public struct Project: Codable, Identifiable, Sendable, Equatable, Hashable {
     public var defaultProviderId: UUID?
     public var defaultModelId: String?
     public var createdAt: Date
+    /// macOS security-scoped bookmark to the repo URL. Captured from
+    /// `NSOpenPanel`'s implicit grant; resolved at app launch to suppress
+    /// repeated TCC prompts for protected directories (Documents, Desktop, etc.).
+    public var repoBookmark: Data?
 
     public init(
         id: UUID = UUID(),
@@ -41,7 +45,8 @@ public struct Project: Codable, Identifiable, Sendable, Equatable, Hashable {
         defaultBaseBranch: String = "main",
         defaultProviderId: UUID? = nil,
         defaultModelId: String? = nil,
-        createdAt: Date = Date()
+        createdAt: Date = Date(),
+        repoBookmark: Data? = nil
     ) {
         self.id = id
         self.name = name
@@ -51,6 +56,7 @@ public struct Project: Codable, Identifiable, Sendable, Equatable, Hashable {
         self.defaultProviderId = defaultProviderId
         self.defaultModelId = defaultModelId
         self.createdAt = createdAt
+        self.repoBookmark = repoBookmark
     }
 }
 

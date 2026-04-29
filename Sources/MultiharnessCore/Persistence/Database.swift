@@ -110,6 +110,24 @@ public final class Statement {
         }
     }
 
+    public func bind(_ idx: Int32, _ v: Data?) {
+        if let v {
+            v.withUnsafeBytes { (ptr: UnsafeRawBufferPointer) in
+                _ = sqlite3_bind_blob(handle, idx, ptr.baseAddress, Int32(v.count), SQLITE_TRANSIENT)
+            }
+        } else {
+            sqlite3_bind_null(handle, idx)
+        }
+    }
+
+    public func data(_ idx: Int32) -> Data? {
+        if sqlite3_column_type(handle, idx) == SQLITE_NULL { return nil }
+        let bytes = sqlite3_column_blob(handle, idx)
+        let len = Int(sqlite3_column_bytes(handle, idx))
+        guard let bytes else { return Data() }
+        return Data(bytes: bytes, count: len)
+    }
+
     public func bind(_ idx: Int32, _ v: Date?) {
         if let v {
             sqlite3_bind_int64(handle, idx, Int64(v.timeIntervalSince1970 * 1000))
