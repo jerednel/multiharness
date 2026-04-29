@@ -142,3 +142,43 @@ export async function hasOpenAICodexCreds(store: OAuthStore): Promise<boolean> {
   const creds = await store.load("openai-codex");
   return Boolean(creds && creds.refresh);
 }
+
+// ── Anthropic Console (API Usage Billing) ─────────────────────────────────
+
+const CONSOLE_API_KEY_MINT_URL =
+  "https://api.anthropic.com/api/oauth/claude_cli/create_api_key";
+
+/**
+ * Exchange an Anthropic OAuth access token for a real Console API key
+ * (`sk-ant-api03-…`). The minted key is owned by the user's Console org
+ * and bills as ordinary API usage from that point on.
+ *
+ * Exported separately from {@link startAnthropicConsoleLogin} so it can
+ * be unit-tested without invoking the real OAuth dance.
+ */
+export async function mintAnthropicApiKey(accessToken: string): Promise<string> {
+  const res = await fetch(CONSOLE_API_KEY_MINT_URL, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+      "Accept": "application/json",
+    },
+    body: JSON.stringify({}),
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(
+      `Anthropic Console API key mint failed. status=${res.status}; body=${body}`,
+    );
+  }
+  const data = (await res.json()) as { raw_key?: string; key?: string };
+  const key = data.raw_key ?? data.key;
+  if (!key || !key.startsWith("sk-ant-api")) {
+    throw new Error(
+      `Anthropic Console API key mint returned unexpected payload: ${JSON.stringify(data)}`,
+    );
+  }
+  return key;
+}
