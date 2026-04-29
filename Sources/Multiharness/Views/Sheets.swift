@@ -425,17 +425,29 @@ private struct PermissionsTab: View {
             }
 
             Divider()
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 6) {
                 Text("Power-user shortcut").font(.headline)
-                Text("System Settings → Privacy & Security → Full Disk Access → add Multiharness. Skips every Documents/Desktop prompt — appropriate if you want the iPhone to drive your Mac unattended.")
+                Text("Grant Multiharness Full Disk Access and you'll never see TCC prompts again — appropriate if you want the iPhone to drive your Mac unattended.")
                     .font(.callout).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                Button {
-                    if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
-                        NSWorkspace.shared.open(url)
+                Text("macOS doesn't pre-list apps; you have to add Multiharness manually:")
+                    .font(.callout)
+                Text("1. Click \"Reveal Multiharness.app\" below — Finder opens with the bundle selected.\n2. Click \"Open Full Disk Access settings.\"\n3. Click the \"+\" button in the FDA list, drag Multiharness.app from the Finder window into the list (or use the file picker).\n4. Quit and relaunch Multiharness.")
+                    .font(.caption).foregroundStyle(.secondary)
+                HStack(spacing: 8) {
+                    Button {
+                        let appURL = Bundle.main.bundleURL
+                        NSWorkspace.shared.activateFileViewerSelecting([appURL])
+                    } label: {
+                        Label("Reveal Multiharness.app", systemImage: "magnifyingglass")
                     }
-                } label: {
-                    Label("Open Full Disk Access settings", systemImage: "lock.open")
+                    Button {
+                        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    } label: {
+                        Label("Open Full Disk Access settings", systemImage: "lock.open")
+                    }
                 }
             }
         }
