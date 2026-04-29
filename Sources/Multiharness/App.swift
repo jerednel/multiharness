@@ -138,6 +138,13 @@ final class AgentRegistryStore: NSObject, ControlClientDelegate {
             }
             return
         }
+        if event.type == "openai_auth_url" {
+            let urlString = event.payload["url"] as? String
+            Task { @MainActor in
+                if let urlString { self.appStore?.openOpenAIAuthURL(urlString) }
+            }
+            return
+        }
         Task { @MainActor in
             guard let id = UUID(uuidString: event.workspaceId) else { return }
             self.stores[id]?.handleEvent(event)

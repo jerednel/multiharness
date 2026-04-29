@@ -30,6 +30,12 @@ export type ProviderConfig =
       modelId: string;
     }
   | {
+      /** OpenAI Codex OAuth (ChatGPT Plus/Pro). Same token-refresh
+       *  pattern as anthropic-oauth — caller doesn't pass an apiKey. */
+      kind: "openai-codex-oauth";
+      modelId: string;
+    }
+  | {
       kind: "pi-known";
       provider: KnownProvider;
       modelId: string;
@@ -57,16 +63,23 @@ const DEFAULT_MAX_TOKENS = 16_000;
 
 export function buildModel(cfg: ProviderConfig): Model<any> {
   if (cfg.kind === "anthropic-oauth") {
-    // pi-ai's anthropic provider expects a model handle from the registry.
-    // The OAuth path uses the same baseUrl as the API-key path; the only
-    // difference is the apiKey resolved at runtime via getApiKey on the
-    // Agent.
     const m = getModel("anthropic" as any, cfg.modelId as any) as
       | Model<any>
       | undefined;
     if (!m) {
       throw new Error(
         `pi-ai has no Anthropic model "${cfg.modelId}" registered`,
+      );
+    }
+    return m;
+  }
+  if (cfg.kind === "openai-codex-oauth") {
+    const m = getModel("openai-codex" as any, cfg.modelId as any) as
+      | Model<any>
+      | undefined;
+    if (!m) {
+      throw new Error(
+        `pi-ai has no openai-codex model "${cfg.modelId}" registered`,
       );
     }
     return m;
@@ -116,7 +129,7 @@ export function buildModel(cfg: ProviderConfig): Model<any> {
 }
 
 export function apiKeyFor(cfg: ProviderConfig): string | undefined {
-  if (cfg.kind === "anthropic-oauth") return undefined;
+  if (cfg.kind === "anthropic-oauth" || cfg.kind === "openai-codex-oauth") return undefined;
   return cfg.apiKey;
 }
 
@@ -135,8 +148,12 @@ export type DiscoveredModel = {
  *   provided api key, returns whatever the server enumerates.
  */
 export async function listModels(cfg: ProviderConfig): Promise<DiscoveredModel[]> {
-  if (cfg.kind === "pi-known" || cfg.kind === "anthropic-oauth") {
-    const provider = cfg.kind === "pi-known" ? cfg.provider : "anthropic";
+  if (cfg.kind === "pi-known"
+      || cfg.kind === "anthropic-oauth"
+      || cfg.kind === "openai-codex-oauth") {
+    const provider = cfg.kind === "pi-known" ? cfg.provider
+      : cfg.kind === "anthropic-oauth" ? "anthropic"
+      : "openai-codex";
     const models = getModels(provider as any) as Array<Model<any>>;
     return models.map((m) => ({
       id: m.id,

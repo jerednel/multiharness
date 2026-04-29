@@ -3,7 +3,11 @@ import { buildModel, apiKeyFor, type ProviderConfig } from "./providers.js";
 import { buildTools } from "./tools/index.js";
 import { JsonlWriter } from "./jsonl.js";
 import { log } from "./logger.js";
-import { getAnthropicAccessToken, type OAuthStore } from "./oauthStore.js";
+import {
+  getAnthropicAccessToken,
+  getOpenAICodexAccessToken,
+  type OAuthStore,
+} from "./oauthStore.js";
 
 export type EventSink = (workspaceId: string, ev: AgentEvent) => void;
 
@@ -49,6 +53,12 @@ export class AgentSession {
             throw new Error("anthropic-oauth requires oauthStore");
           }
           return await getAnthropicAccessToken(opts.oauthStore);
+        }
+        if (cfg.kind === "openai-codex-oauth") {
+          if (!opts.oauthStore) {
+            throw new Error("openai-codex-oauth requires oauthStore");
+          }
+          return await getOpenAICodexAccessToken(opts.oauthStore);
         }
         return staticKey;
       },

@@ -23,6 +23,9 @@ public final class AppStore {
     /// True while an Anthropic OAuth login is in flight.
     public var anthropicLoginInProgress: Bool = false
     public var anthropicLoginError: String?
+    /// True while a ChatGPT (OpenAI Codex) OAuth login is in flight.
+    public var openaiLoginInProgress: Bool = false
+    public var openaiLoginError: String?
 
     private let env: AppEnvironment
 
@@ -268,6 +271,11 @@ public final class AppStore {
                 "kind": "anthropic-oauth",
                 "modelId": modelId,
             ]
+        case .openaiCodexOauth:
+            return [
+                "kind": "openai-codex-oauth",
+                "modelId": modelId,
+            ]
         }
     }
 
@@ -307,6 +315,40 @@ public final class AppStore {
 
     /// Called by the registry when an `anthropic_auth_url` event arrives.
     public func openAnthropicAuthURL(_ url: String) {
+        openExternalURL(url)
+    }
+
+    /// Same flow as signInWithAnthropic but for ChatGPT (OpenAI Codex).
+    public func signInWithChatGPT() async {
+        guard let client = env.control else {
+            openaiLoginError = "control client not connected"
+            return
+        }
+        openaiLoginInProgress = true
+        openaiLoginError = nil
+        defer { openaiLoginInProgress = false }
+        do {
+            _ = try await client.call(method: "auth.openai.start", params: [:])
+            if !providers.contains(where: { $0.kind == .openaiCodexOauth }) {
+                addProvider(
+                    name: "ChatGPT (OAuth)",
+                    kind: .openaiCodexOauth,
+                    piProvider: "openai-codex",
+                    baseUrl: nil,
+                    defaultModelId: nil,
+                    apiKey: nil
+                )
+            }
+        } catch {
+            openaiLoginError = String(describing: error)
+        }
+    }
+
+    public func openOpenAIAuthURL(_ url: String) {
+        openExternalURL(url)
+    }
+
+    private func openExternalURL(_ url: String) {
         if let u = URL(string: url) {
             #if canImport(AppKit)
             NSWorkspace.shared.open(u)

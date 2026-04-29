@@ -7,7 +7,9 @@ import { DataReader } from "./dataReader.js";
 import type { Relay } from "./relay.js";
 import {
   hasAnthropicCreds,
+  hasOpenAICodexCreds,
   startAnthropicLogin,
+  startOpenAICodexLogin,
   type OAuthStore,
 } from "./oauthStore.js";
 import { formatEvent } from "./rpc.js";
@@ -105,11 +107,6 @@ export function registerMethods(
   }));
 
   d.register("auth.anthropic.start", async () => {
-    // Kick off the OAuth flow. Surface the auth URL to all connected
-    // clients via an event so the Mac UI can open it in the user's
-    // browser. The login() promise resolves when the local callback
-    // server receives the redirect — we await it so the caller knows
-    // when login has completed.
     try {
       await startAnthropicLogin(oauthStore, (url) => {
         sink("", { type: "anthropic_auth_url", url });
@@ -120,6 +117,25 @@ export function registerMethods(
       const reason = e instanceof Error ? e.message : String(e);
       log.error("anthropic oauth login failed", { reason });
       sink("", { type: "anthropic_auth_complete", ok: false, error: reason });
+      throw e;
+    }
+  });
+
+  d.register("auth.openai.status", async () => ({
+    loggedIn: await hasOpenAICodexCreds(oauthStore),
+  }));
+
+  d.register("auth.openai.start", async () => {
+    try {
+      await startOpenAICodexLogin(oauthStore, (url) => {
+        sink("", { type: "openai_auth_url", url });
+      });
+      sink("", { type: "openai_auth_complete", ok: true });
+      return { ok: true };
+    } catch (e) {
+      const reason = e instanceof Error ? e.message : String(e);
+      log.error("openai-codex oauth login failed", { reason });
+      sink("", { type: "openai_auth_complete", ok: false, error: reason });
       throw e;
     }
   });

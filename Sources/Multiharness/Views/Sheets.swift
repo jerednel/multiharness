@@ -289,29 +289,57 @@ private struct ProvidersTab: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Providers").font(.title3).bold()
-            HStack(spacing: 8) {
-                Button {
-                    Task { await appStore.signInWithAnthropic() }
-                } label: {
-                    HStack(spacing: 6) {
-                        if appStore.anthropicLoginInProgress {
-                            ProgressView().controlSize(.small)
-                        } else {
-                            Image(systemName: "sparkles")
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    Button {
+                        Task { await appStore.signInWithAnthropic() }
+                    } label: {
+                        HStack(spacing: 6) {
+                            if appStore.anthropicLoginInProgress {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Image(systemName: "sparkles")
+                            }
+                            Text(appStore.providers.contains(where: { $0.kind == .anthropicOauth })
+                                 ? "Re-authenticate Claude"
+                                 : "Sign in with Claude")
                         }
-                        Text(appStore.providers.contains(where: { $0.kind == .anthropicOauth })
-                             ? "Re-authenticate Claude"
-                             : "Sign in with Claude")
                     }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.purple)
+                    .disabled(appStore.anthropicLoginInProgress)
+                    if let err = appStore.anthropicLoginError {
+                        Text(err).font(.caption).foregroundStyle(.red).lineLimit(2)
+                    } else if appStore.providers.contains(where: { $0.kind == .anthropicOauth }) {
+                        Text("Signed in").font(.caption).foregroundStyle(.green)
+                    }
+                    Spacer()
                 }
-                .buttonStyle(.borderedProminent)
-                .disabled(appStore.anthropicLoginInProgress)
-                if let err = appStore.anthropicLoginError {
-                    Text(err).font(.caption).foregroundStyle(.red).lineLimit(2)
-                } else if appStore.providers.contains(where: { $0.kind == .anthropicOauth }) {
-                    Text("Signed in").font(.caption).foregroundStyle(.green)
+                HStack(spacing: 8) {
+                    Button {
+                        Task { await appStore.signInWithChatGPT() }
+                    } label: {
+                        HStack(spacing: 6) {
+                            if appStore.openaiLoginInProgress {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Image(systemName: "bubble.left.and.bubble.right")
+                            }
+                            Text(appStore.providers.contains(where: { $0.kind == .openaiCodexOauth })
+                                 ? "Re-authenticate ChatGPT"
+                                 : "Sign in with ChatGPT")
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.green)
+                    .disabled(appStore.openaiLoginInProgress)
+                    if let err = appStore.openaiLoginError {
+                        Text(err).font(.caption).foregroundStyle(.red).lineLimit(2)
+                    } else if appStore.providers.contains(where: { $0.kind == .openaiCodexOauth }) {
+                        Text("Signed in").font(.caption).foregroundStyle(.green)
+                    }
+                    Spacer()
                 }
-                Spacer()
             }
             ScrollView {
                 VStack(spacing: 4) {

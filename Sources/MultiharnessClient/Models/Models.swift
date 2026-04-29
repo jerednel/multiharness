@@ -110,6 +110,8 @@ public enum ProviderKind: String, Codable, Sendable, Equatable {
     /// Anthropic OAuth (Claude Pro/Max). Tokens managed by the sidecar's
     /// OAuth store; no API key in Keychain.
     case anthropicOauth = "anthropic-oauth"
+    /// OpenAI Codex OAuth (ChatGPT Plus/Pro).
+    case openaiCodexOauth = "openai-codex-oauth"
 }
 
 public struct ProviderRecord: Codable, Identifiable, Sendable, Equatable, Hashable {
@@ -195,6 +197,14 @@ public struct ProviderPreset: Sendable, Identifiable, Equatable {
             kind: .anthropicOauth,
             piProvider: "anthropic",
             docsUrl: "https://claude.ai",
+            noKeyRequired: true
+        ),
+        ProviderPreset(
+            id: "openai-codex-oauth",
+            displayName: "Sign in with ChatGPT (Plus/Pro)",
+            kind: .openaiCodexOauth,
+            piProvider: "openai-codex",
+            docsUrl: "https://chat.openai.com",
             noKeyRequired: true
         ),
         ProviderPreset(
