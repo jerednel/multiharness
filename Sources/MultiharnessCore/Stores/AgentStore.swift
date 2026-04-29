@@ -99,6 +99,21 @@ public final class AgentStore {
     /// an empty card.
     private var assistantTurnPending = false
 
+    /// Force-clear streaming flags. Used when the underlying ControlClient
+    /// disconnects mid-turn (sidecar crash, network blip). Caller is the
+    /// AgentRegistryStore via its delegate path.
+    public func cancelInFlight() {
+        if isStreaming || assistantTurnPending {
+            isStreaming = false
+            assistantTurnPending = false
+            for i in turns.indices { turns[i].streaming = false }
+            turns.append(ConversationTurn(
+                role: .assistant,
+                text: "⚠️ Connection to the agent dropped mid-response. The session was reopened; please try again."
+            ))
+        }
+    }
+
     public func handleEvent(_ event: AgentEventEnvelope) {
         guard event.workspaceId == workspaceId.uuidString else { return }
         switch event.type {

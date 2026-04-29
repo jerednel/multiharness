@@ -119,7 +119,13 @@ final class AgentRegistryStore: NSObject, ControlClientDelegate {
 
     nonisolated func controlClientDidDisconnect(_ client: ControlClient, error: Error?) {
         Task { @MainActor in
-            for store in self.stores.values { store.connectionState = "disconnected" }
+            for store in self.stores.values {
+                store.connectionState = "disconnected"
+                // Any in-flight turn is gone — clear the perpetual-spinner
+                // state so the UI doesn't show "Streaming…" forever after
+                // a sidecar crash mid-turn.
+                store.cancelInFlight()
+            }
         }
     }
 }

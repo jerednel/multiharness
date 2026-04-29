@@ -28,6 +28,23 @@ process.on("unhandledRejection", (reason) => {
   log.error("unhandledRejection", { reason: String(reason) });
 });
 
+// Log signal-driven exits. SIGKILL bypasses this, but anything else
+// (SIGTERM, SIGINT, SIGABRT, SIGPIPE) leaves a breadcrumb.
+for (const sig of ["SIGTERM", "SIGINT", "SIGABRT", "SIGPIPE", "SIGSEGV"] as const) {
+  process.on(sig, () => {
+    log.error(`received ${sig}`, { sig });
+  });
+}
+
+// Periodically log memory usage so OOM kills have context.
+setInterval(() => {
+  const m = process.memoryUsage();
+  log.debug("mem", {
+    rssMB: Math.round(m.rss / 1024 / 1024),
+    heapUsedMB: Math.round(m.heapUsed / 1024 / 1024),
+  });
+}, 30_000).unref();
+
 const port = portEnv ? Number.parseInt(portEnv, 10) : undefined;
 if (portEnv && (port == null || Number.isNaN(port))) {
   console.error(`FATAL: MULTIHARNESS_PORT is not a number: ${portEnv}`);
