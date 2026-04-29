@@ -98,6 +98,7 @@ public struct Workspace: Codable, Identifiable, Sendable, Equatable, Hashable {
     public var lifecycleState: LifecycleState
     public var providerId: UUID
     public var modelId: String
+    public var buildMode: BuildMode?
     public var createdAt: Date
     public var archivedAt: Date?
 
@@ -112,6 +113,7 @@ public struct Workspace: Codable, Identifiable, Sendable, Equatable, Hashable {
         lifecycleState: LifecycleState = .inProgress,
         providerId: UUID,
         modelId: String,
+        buildMode: BuildMode? = nil,
         createdAt: Date = Date(),
         archivedAt: Date? = nil
     ) {
@@ -125,8 +127,17 @@ public struct Workspace: Codable, Identifiable, Sendable, Equatable, Hashable {
         self.lifecycleState = lifecycleState
         self.providerId = providerId
         self.modelId = modelId
+        self.buildMode = buildMode
         self.createdAt = createdAt
         self.archivedAt = archivedAt
+    }
+
+    /// Resolves the effective build mode using the precedence chain:
+    /// `workspace.buildMode → project.defaultBuildMode → .primary`.
+    public func effectiveBuildMode(in project: Project) -> BuildMode {
+        if let m = buildMode { return m }
+        if let m = project.defaultBuildMode { return m }
+        return .primary
     }
 }
 
