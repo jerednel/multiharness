@@ -24,6 +24,7 @@ function makeOpts(overrides: Partial<AgentSessionOptions> = {}): AgentSessionOpt
     },
     jsonlPath: join(dataDir, "messages.jsonl"),
     sink: () => {},
+    nameSource: "named",
     ...overrides,
   };
 }

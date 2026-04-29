@@ -135,8 +135,8 @@ public final class PersistenceService: @unchecked Sendable {
     public func upsertWorkspace(_ w: Workspace) throws {
         try db.executeUpdate(
             """
-            INSERT INTO workspaces (id, project_id, name, slug, branch_name, base_branch, worktree_path, lifecycle_state, provider_id, model_id, build_mode, created_at, archived_at, context_instructions)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO workspaces (id, project_id, name, slug, branch_name, base_branch, worktree_path, lifecycle_state, provider_id, model_id, build_mode, created_at, archived_at, name_source, context_instructions)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
               name=excluded.name,
               slug=excluded.slug,
@@ -148,6 +148,7 @@ public final class PersistenceService: @unchecked Sendable {
               model_id=excluded.model_id,
               build_mode=excluded.build_mode,
               archived_at=excluded.archived_at,
+              name_source=excluded.name_source,
               context_instructions=excluded.context_instructions;
             """
         ) { st in
@@ -164,16 +165,17 @@ public final class PersistenceService: @unchecked Sendable {
             st.bind(11, w.buildMode?.rawValue)
             st.bind(12, w.createdAt)
             st.bind(13, w.archivedAt)
-            st.bind(14, w.contextInstructions)
+            st.bind(14, w.nameSource.rawValue)
+            st.bind(15, w.contextInstructions)
         }
     }
 
     public func listWorkspaces(projectId: UUID? = nil) throws -> [Workspace] {
         let sql: String
         if projectId != nil {
-            sql = "SELECT id, project_id, name, slug, branch_name, base_branch, worktree_path, lifecycle_state, provider_id, model_id, build_mode, created_at, archived_at, context_instructions FROM workspaces WHERE project_id = ? ORDER BY created_at DESC;"
+            sql = "SELECT id, project_id, name, slug, branch_name, base_branch, worktree_path, lifecycle_state, provider_id, model_id, build_mode, created_at, archived_at, name_source, context_instructions FROM workspaces WHERE project_id = ? ORDER BY created_at DESC;"
         } else {
-            sql = "SELECT id, project_id, name, slug, branch_name, base_branch, worktree_path, lifecycle_state, provider_id, model_id, build_mode, created_at, archived_at, context_instructions FROM workspaces ORDER BY created_at DESC;"
+            sql = "SELECT id, project_id, name, slug, branch_name, base_branch, worktree_path, lifecycle_state, provider_id, model_id, build_mode, created_at, archived_at, name_source, context_instructions FROM workspaces ORDER BY created_at DESC;"
         }
         return try db.query(
             sql,
@@ -195,7 +197,8 @@ public final class PersistenceService: @unchecked Sendable {
                     buildMode: st.string(10).flatMap(BuildMode.init(rawValue:)),
                     createdAt: st.requiredDate(11),
                     archivedAt: st.date(12),
-                    contextInstructions: st.string(13) ?? ""
+                    nameSource: st.string(13).flatMap(NameSource.init(rawValue:)) ?? .random,
+                    contextInstructions: st.string(14) ?? ""
                 )
             }
         )

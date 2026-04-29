@@ -107,6 +107,36 @@ final class PersistenceTests: XCTestCase {
         XCTAssertEqual(workspaces.first?.buildMode, .primary)
     }
 
+    func testNameSourceRoundtrip() throws {
+        let dir = try tempDir()
+        let svc = try PersistenceService(dataDir: dir)
+        let proj = Project(name: "P", slug: "p", repoPath: "/tmp/p")
+        try svc.upsertProject(proj)
+        let prov = ProviderRecord(name: "L", kind: .openaiCompatible, baseUrl: "http://x")
+        try svc.upsertProvider(prov)
+        // Default round-trips as .random.
+        let randomWs = Workspace(
+            projectId: proj.id,
+            name: "Lucky Otter", slug: "lucky-otter",
+            branchName: "u/lucky-otter", baseBranch: "main", worktreePath: "/tmp/wa",
+            providerId: prov.id, modelId: "m"
+        )
+        try svc.upsertWorkspace(randomWs)
+        // Explicit .named round-trips as .named.
+        let namedWs = Workspace(
+            projectId: proj.id,
+            name: "Manual Title", slug: "manual-title",
+            branchName: "u/manual-title", baseBranch: "main", worktreePath: "/tmp/wb",
+            providerId: prov.id, modelId: "m",
+            nameSource: .named
+        )
+        try svc.upsertWorkspace(namedWs)
+        let loaded = try svc.listWorkspaces(projectId: proj.id)
+        let byId = Dictionary(uniqueKeysWithValues: loaded.map { ($0.id, $0) })
+        XCTAssertEqual(byId[randomWs.id]?.nameSource, .random)
+        XCTAssertEqual(byId[namedWs.id]?.nameSource, .named)
+    }
+
     func testNullBuildModeStaysNull() throws {
         let dir = try tempDir()
         let svc = try PersistenceService(dataDir: dir)

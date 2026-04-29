@@ -86,6 +86,7 @@ public final class AppStore {
             "worktreePath": workspace.worktreePath,
             "buildMode": mode.rawValue,
             "providerConfig": cfg,
+            "nameSource": workspace.nameSource.rawValue,
             "projectContext": project.contextInstructions,
             "workspaceContext": workspace.contextInstructions,
         ]

@@ -180,6 +180,17 @@ public final class ConnectionStore: NSObject, ControlClientDelegate {
     // MARK: ControlClientDelegate
 
     nonisolated public func controlClient(_ client: ControlClient, didReceiveEvent event: AgentEventEnvelope) {
+        if event.type == "workspace_updated" {
+            let wsId = event.workspaceId
+            let newName = event.payload["name"] as? String
+            Task { @MainActor in
+                guard let newName, !newName.isEmpty else { return }
+                if let idx = self.workspaces.firstIndex(where: { $0.id == wsId }) {
+                    self.workspaces[idx] = self.workspaces[idx].withName(newName)
+                }
+            }
+            return
+        }
         Task { @MainActor in
             self.agents[event.workspaceId]?.handleEvent(event)
         }
@@ -226,6 +237,36 @@ public struct RemoteWorkspace: Identifiable, Sendable, Hashable {
         self.lifecycleState = json["lifecycleState"] as? String ?? "in_progress"
         self.projectId = json["projectId"] as? String ?? ""
         self.contextInstructions = json["contextInstructions"] as? String ?? ""
+    }
+
+    init(
+        id: String,
+        name: String,
+        branchName: String,
+        baseBranch: String,
+        lifecycleState: String,
+        projectId: String,
+        contextInstructions: String
+    ) {
+        self.id = id
+        self.name = name
+        self.branchName = branchName
+        self.baseBranch = baseBranch
+        self.lifecycleState = lifecycleState
+        self.projectId = projectId
+        self.contextInstructions = contextInstructions
+    }
+
+    func withName(_ newName: String) -> RemoteWorkspace {
+        RemoteWorkspace(
+            id: id,
+            name: newName,
+            branchName: branchName,
+            baseBranch: baseBranch,
+            lifecycleState: lifecycleState,
+            projectId: projectId,
+            contextInstructions: contextInstructions
+        )
     }
 }
 

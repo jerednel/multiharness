@@ -1,8 +1,9 @@
 import { join } from "node:path";
-import { AgentSession, type EventSink } from "./agentSession.js";
+import { AgentSession, type EventSink, type RequestRename } from "./agentSession.js";
 import type { ProviderConfig } from "./providers.js";
 import type { OAuthStore } from "./oauthStore.js";
 import type { BuildMode } from "./prompts.js";
+import type { NameSource } from "./agentSession.js";
 
 export type CreateOptions = {
   workspaceId: string;
@@ -10,6 +11,11 @@ export type CreateOptions = {
   worktreePath: string;
   buildMode: BuildMode;
   providerConfig: ProviderConfig;
+  /// Whether the workspace is still wearing its random adjective-noun name
+  /// (eligible for AI rename on first prompt) or has a deliberate name.
+  /// Defaults to "named" when omitted so callers that don't set it can't
+  /// accidentally trigger an AI rename.
+  nameSource?: NameSource;
   projectContext?: string;
   workspaceContext?: string;
 };
@@ -21,6 +27,7 @@ export class AgentRegistry {
     private readonly dataDir: string,
     private readonly sink: EventSink,
     private readonly oauthStore?: OAuthStore,
+    private readonly requestRename?: RequestRename,
   ) {}
 
   async create(opts: CreateOptions): Promise<void> {
@@ -34,10 +41,18 @@ export class AgentRegistry {
       "messages.jsonl",
     );
     const session = new AgentSession({
-      ...opts,
+      workspaceId: opts.workspaceId,
+      projectId: opts.projectId,
+      worktreePath: opts.worktreePath,
+      buildMode: opts.buildMode,
+      providerConfig: opts.providerConfig,
       jsonlPath,
       sink: this.sink,
       oauthStore: this.oauthStore,
+      nameSource: opts.nameSource ?? "named",
+      requestRename: this.requestRename,
+      projectContext: opts.projectContext,
+      workspaceContext: opts.workspaceContext,
     });
     this.sessions.set(opts.workspaceId, session);
   }

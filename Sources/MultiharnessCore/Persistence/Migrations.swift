@@ -56,7 +56,10 @@ public struct Migrations {
         ALTER TABLE projects ADD COLUMN default_build_mode TEXT;
         ALTER TABLE workspaces ADD COLUMN build_mode TEXT;
         """,
-        // v4: per-project and per-workspace context injection
+        // v4: track whether a workspace is still using its random adjective-noun
+        // name so the sidecar knows to AI-rename it after the first prompt.
+        "ALTER TABLE workspaces ADD COLUMN name_source TEXT NOT NULL DEFAULT 'random';",
+        // v5: per-project and per-workspace context injection
         """
         ALTER TABLE projects   ADD COLUMN context_instructions TEXT NOT NULL DEFAULT '';
         ALTER TABLE workspaces ADD COLUMN context_instructions TEXT NOT NULL DEFAULT '';

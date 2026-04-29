@@ -47,6 +47,15 @@ public enum BuildMode: String, Codable, CaseIterable, Sendable, Equatable {
     }
 }
 
+public enum NameSource: String, Codable, Sendable, Equatable {
+    /// Workspace is still using its auto-generated adjective-noun name and is
+    /// eligible for an AI-assisted rename on first prompt.
+    case random
+    /// Workspace has a deliberate name (typed by the user, AI-renamed once,
+    /// or manually renamed). The sidecar must not AI-rename it.
+    case named
+}
+
 public struct Project: Codable, Identifiable, Sendable, Equatable, Hashable {
     public var id: UUID
     public var name: String
@@ -104,6 +113,7 @@ public struct Workspace: Codable, Identifiable, Sendable, Equatable, Hashable {
     public var buildMode: BuildMode?
     public var createdAt: Date
     public var archivedAt: Date?
+    public var nameSource: NameSource
     public var contextInstructions: String
 
     public init(
@@ -120,6 +130,7 @@ public struct Workspace: Codable, Identifiable, Sendable, Equatable, Hashable {
         buildMode: BuildMode? = nil,
         createdAt: Date = Date(),
         archivedAt: Date? = nil,
+        nameSource: NameSource = .random,
         contextInstructions: String = ""
     ) {
         self.id = id
@@ -135,6 +146,7 @@ public struct Workspace: Codable, Identifiable, Sendable, Equatable, Hashable {
         self.buildMode = buildMode
         self.createdAt = createdAt
         self.archivedAt = archivedAt
+        self.nameSource = nameSource
         self.contextInstructions = contextInstructions
     }
 

@@ -20,4 +20,14 @@ export class Dispatcher {
       return formatErrorResponse(id, "HANDLER_ERROR", err.message ?? String(err));
     }
   }
+
+  /// Invoke a registered handler in-process and return its raw result. Used
+  /// by sidecar-internal callers (e.g. the workspace-name AI task) that
+  /// need the same side effects a wire-level call would trigger but don't
+  /// have a request id to reply to.
+  async invoke(method: string, params: Record<string, unknown>): Promise<unknown> {
+    const h = this.handlers.get(method);
+    if (!h) throw new Error(`unknown method: ${method}`);
+    return await h(params);
+  }
 }

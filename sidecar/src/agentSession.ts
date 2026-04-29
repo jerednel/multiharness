@@ -9,8 +9,13 @@ import {
   type OAuthStore,
 } from "./oauthStore.js";
 import { buildSystemPrompt, type BuildMode } from "./prompts.js";
+import { generateWorkspaceName } from "./workspaceNamer.js";
 
 export type EventSink = (workspaceId: string, ev: AgentEvent) => void;
+
+export type NameSource = "random" | "named";
+
+export type RequestRename = (workspaceId: string, name: string) => Promise<void>;
 
 export type AgentSessionOptions = {
   workspaceId: string;
@@ -21,6 +26,8 @@ export type AgentSessionOptions = {
   jsonlPath: string;
   sink: EventSink;
   oauthStore?: OAuthStore;
+  nameSource: NameSource;
+  requestRename?: RequestRename;
   projectContext?: string;
   workspaceContext?: string;
 };
@@ -40,6 +47,10 @@ export class AgentSession {
   private seq = 0;
   private projectContext: string;
   private workspaceContext: string;
+  /// True iff this workspace's display name is still the random
+  /// adjective-noun placeholder. Flipped to false before kicking off the
+  /// AI rename so a fast second prompt can't double-fire.
+  private aiRenameEligible: boolean;
 
   readonly workspaceId: string;
   readonly projectId: string;
@@ -49,6 +60,7 @@ export class AgentSession {
     this.projectId = opts.projectId;
     this.projectContext = opts.projectContext ?? "";
     this.workspaceContext = opts.workspaceContext ?? "";
+    this.aiRenameEligible = opts.nameSource === "random";
     const cfg = opts.providerConfig;
     const staticKey = apiKeyFor(cfg);
     this.agent = new Agent({
@@ -81,7 +93,40 @@ export class AgentSession {
   }
 
   async prompt(message: string): Promise<void> {
+    if (this.aiRenameEligible) {
+      // Flip eligibility before launching the async naming task so a quick
+      // second prompt can't double-fire it.
+      this.aiRenameEligible = false;
+      void this.generateAndApplyName(message);
+    }
     await this.agent.prompt(message);
+  }
+
+  private async generateAndApplyName(firstMessage: string): Promise<void> {
+    if (!this.opts.requestRename) return;
+    try {
+      const name = await generateWorkspaceName({
+        providerConfig: this.opts.providerConfig,
+        message: firstMessage,
+        oauthStore: this.opts.oauthStore,
+      });
+      if (!name) {
+        log.warn("ai workspace rename produced no usable title", {
+          workspaceId: this.opts.workspaceId,
+        });
+        return;
+      }
+      await this.opts.requestRename(this.opts.workspaceId, name);
+      log.info("ai workspace renamed", {
+        workspaceId: this.opts.workspaceId,
+        name,
+      });
+    } catch (e) {
+      log.warn("ai workspace rename failed", {
+        workspaceId: this.opts.workspaceId,
+        err: e instanceof Error ? e.message : String(e),
+      });
+    }
   }
 
   async continueRun(): Promise<void> {
