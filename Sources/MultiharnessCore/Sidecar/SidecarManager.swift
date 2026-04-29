@@ -21,6 +21,10 @@ public final class SidecarManager {
     /// Required when `bindAddress` is non-loopback. The sidecar refuses to
     /// start unauthenticated on a non-loopback bind.
     public var authToken: String?
+    /// Optional preferred port. If set, the sidecar tries to bind it; if it
+    /// is in use, Bun falls through to a random port (the actual port is
+    /// reported via onPortBound).
+    public var preferredPort: Int?
 
     private var process: Process?
     private var stderrPipe: Pipe?
@@ -74,7 +78,7 @@ public final class SidecarManager {
         let p = Process()
         p.executableURL = binary
         var sidecarEnv: [String: String] = [
-            "MULTIHARNESS_PORT": "0",
+            "MULTIHARNESS_PORT": String(preferredPort ?? 0),
             "MULTIHARNESS_DATA_DIR": dataDir.path,
             "MULTIHARNESS_BIND": bindAddress,
         ]

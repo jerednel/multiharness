@@ -60,7 +60,21 @@ if (portEnv && (port == null || Number.isNaN(port))) {
 
 const bind = process.env.MULTIHARNESS_BIND;
 const authToken = process.env.MULTIHARNESS_AUTH_TOKEN;
-const handle = await startServer({ socketPath, port, bind, authToken, dataDir });
+
+let handle;
+try {
+  handle = await startServer({ socketPath, port, bind, authToken, dataDir });
+} catch (err) {
+  const msg = err instanceof Error ? err.message : String(err);
+  // EADDRINUSE — the pinned port is already taken (another sidecar still
+  // shutting down, another tool grabbed it, etc.). Retry on a random port.
+  if (port && (msg.includes("EADDRINUSE") || msg.includes("address already in use"))) {
+    log.warn("preferred port in use; falling back to a random port", { port, msg });
+    handle = await startServer({ socketPath, port: 0, bind, authToken, dataDir });
+  } else {
+    throw err;
+  }
+}
 
 const shutdown = async () => {
   log.info("shutting down");

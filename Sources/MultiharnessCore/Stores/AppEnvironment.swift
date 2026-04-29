@@ -28,6 +28,11 @@ public final class AppEnvironment {
             self?.rebindControl(port: port)
             self?.remoteAccess.publicPort = port
             if self?.remoteAccess.enabled == true {
+                // If we got a different port than we asked for (port was
+                // taken), persist the new value so the next restart uses it.
+                if self?.remoteAccess.stablePort != port {
+                    self?.remoteAccess.updateStablePort(to: port)
+                }
                 self?.remoteAccess.startAdvertising(port: port)
             }
         }
@@ -41,9 +46,12 @@ public final class AppEnvironment {
             if remoteAccess.token == nil { remoteAccess.generateToken() }
             sidecar.bindAddress = "0.0.0.0"
             sidecar.authToken = remoteAccess.token
+            // Pin a stable port so iPhone pairings survive sidecar restarts.
+            sidecar.preferredPort = remoteAccess.ensureStablePort()
         } else {
             sidecar.bindAddress = "127.0.0.1"
             sidecar.authToken = nil
+            sidecar.preferredPort = nil
             remoteAccess.stopAdvertising()
         }
     }

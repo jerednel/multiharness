@@ -42,6 +42,12 @@ public final class RemoteAccess {
         }
     }
     private let selectedHostKey = "remote_access.selected_host"
+    private let stablePortKey = "remote_access.stable_port"
+
+    /// Pinned port the remote-access bind should attempt to reuse across
+    /// restarts so an iPhone's saved pairing string keeps working. Generated
+    /// once on first enable; updated only if a bind on it fails.
+    public private(set) var stablePort: Int?
 
     public init(persistence: PersistenceService, keychain: KeychainService) {
         self.persistence = persistence
@@ -59,6 +65,27 @@ public final class RemoteAccess {
             self.selectedHost = interfaces.first(where: { $0.kind == .tailscale })?.ipv4
                 ?? interfaces.first?.ipv4
         }
+        if let s = (try? persistence.getSetting(stablePortKey)) ?? nil,
+           let p = Int(s), p > 0 {
+            self.stablePort = p
+        }
+    }
+
+    /// Lazily generate a stable port the first time we need one. Random in
+    /// the dynamic/private range (49152–65535) so it's unlikely to collide.
+    public func ensureStablePort() -> Int {
+        if let p = stablePort { return p }
+        let p = Int.random(in: 49152...65535)
+        stablePort = p
+        try? persistence.setSetting(stablePortKey, value: String(p))
+        return p
+    }
+
+    /// If the pinned port is taken at boot, the sidecar falls back to a
+    /// random one — call this so we remember the new value next time.
+    public func updateStablePort(to p: Int) {
+        stablePort = p
+        try? persistence.setSetting(stablePortKey, value: String(p))
     }
 
     /// Re-scan interfaces; call when the user opens the pairing panel.
