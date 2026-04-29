@@ -61,6 +61,7 @@ public struct Project: Codable, Identifiable, Sendable, Equatable, Hashable {
     /// `NSOpenPanel`'s implicit grant; resolved at app launch to suppress
     /// repeated TCC prompts for protected directories (Documents, Desktop, etc.).
     public var repoBookmark: Data?
+    public var contextInstructions: String
 
     public init(
         id: UUID = UUID(),
@@ -72,7 +73,8 @@ public struct Project: Codable, Identifiable, Sendable, Equatable, Hashable {
         defaultModelId: String? = nil,
         defaultBuildMode: BuildMode? = nil,
         createdAt: Date = Date(),
-        repoBookmark: Data? = nil
+        repoBookmark: Data? = nil,
+        contextInstructions: String = ""
     ) {
         self.id = id
         self.name = name
@@ -84,6 +86,7 @@ public struct Project: Codable, Identifiable, Sendable, Equatable, Hashable {
         self.defaultBuildMode = defaultBuildMode
         self.createdAt = createdAt
         self.repoBookmark = repoBookmark
+        self.contextInstructions = contextInstructions
     }
 }
 
@@ -101,6 +104,7 @@ public struct Workspace: Codable, Identifiable, Sendable, Equatable, Hashable {
     public var buildMode: BuildMode?
     public var createdAt: Date
     public var archivedAt: Date?
+    public var contextInstructions: String
 
     public init(
         id: UUID = UUID(),
@@ -115,7 +119,8 @@ public struct Workspace: Codable, Identifiable, Sendable, Equatable, Hashable {
         modelId: String,
         buildMode: BuildMode? = nil,
         createdAt: Date = Date(),
-        archivedAt: Date? = nil
+        archivedAt: Date? = nil,
+        contextInstructions: String = ""
     ) {
         self.id = id
         self.projectId = projectId
@@ -130,6 +135,7 @@ public struct Workspace: Codable, Identifiable, Sendable, Equatable, Hashable {
         self.buildMode = buildMode
         self.createdAt = createdAt
         self.archivedAt = archivedAt
+        self.contextInstructions = contextInstructions
     }
 
     /// Resolves the effective build mode using the precedence chain:
