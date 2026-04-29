@@ -35,6 +35,7 @@ public final class AppStore {
     public var openaiLoginError: String?
 
     private let env: AppEnvironment
+    public var appEnv: AppEnvironment { env }
 
     /// Convenience: pull every workspace across every project from SQLite.
     /// Used at boot / sidecar-rebind to bootstrap sessions remotely.
