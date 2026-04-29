@@ -92,6 +92,75 @@ public struct WorktreeService: Sendable {
         return try runGit(at: worktreePath, args: args)
     }
 
+    public enum MergeResult: Equatable, Sendable {
+        case clean
+        case conflicts(unmergedFiles: [String])
+    }
+
+    /// Runs `git merge --no-ff --no-commit <sourceBranch>` in `worktreePath`.
+    /// On a clean merge with no conflicts, returns `.clean` and the caller
+    /// commits explicitly. On conflicts, parses unmerged paths and returns
+    /// them; caller is responsible for resolving + staging + committing or
+    /// calling `mergeAbort`.
+    public func merge(worktreePath: URL, sourceBranch: String) throws -> MergeResult {
+        do {
+            _ = try runGit(at: worktreePath.path, args: [
+                "merge", "--no-ff", "--no-commit", sourceBranch,
+            ])
+            return .clean
+        } catch WorktreeError.gitFailed {
+            // git merge exits non-zero on conflicts. Distinguish "had
+            // conflicts" from "couldn't run at all" by checking unmerged.
+            let unmerged = try unmergedFiles(worktreePath: worktreePath)
+            if unmerged.isEmpty {
+                // No unmerged paths but merge failed → genuine error.
+                throw WorktreeError.gitFailed(
+                    args: ["merge", "--no-ff", "--no-commit", sourceBranch],
+                    exitCode: -1,
+                    stderr: "merge failed without conflicts"
+                )
+            }
+            return .conflicts(unmergedFiles: unmerged)
+        }
+    }
+
+    /// Runs `git merge --abort`. Idempotent — silently succeeds if no merge
+    /// is in progress.
+    public func mergeAbort(worktreePath: URL) throws {
+        _ = try? runGit(at: worktreePath.path, args: ["merge", "--abort"])
+    }
+
+    /// Returns paths of currently unmerged files.
+    /// Output of `git diff --name-only --diff-filter=U`.
+    public func unmergedFiles(worktreePath: URL) throws -> [String] {
+        let out = try runGit(at: worktreePath.path, args: [
+            "diff", "--name-only", "--diff-filter=U",
+        ])
+        return out.split(separator: "\n", omittingEmptySubsequences: true)
+            .map { String($0).trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+    }
+
+    /// Stage a path (`git add <path>`).
+    public func stage(worktreePath: URL, path: String) throws {
+        _ = try runGit(at: worktreePath.path, args: ["add", "--", path])
+    }
+
+    /// Commit staged changes with `message`.
+    public func commit(worktreePath: URL, message: String) throws {
+        _ = try runGit(at: worktreePath.path, args: ["commit", "-m", message])
+    }
+
+    /// Returns true if the file looks binary. We rely on git's own
+    /// detection: `git diff --numstat` shows "-\t-\t<path>" for binary
+    /// files. For files that don't exist or aren't tracked, returns false.
+    public func isLikelyBinary(worktreePath: URL, path: String) -> Bool {
+        guard let out = try? runGit(at: worktreePath.path, args: [
+            "diff", "--numstat", "HEAD", "--", path,
+        ]) else { return false }
+        return out.contains("-\t-\t")
+    }
+
     public func runGit(at path: String, args: [String]) throws -> String {
         let p = Process()
         p.launchPath = "/usr/bin/git"
