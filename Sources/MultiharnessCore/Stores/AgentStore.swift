@@ -25,6 +25,76 @@ public final class AgentStore {
     public init(env: AppEnvironment, workspaceId: UUID) {
         self.env = env
         self.workspaceId = workspaceId
+        loadHistory()
+    }
+
+    /// Replay the persisted JSONL message log and reconstruct the visible turn
+    /// list. Called once at construction so the user sees their prior
+    /// conversation when they reopen a workspace (or after a sidecar crash).
+    public func loadHistory() {
+        let path = env.persistence.messagesPath(workspaceId: workspaceId)
+        guard let data = try? Data(contentsOf: path),
+              let text = String(data: data, encoding: .utf8) else { return }
+        var loaded: [ConversationTurn] = []
+        for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
+            guard let lineData = line.data(using: .utf8),
+                  let obj = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
+                  let event = obj["event"] as? [String: Any],
+                  let type = event["type"] as? String
+            else { continue }
+            switch type {
+            case "message_end":
+                guard let msg = event["message"] as? [String: Any],
+                      let role = msg["role"] as? String
+                else { continue }
+                let text = Self.extractText(msg["content"])
+                switch role {
+                case "user":
+                    if !text.isEmpty {
+                        loaded.append(ConversationTurn(role: .user, text: text))
+                    }
+                case "assistant":
+                    if !text.isEmpty {
+                        loaded.append(ConversationTurn(role: .assistant, text: text))
+                    }
+                default:
+                    break
+                }
+            case "tool_execution_end":
+                let toolName = event["toolName"] as? String ?? "tool"
+                let preview = Self.extractToolResultPreview(event["result"])
+                loaded.append(ConversationTurn(
+                    role: .tool,
+                    text: preview,
+                    toolName: toolName
+                ))
+            default:
+                break
+            }
+        }
+        self.turns = loaded
+    }
+
+    private static func extractText(_ content: Any?) -> String {
+        guard let arr = content as? [[String: Any]] else {
+            return content as? String ?? ""
+        }
+        return arr.compactMap { item -> String? in
+            if (item["type"] as? String) == "text" {
+                return item["text"] as? String
+            }
+            return nil
+        }.joined()
+    }
+
+    private static func extractToolResultPreview(_ result: Any?) -> String {
+        guard let dict = result as? [String: Any] else { return "" }
+        if let content = dict["content"] as? [[String: Any]],
+           let first = content.first,
+           let text = first["text"] as? String {
+            return text.count > 800 ? String(text.prefix(800)) + "…" : text
+        }
+        return ""
     }
 
     public func bind(control: ControlClient) {
