@@ -31,6 +31,12 @@ public final class AgentStore {
         self.control = control
     }
 
+    /// True between message_start (assistant) and message_end. While set, the
+    /// next text_delta will lazily create the assistant turn — that way
+    /// assistant messages that contain only tool calls (no text) never produce
+    /// an empty card.
+    private var assistantTurnPending = false
+
     public func handleEvent(_ event: AgentEventEnvelope) {
         guard event.workspaceId == workspaceId.uuidString else { return }
         switch event.type {
@@ -38,22 +44,28 @@ public final class AgentStore {
             isStreaming = true
         case "agent_end":
             isStreaming = false
+            assistantTurnPending = false
             for i in turns.indices { turns[i].streaming = false }
         case "message_start":
             if let msg = event.payload["message"] as? [String: Any],
-               let role = msg["role"] as? String,
-               role == "assistant" {
-                turns.append(ConversationTurn(role: .assistant, text: "", streaming: true))
+               (msg["role"] as? String) == "assistant" {
+                assistantTurnPending = true
             }
         case "message_update":
             if let evt = event.payload["assistantMessageEvent"] as? [String: Any],
                evt["type"] as? String == "text_delta",
-               let delta = evt["delta"] as? String,
-               let lastIdx = turns.indices.last,
-               turns[lastIdx].role == .assistant {
-                turns[lastIdx].text += delta
+               let delta = evt["delta"] as? String {
+                if assistantTurnPending {
+                    turns.append(ConversationTurn(role: .assistant, text: "", streaming: true))
+                    assistantTurnPending = false
+                }
+                if let lastIdx = turns.indices.last,
+                   turns[lastIdx].role == .assistant {
+                    turns[lastIdx].text += delta
+                }
             }
         case "message_end":
+            assistantTurnPending = false
             if let lastIdx = turns.indices.last {
                 turns[lastIdx].streaming = false
             }
