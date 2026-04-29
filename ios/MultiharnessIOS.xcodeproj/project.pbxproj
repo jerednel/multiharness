@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 63;
+	objectVersion = 54;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -29,7 +29,7 @@
 		4B19617671007E21225D2A51 /* PairingStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingStore.swift; sourceTree = "<group>"; };
 		535C55D1D0C280DF95F8DA33 /* CreateSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateSheets.swift; sourceTree = "<group>"; };
 		53F7B5701FD21794DAE10EBC /* ConnectionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionStore.swift; sourceTree = "<group>"; };
-		624C83AA83D7BBD38CB2D799 /* MultiharnessIOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MultiharnessIOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		624C83AA83D7BBD38CB2D799 /* MultiharnessIOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = MultiharnessIOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		6DF76228C3777F798E4B8408 /* WorkspacesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspacesView.swift; sourceTree = "<group>"; };
 		840A215601F9E0C733815E32 /* RemoteAgentStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteAgentStore.swift; sourceTree = "<group>"; };
 		9839A87870E46B4E1749BEFC /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
@@ -141,6 +141,7 @@
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
 					A868B7092E1CA4BD89C9C1E0 = {
+						DevelopmentTeam = "";
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -158,6 +159,7 @@
 			packageReferences = (
 				D98D6D3EF8826C80BC1933AD /* XCLocalSwiftPackageReference ".." */,
 			);
+			preferredProjectObjectVersion = 54;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -191,7 +193,6 @@
 		3191DE62F4F52BEA78207793 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				DEVELOPMENT_TEAM = AJMH7Y6WZA;
 				INFOPLIST_FILE = Resources/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.multiharness.ios;
@@ -218,7 +219,6 @@
 		59B0B7082807AFAA606160CE /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				DEVELOPMENT_TEAM = AJMH7Y6WZA;
 				INFOPLIST_FILE = Resources/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.multiharness.ios;

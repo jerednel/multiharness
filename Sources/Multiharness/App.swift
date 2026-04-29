@@ -126,9 +126,15 @@ final class AgentRegistryStore: NSObject, ControlClientDelegate {
 
     nonisolated func controlClient(_ client: ControlClient, didReceiveEvent event: AgentEventEnvelope) {
         if event.type == "relay_request" {
-            // Relay events don't carry a workspaceId — route to the handler.
             Task { @MainActor in
                 if let h = self.relayHandler { await h.handle(event) }
+            }
+            return
+        }
+        if event.type == "anthropic_auth_url" {
+            let urlString = event.payload["url"] as? String
+            Task { @MainActor in
+                if let urlString { self.appStore?.openAnthropicAuthURL(urlString) }
             }
             return
         }

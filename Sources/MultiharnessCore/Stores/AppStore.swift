@@ -1,5 +1,8 @@
 import Foundation
 import Observation
+#if canImport(AppKit)
+import AppKit
+#endif
 
 /// Owns app-level state: providers, projects, current selection.
 @MainActor
@@ -17,6 +20,9 @@ public final class AppStore {
     /// non-zero the Mac UI surfaces a small "iPhone activity" indicator so
     /// the user knows to glance over in case a TCC dialog needs approval.
     public var remoteActivityCount: Int = 0
+    /// True while an Anthropic OAuth login is in flight.
+    public var anthropicLoginInProgress: Bool = false
+    public var anthropicLoginError: String?
 
     private let env: AppEnvironment
 
@@ -257,6 +263,54 @@ public final class AppStore {
             ]
             if let url = provider.baseUrl { cfg["baseUrl"] = url }
             return cfg
+        case .anthropicOauth:
+            return [
+                "kind": "anthropic-oauth",
+                "modelId": modelId,
+            ]
+        }
+    }
+
+    // MARK: - Anthropic OAuth
+
+    /// Kick off the Anthropic OAuth flow. The sidecar opens a local
+    /// callback server, surfaces the auth URL via an `anthropic_auth_url`
+    /// event, and resolves when login completes. On success we add a
+    /// ProviderRecord with kind .anthropicOauth so the user can pick it
+    /// when creating workspaces.
+    public func signInWithAnthropic() async {
+        guard let client = env.control else {
+            anthropicLoginError = "control client not connected"
+            return
+        }
+        anthropicLoginInProgress = true
+        anthropicLoginError = nil
+        defer { anthropicLoginInProgress = false }
+        do {
+            _ = try await client.call(method: "auth.anthropic.start", params: [:])
+            // On success, add a provider record (idempotent — skip if one
+            // already exists with kind anthropicOauth).
+            if !providers.contains(where: { $0.kind == .anthropicOauth }) {
+                addProvider(
+                    name: "Claude (OAuth)",
+                    kind: .anthropicOauth,
+                    piProvider: "anthropic",
+                    baseUrl: nil,
+                    defaultModelId: nil,
+                    apiKey: nil
+                )
+            }
+        } catch {
+            anthropicLoginError = String(describing: error)
+        }
+    }
+
+    /// Called by the registry when an `anthropic_auth_url` event arrives.
+    public func openAnthropicAuthURL(_ url: String) {
+        if let u = URL(string: url) {
+            #if canImport(AppKit)
+            NSWorkspace.shared.open(u)
+            #endif
         }
     }
 }

@@ -3,6 +3,7 @@ import { buildModel, apiKeyFor, type ProviderConfig } from "./providers.js";
 import { buildTools } from "./tools/index.js";
 import { JsonlWriter } from "./jsonl.js";
 import { log } from "./logger.js";
+import { getAnthropicAccessToken, type OAuthStore } from "./oauthStore.js";
 
 export type EventSink = (workspaceId: string, ev: AgentEvent) => void;
 
@@ -13,6 +14,7 @@ export type AgentSessionOptions = {
   providerConfig: ProviderConfig;
   jsonlPath: string;
   sink: EventSink;
+  oauthStore?: OAuthStore;
 };
 
 const PERSIST_EVENTS = new Set<AgentEvent["type"]>([
@@ -30,14 +32,26 @@ export class AgentSession {
   private seq = 0;
 
   constructor(private readonly opts: AgentSessionOptions) {
-    const apiKey = apiKeyFor(opts.providerConfig);
+    const cfg = opts.providerConfig;
+    const staticKey = apiKeyFor(cfg);
     this.agent = new Agent({
       initialState: {
         systemPrompt: opts.systemPrompt,
-        model: buildModel(opts.providerConfig) as any,
+        model: buildModel(cfg) as any,
         tools: buildTools(opts.worktreePath),
       },
-      getApiKey: () => apiKey,
+      // OAuth providers (Anthropic Pro/Max) need a fresh access token each
+      // request — getApiKey is called by pi-ai right before every API
+      // call, so refresh-on-demand happens here.
+      getApiKey: async () => {
+        if (cfg.kind === "anthropic-oauth") {
+          if (!opts.oauthStore) {
+            throw new Error("anthropic-oauth requires oauthStore");
+          }
+          return await getAnthropicAccessToken(opts.oauthStore);
+        }
+        return staticKey;
+      },
     });
     this.writer = new JsonlWriter(opts.jsonlPath);
     this.unsubscribe = this.agent.subscribe((event) => this.handle(event));

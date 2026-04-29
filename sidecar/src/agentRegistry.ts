@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { AgentSession, type EventSink } from "./agentSession.js";
 import type { ProviderConfig } from "./providers.js";
+import type { OAuthStore } from "./oauthStore.js";
 
 export type CreateOptions = {
   workspaceId: string;
@@ -15,6 +16,7 @@ export class AgentRegistry {
   constructor(
     private readonly dataDir: string,
     private readonly sink: EventSink,
+    private readonly oauthStore?: OAuthStore,
   ) {}
 
   async create(opts: CreateOptions): Promise<void> {
@@ -27,7 +29,12 @@ export class AgentRegistry {
       opts.workspaceId,
       "messages.jsonl",
     );
-    const session = new AgentSession({ ...opts, jsonlPath, sink: this.sink });
+    const session = new AgentSession({
+      ...opts,
+      jsonlPath,
+      sink: this.sink,
+      oauthStore: this.oauthStore,
+    });
     this.sessions.set(opts.workspaceId, session);
   }
 

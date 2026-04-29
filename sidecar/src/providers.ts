@@ -21,6 +21,15 @@ import { getModel, getModels, type Model, type KnownProvider } from "@mariozechn
  */
 export type ProviderConfig =
   | {
+      /**
+       * Anthropic OAuth (Claude Pro/Max). The sidecar resolves the access
+       * token from its local OAuth credential store at request time —
+       * caller doesn't pass an apiKey.
+       */
+      kind: "anthropic-oauth";
+      modelId: string;
+    }
+  | {
       kind: "pi-known";
       provider: KnownProvider;
       modelId: string;
@@ -47,6 +56,21 @@ const DEFAULT_CONTEXT_WINDOW = 128_000;
 const DEFAULT_MAX_TOKENS = 16_000;
 
 export function buildModel(cfg: ProviderConfig): Model<any> {
+  if (cfg.kind === "anthropic-oauth") {
+    // pi-ai's anthropic provider expects a model handle from the registry.
+    // The OAuth path uses the same baseUrl as the API-key path; the only
+    // difference is the apiKey resolved at runtime via getApiKey on the
+    // Agent.
+    const m = getModel("anthropic" as any, cfg.modelId as any) as
+      | Model<any>
+      | undefined;
+    if (!m) {
+      throw new Error(
+        `pi-ai has no Anthropic model "${cfg.modelId}" registered`,
+      );
+    }
+    return m;
+  }
   if (cfg.kind === "pi-known") {
     // pi-ai's getModel returns undefined for unknown (provider, modelId)
     // pairs; we surface that as a thrown error so callers see a clear
@@ -92,6 +116,7 @@ export function buildModel(cfg: ProviderConfig): Model<any> {
 }
 
 export function apiKeyFor(cfg: ProviderConfig): string | undefined {
+  if (cfg.kind === "anthropic-oauth") return undefined;
   return cfg.apiKey;
 }
 
@@ -110,8 +135,9 @@ export type DiscoveredModel = {
  *   provided api key, returns whatever the server enumerates.
  */
 export async function listModels(cfg: ProviderConfig): Promise<DiscoveredModel[]> {
-  if (cfg.kind === "pi-known") {
-    const models = getModels(cfg.provider as any) as Array<Model<any>>;
+  if (cfg.kind === "pi-known" || cfg.kind === "anthropic-oauth") {
+    const provider = cfg.kind === "pi-known" ? cfg.provider : "anthropic";
+    const models = getModels(provider as any) as Array<Model<any>>;
     return models.map((m) => ({
       id: m.id,
       name: m.name,
@@ -130,12 +156,13 @@ export async function listModels(cfg: ProviderConfig): Promise<DiscoveredModel[]
   // plus a required `anthropic-version` header.
   const url = baseUrl.replace(/\/+$/, "") + "/models";
   const headers: Record<string, string> = { "accept": "application/json" };
-  if (cfg.apiKey) {
+  const cfgKey = cfg.kind === "anthropic" ? cfg.apiKey : cfg.apiKey;
+  if (cfgKey) {
     if (cfg.kind === "anthropic") {
-      headers["x-api-key"] = cfg.apiKey;
+      headers["x-api-key"] = cfgKey;
       headers["anthropic-version"] = "2023-06-01";
     } else {
-      headers["authorization"] = `Bearer ${cfg.apiKey}`;
+      headers["authorization"] = `Bearer ${cfgKey}`;
     }
   }
 

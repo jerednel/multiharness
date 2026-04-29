@@ -289,6 +289,30 @@ private struct ProvidersTab: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Providers").font(.title3).bold()
+            HStack(spacing: 8) {
+                Button {
+                    Task { await appStore.signInWithAnthropic() }
+                } label: {
+                    HStack(spacing: 6) {
+                        if appStore.anthropicLoginInProgress {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Image(systemName: "sparkles")
+                        }
+                        Text(appStore.providers.contains(where: { $0.kind == .anthropicOauth })
+                             ? "Re-authenticate Claude"
+                             : "Sign in with Claude")
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(appStore.anthropicLoginInProgress)
+                if let err = appStore.anthropicLoginError {
+                    Text(err).font(.caption).foregroundStyle(.red).lineLimit(2)
+                } else if appStore.providers.contains(where: { $0.kind == .anthropicOauth }) {
+                    Text("Signed in").font(.caption).foregroundStyle(.green)
+                }
+                Spacer()
+            }
             ScrollView {
                 VStack(spacing: 4) {
                     ForEach(appStore.providers) { p in

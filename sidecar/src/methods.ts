@@ -5,14 +5,24 @@ import { listModels } from "./providers.js";
 import { log } from "./logger.js";
 import { DataReader } from "./dataReader.js";
 import type { Relay } from "./relay.js";
+import {
+  hasAnthropicCreds,
+  startAnthropicLogin,
+  type OAuthStore,
+} from "./oauthStore.js";
+import { formatEvent } from "./rpc.js";
 
 const VERSION = "0.1.0";
+
+type EventEmit = (workspaceId: string, ev: { type: string; [k: string]: unknown }) => void;
 
 export function registerMethods(
   d: Dispatcher,
   registry: AgentRegistry,
   dataDir: string,
   relay: Relay,
+  oauthStore: OAuthStore,
+  sink: EventEmit,
 ): void {
   const reader = new DataReader(dataDir);
   d.register("health.ping", () => ({ pong: true, version: VERSION }));
@@ -87,6 +97,31 @@ export function registerMethods(
     }
     const models = await listModels(providerConfig);
     return { models };
+  });
+
+  // ── OAuth ───────────────────────────────────────────────────────────────
+  d.register("auth.anthropic.status", async () => ({
+    loggedIn: await hasAnthropicCreds(oauthStore),
+  }));
+
+  d.register("auth.anthropic.start", async () => {
+    // Kick off the OAuth flow. Surface the auth URL to all connected
+    // clients via an event so the Mac UI can open it in the user's
+    // browser. The login() promise resolves when the local callback
+    // server receives the redirect — we await it so the caller knows
+    // when login has completed.
+    try {
+      await startAnthropicLogin(oauthStore, (url) => {
+        sink("", { type: "anthropic_auth_url", url });
+      });
+      sink("", { type: "anthropic_auth_complete", ok: true });
+      return { ok: true };
+    } catch (e) {
+      const reason = e instanceof Error ? e.message : String(e);
+      log.error("anthropic oauth login failed", { reason });
+      sink("", { type: "anthropic_auth_complete", ok: false, error: reason });
+      throw e;
+    }
   });
 
   // ── Relayed methods ─────────────────────────────────────────────────────

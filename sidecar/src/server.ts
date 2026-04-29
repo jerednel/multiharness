@@ -8,6 +8,7 @@ import { registerMethods } from "./methods.js";
 import { parseFrame, formatEvent } from "./rpc.js";
 import { log } from "./logger.js";
 import { Relay } from "./relay.js";
+import { OAuthStore } from "./oauthStore.js";
 
 export type ServerOptions = {
   socketPath?: string;
@@ -59,10 +60,11 @@ export async function startServer(opts: ServerOptions): Promise<ServerHandle> {
     }
   };
 
-  const registry = new AgentRegistry(opts.dataDir, sink);
+  const oauthStore = new OAuthStore(opts.dataDir);
+  const registry = new AgentRegistry(opts.dataDir, sink, oauthStore);
   const relay = new Relay();
   const dispatcher = new Dispatcher();
-  registerMethods(dispatcher, registry, opts.dataDir, relay);
+  registerMethods(dispatcher, registry, opts.dataDir, relay, oauthStore, sink);
 
   const expectedAuth = opts.authToken ? `Bearer ${opts.authToken}` : null;
   const isPrivateBind =

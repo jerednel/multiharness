@@ -107,6 +107,9 @@ public enum ProviderKind: String, Codable, Sendable, Equatable {
     case piKnown = "pi-known"
     case openaiCompatible = "openai-compatible"
     case anthropic
+    /// Anthropic OAuth (Claude Pro/Max). Tokens managed by the sidecar's
+    /// OAuth store; no API key in Keychain.
+    case anthropicOauth = "anthropic-oauth"
 }
 
 public struct ProviderRecord: Codable, Identifiable, Sendable, Equatable, Hashable {
@@ -184,6 +187,14 @@ public struct ProviderPreset: Sendable, Identifiable, Equatable {
             displayName: "Ollama (local)",
             kind: .openaiCompatible,
             baseUrl: "http://localhost:11434/v1",
+            noKeyRequired: true
+        ),
+        ProviderPreset(
+            id: "anthropic-oauth",
+            displayName: "Sign in with Claude (Pro/Max)",
+            kind: .anthropicOauth,
+            piProvider: "anthropic",
+            docsUrl: "https://claude.ai",
             noKeyRequired: true
         ),
         ProviderPreset(
