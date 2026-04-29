@@ -1,6 +1,7 @@
 import type { Dispatcher } from "./dispatcher.js";
 import type { AgentRegistry } from "./agentRegistry.js";
 import type { ProviderConfig } from "./providers.js";
+import { listModels } from "./providers.js";
 
 const VERSION = "0.1.0";
 
@@ -47,6 +48,15 @@ export function registerMethods(d: Dispatcher, registry: AgentRegistry): void {
   });
 
   d.register("agent.list", () => ({ workspaceIds: registry.list() }));
+
+  d.register("models.list", async (p) => {
+    const providerConfig = p.providerConfig as ProviderConfig | undefined;
+    if (!providerConfig || typeof providerConfig !== "object") {
+      throw new Error("providerConfig must be an object");
+    }
+    const models = await listModels(providerConfig);
+    return { models };
+  });
 }
 
 function requireString(p: Record<string, unknown>, name: string): string {

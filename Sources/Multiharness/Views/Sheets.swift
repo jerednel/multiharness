@@ -91,8 +91,13 @@ struct NewWorkspaceSheet: View {
                             Text(p.name).tag(Optional(p.id))
                         }
                     }
-                    TextField("Model id", text: $modelId, prompt: Text("e.g. openrouter/auto"))
                 }
+                Divider()
+                ModelPicker(
+                    appStore: appStore,
+                    provider: appStore.providers.first(where: { $0.id == providerId }),
+                    modelId: $modelId
+                )
             } else {
                 Text("No project selected").foregroundStyle(.secondary)
             }
@@ -109,7 +114,7 @@ struct NewWorkspaceSheet: View {
                 .disabled(creating || !canCreate)
             }
         }
-        .padding(24).frame(width: 540)
+        .padding(24).frame(width: 600, height: 620)
         .onAppear {
             if let proj = appStore.selectedProject, baseBranch.isEmpty {
                 baseBranch = proj.defaultBaseBranch
@@ -152,6 +157,73 @@ struct NewWorkspaceSheet: View {
     }
 }
 
+struct ProviderRow: View {
+    @Bindable var appStore: AppStore
+    let provider: ProviderRecord
+    let isExpanded: Bool
+    let onToggle: () -> Void
+
+    @State private var draftModelId: String = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                    .font(.caption).foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(provider.name).font(.body)
+                    HStack(spacing: 8) {
+                        Text(provider.kind.rawValue).font(.caption2).foregroundStyle(.secondary)
+                        if let pi = provider.piProvider {
+                            Text(pi).font(.caption2).foregroundStyle(.secondary)
+                        }
+                        if let url = provider.baseUrl {
+                            Text(url).font(.caption2).foregroundStyle(.secondary)
+                        }
+                        if let def = provider.defaultModelId {
+                            Text("·").foregroundStyle(.secondary).font(.caption2)
+                            Text("default: \(def)").font(.caption2).foregroundStyle(.blue)
+                        }
+                    }
+                }
+                Spacer()
+                Button(role: .destructive) {
+                    appStore.removeProvider(provider)
+                } label: {
+                    Image(systemName: "trash")
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 8).padding(.vertical, 6)
+            .contentShape(Rectangle())
+            .onTapGesture { onToggle() }
+
+            if isExpanded {
+                VStack(alignment: .leading, spacing: 8) {
+                    ModelPicker(
+                        appStore: appStore,
+                        provider: provider,
+                        modelId: $draftModelId
+                    )
+                    HStack {
+                        Spacer()
+                        Button("Save default") {
+                            appStore.setProviderDefaultModel(provider, modelId: draftModelId)
+                        }
+                        .disabled(draftModelId.isEmpty || draftModelId == provider.defaultModelId)
+                    }
+                }
+                .padding(10)
+                .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
+                .padding(.horizontal, 8)
+                .padding(.bottom, 4)
+            }
+        }
+        .background(.background)
+        .onAppear { draftModelId = provider.defaultModelId ?? "" }
+    }
+}
+
 struct SettingsSheet: View {
     @Bindable var appStore: AppStore
     @Binding var isPresented: Bool
@@ -162,33 +234,26 @@ struct SettingsSheet: View {
     @State private var manualKind: ProviderKind = .openaiCompatible
     @State private var apiKey: String = ""
     @State private var error: String?
+    @State private var expandedProviderId: UUID?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Providers").font(.title2).bold()
-            List {
-                ForEach(appStore.providers) { p in
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(p.name).font(.body)
-                            HStack(spacing: 8) {
-                                Text(p.kind.rawValue).font(.caption2).foregroundStyle(.secondary)
-                                if let pi = p.piProvider { Text(pi).font(.caption2).foregroundStyle(.secondary) }
-                                if let url = p.baseUrl { Text(url).font(.caption2).foregroundStyle(.secondary) }
+            ScrollView {
+                VStack(spacing: 4) {
+                    ForEach(appStore.providers) { p in
+                        ProviderRow(
+                            appStore: appStore,
+                            provider: p,
+                            isExpanded: expandedProviderId == p.id,
+                            onToggle: {
+                                expandedProviderId = (expandedProviderId == p.id) ? nil : p.id
                             }
-                        }
-                        Spacer()
-                        Button(role: .destructive) {
-                            appStore.removeProvider(p)
-                        } label: {
-                            Image(systemName: "trash")
-                        }
-                        .buttonStyle(.plain)
+                        )
                     }
-                    .padding(.vertical, 2)
                 }
             }
-            .frame(minHeight: 140, maxHeight: 200)
+            .frame(minHeight: 200, maxHeight: 360)
             Divider()
             Text("Add provider").font(.headline)
             Picker("Preset", selection: $selectedPresetId) {

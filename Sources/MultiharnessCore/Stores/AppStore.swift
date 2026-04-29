@@ -98,6 +98,18 @@ public final class AppStore {
         }
     }
 
+    public func setProviderDefaultModel(_ provider: ProviderRecord, modelId: String) {
+        guard let idx = providers.firstIndex(where: { $0.id == provider.id }) else { return }
+        var updated = providers[idx]
+        updated.defaultModelId = modelId.isEmpty ? nil : modelId
+        do {
+            try env.persistence.upsertProvider(updated)
+            providers[idx] = updated
+        } catch {
+            lastError = String(describing: error)
+        }
+    }
+
     public func removeProvider(_ provider: ProviderRecord) {
         do {
             if let acct = provider.keychainAccount {
@@ -114,6 +126,34 @@ public final class AppStore {
     public func apiKey(for provider: ProviderRecord) -> String? {
         guard let acct = provider.keychainAccount else { return nil }
         return try? env.keychain.getKey(account: acct)
+    }
+
+    /// Discovered model from the sidecar's `models.list` RPC.
+    public struct DiscoveredModel: Identifiable, Hashable, Sendable {
+        public let id: String
+        public let name: String?
+        public let contextWindow: Int?
+        public let source: String
+    }
+
+    /// Fetch the available models for a provider via the sidecar's `models.list`.
+    public func listModels(for provider: ProviderRecord) async throws -> [DiscoveredModel] {
+        guard let client = env.control else {
+            throw NSError(domain: "AppStore", code: 1, userInfo: [NSLocalizedDescriptionKey: "control client not connected"])
+        }
+        // Build a wire config; modelId isn't used by listModels but is required by the type.
+        let cfg = providerConfig(provider: provider, modelId: provider.defaultModelId ?? "unspecified")
+        let result = try await client.call(method: "models.list", params: ["providerConfig": cfg]) as? [String: Any]
+        let arr = result?["models"] as? [[String: Any]] ?? []
+        return arr.compactMap { dict in
+            guard let id = dict["id"] as? String, !id.isEmpty else { return nil }
+            return DiscoveredModel(
+                id: id,
+                name: dict["name"] as? String,
+                contextWindow: (dict["contextWindow"] as? Int) ?? (dict["contextWindow"] as? Double).map(Int.init),
+                source: (dict["source"] as? String) ?? "remote"
+            )
+        }
     }
 
     /// Build the wire-level provider config the sidecar expects.

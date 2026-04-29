@@ -1,4 +1,4 @@
-import { getModel, type Model, type KnownProvider } from "@mariozechner/pi-ai";
+import { getModel, getModels, type Model, type KnownProvider } from "@mariozechner/pi-ai";
 
 /**
  * Provider config sent over the wire by the Mac app on agent.create.
@@ -93,6 +93,65 @@ export function buildModel(cfg: ProviderConfig): Model<any> {
 
 export function apiKeyFor(cfg: ProviderConfig): string | undefined {
   return cfg.apiKey;
+}
+
+export type DiscoveredModel = {
+  id: string;
+  name?: string;
+  contextWindow?: number;
+  source: "registry" | "remote";
+};
+
+/**
+ * List models available for a provider config.
+ *
+ * - "pi-known": pulled from pi-ai's curated registry (no network call).
+ * - "openai-compatible" / "anthropic": HTTP GET `${baseUrl}/models` with the
+ *   provided api key, returns whatever the server enumerates.
+ */
+export async function listModels(cfg: ProviderConfig): Promise<DiscoveredModel[]> {
+  if (cfg.kind === "pi-known") {
+    const models = getModels(cfg.provider as any) as Array<Model<any>>;
+    return models.map((m) => ({
+      id: m.id,
+      name: m.name,
+      contextWindow: (m as any).contextWindow,
+      source: "registry" as const,
+    }));
+  }
+
+  const baseUrl = cfg.kind === "anthropic"
+    ? cfg.baseUrl ?? "https://api.anthropic.com/v1"
+    : cfg.baseUrl;
+  if (!baseUrl) throw new Error("baseUrl is required");
+
+  // Both OpenAI-compatible and Anthropic expose GET /models. Auth differs:
+  // OpenAI uses `Authorization: Bearer <key>`, Anthropic uses `x-api-key: <key>`
+  // plus a required `anthropic-version` header.
+  const url = baseUrl.replace(/\/+$/, "") + "/models";
+  const headers: Record<string, string> = { "accept": "application/json" };
+  if (cfg.apiKey) {
+    if (cfg.kind === "anthropic") {
+      headers["x-api-key"] = cfg.apiKey;
+      headers["anthropic-version"] = "2023-06-01";
+    } else {
+      headers["authorization"] = `Bearer ${cfg.apiKey}`;
+    }
+  }
+
+  const res = await fetch(url, { headers });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`GET ${url} failed: ${res.status} ${body.slice(0, 200)}`);
+  }
+  const json: any = await res.json();
+  const data: any[] = Array.isArray(json) ? json : json?.data ?? json?.models ?? [];
+  return data.map((m) => ({
+    id: typeof m === "string" ? m : (m.id ?? m.name ?? ""),
+    name: typeof m === "string" ? undefined : m.display_name ?? m.name,
+    contextWindow: typeof m === "object" ? m.context_window ?? m.context_length : undefined,
+    source: "remote" as const,
+  })).filter((m) => m.id);
 }
 
 /**

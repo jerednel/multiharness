@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { buildModel, PROVIDER_PRESETS } from "../src/providers.js";
+import { buildModel, listModels, PROVIDER_PRESETS } from "../src/providers.js";
 
 describe("buildModel — pi-known providers", () => {
   it("resolves an OpenRouter model from the registry", () => {
@@ -68,5 +68,73 @@ describe("PROVIDER_PRESETS", () => {
     expect(ids).toContain("openrouter");
     expect(ids).toContain("opencode");
     expect(ids).toContain("opencode-go");
+  });
+});
+
+describe("listModels", () => {
+  it("returns registry-backed models for a pi-known provider", async () => {
+    const models = await listModels({
+      kind: "pi-known",
+      provider: "openrouter",
+      modelId: "openrouter/auto",
+    });
+    expect(models.length).toBeGreaterThan(50);
+    expect(models[0]?.source).toBe("registry");
+  });
+
+  it("hits /models on an OpenAI-compatible base URL", async () => {
+    const port = 19500 + Math.floor(Math.random() * 100);
+    const server = Bun.serve({
+      port,
+      fetch(req) {
+        if (req.url.endsWith("/models")) {
+          return Response.json({
+            data: [
+              { id: "model-a", display_name: "Model A", context_window: 8192 },
+              { id: "model-b" },
+            ],
+          });
+        }
+        return new Response("not found", { status: 404 });
+      },
+    });
+    try {
+      const models = await listModels({
+        kind: "openai-compatible",
+        modelId: "ignored",
+        baseUrl: `http://127.0.0.1:${port}/v1`,
+      });
+      expect(models).toHaveLength(2);
+      expect(models[0]).toEqual({
+        id: "model-a",
+        name: "Model A",
+        contextWindow: 8192,
+        source: "remote",
+      });
+      expect(models[1]?.id).toBe("model-b");
+    } finally {
+      server.stop();
+    }
+  });
+
+  it("surfaces non-2xx as a clear error", async () => {
+    const port = 19600 + Math.floor(Math.random() * 100);
+    const server = Bun.serve({
+      port,
+      fetch() {
+        return new Response("nope", { status: 500 });
+      },
+    });
+    try {
+      await expect(
+        listModels({
+          kind: "openai-compatible",
+          modelId: "x",
+          baseUrl: `http://127.0.0.1:${port}/v1`,
+        }),
+      ).rejects.toThrow(/500/);
+    } finally {
+      server.stop();
+    }
   });
 });
