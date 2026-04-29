@@ -11,7 +11,7 @@ public struct WorktreeService: Sendable {
 
     public var rootDir: URL {
         let home = FileManager.default.homeDirectoryForCurrentUser
-        return home.appendingPathComponent("multiharness").appendingPathComponent("workspaces", isDirectory: true)
+        return home.appendingPathComponent(".multiharness").appendingPathComponent("workspaces", isDirectory: true)
     }
 
     public func worktreePath(projectSlug: String, workspaceSlug: String) -> URL {
