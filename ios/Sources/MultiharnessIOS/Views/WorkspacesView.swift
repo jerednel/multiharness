@@ -14,6 +14,7 @@ struct WorkspacesView: View {
     /// Set when the user just added a project; on the project sheet's
     /// dismissal we open the New Workspace sheet as a follow-up.
     @State private var pendingAutoNewWorkspace = false
+    @State private var renameTarget: RemoteWorkspace? = nil
 
     var body: some View {
         Group {
@@ -98,6 +99,16 @@ struct WorkspacesView: View {
                 pendingAutoNewWorkspace = true
             }
         }
+        .sheet(item: $renameTarget) { ws in
+            RenameWorkspaceSheet(
+                connection: connection,
+                workspace: ws,
+                isPresented: Binding(
+                    get: { renameTarget != nil },
+                    set: { if !$0 { renameTarget = nil } }
+                )
+            )
+        }
     }
 
     private var connectingView: some View {
@@ -159,6 +170,13 @@ struct WorkspacesView: View {
                                             LifecyclePill(state: ws.lifecycleState)
                                         }
                                     }
+                                    .contextMenu {
+                                        Button {
+                                            renameTarget = ws
+                                        } label: {
+                                            Label("Rename…", systemImage: "pencil")
+                                        }
+                                    }
                                 }
                             }
                         } label: {
@@ -216,6 +234,85 @@ struct WorkspacesView: View {
                 return a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
             }
             return (p, arr)
+        }
+    }
+}
+
+struct RenameWorkspaceSheet: View {
+    @Bindable var connection: ConnectionStore
+    let workspace: RemoteWorkspace
+    @Binding var isPresented: Bool
+
+    @State private var draft: String
+    @State private var error: String?
+    @State private var inFlight = false
+    @FocusState private var fieldFocused: Bool
+
+    init(
+        connection: ConnectionStore,
+        workspace: RemoteWorkspace,
+        isPresented: Binding<Bool>
+    ) {
+        self.connection = connection
+        self.workspace = workspace
+        self._isPresented = isPresented
+        self._draft = State(initialValue: workspace.name)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("Workspace name", text: $draft)
+                        .focused($fieldFocused)
+                        .submitLabel(.done)
+                        .onSubmit { commit() }
+                } footer: {
+                    Text("Branch and worktree path stay the same — only the display name changes.")
+                }
+                if let err = error {
+                    Section {
+                        Text(err).font(.caption).foregroundStyle(.red)
+                    }
+                }
+            }
+            .navigationTitle("Rename workspace")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { isPresented = false }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { commit() }
+                        .disabled(!isValid || inFlight)
+                }
+            }
+            .onAppear { fieldFocused = true }
+        }
+    }
+
+    private var trimmed: String {
+        draft.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var isValid: Bool {
+        let t = trimmed
+        return !t.isEmpty && t.count <= 80 && t != workspace.name
+    }
+
+    private func commit() {
+        guard isValid, !inFlight else { return }
+        inFlight = true
+        let id = workspace.id
+        let newName = trimmed
+        Task { @MainActor in
+            defer { inFlight = false }
+            do {
+                try await connection.requestRename(workspaceId: id, newName: newName)
+                isPresented = false
+            } catch {
+                self.error = String(describing: error)
+            }
         }
     }
 }
