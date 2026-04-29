@@ -16,6 +16,44 @@ public final class AppStore {
 
     private let env: AppEnvironment
 
+    /// Convenience: pull every workspace across every project from SQLite.
+    /// Used at boot / sidecar-rebind to bootstrap sessions remotely.
+    public func persistenceWorkspaces() throws -> [Workspace] {
+        try env.persistence.listWorkspaces(projectId: nil)
+    }
+
+    /// Tell the sidecar about every non-archived workspace so any client
+    /// (Mac UI, iOS companion, future tooling) can call agent.prompt without
+    /// first opening the workspace in the Mac UI. Idempotent — sessions that
+    /// already exist surface "already exists" errors which we ignore.
+    public func bootstrapAllSessions(workspaces: [Workspace]) async {
+        guard let client = env.control else { return }
+        for ws in workspaces where ws.archivedAt == nil {
+            guard let provider = providers.first(where: { $0.id == ws.providerId }) else { continue }
+            let cfg = providerConfig(provider: provider, modelId: ws.modelId)
+            let params: [String: Any] = [
+                "workspaceId": ws.id.uuidString,
+                "worktreePath": ws.worktreePath,
+                "systemPrompt": "You are a helpful coding agent operating inside a git worktree. Use the available tools to read and modify files.",
+                "providerConfig": cfg,
+            ]
+            do {
+                _ = try await client.call(method: "agent.create", params: params)
+            } catch let e as ControlError {
+                if case .remote(_, let msg) = e, msg.contains("already exists") {
+                    continue
+                }
+                FileHandle.standardError.write(
+                    "[bootstrap] agent.create for \(ws.name) failed: \(e)\n".data(using: .utf8) ?? Data()
+                )
+            } catch {
+                FileHandle.standardError.write(
+                    "[bootstrap] agent.create for \(ws.name) error: \(error)\n".data(using: .utf8) ?? Data()
+                )
+            }
+        }
+    }
+
     public init(env: AppEnvironment) {
         self.env = env
         // Sync current status — sidecar.start() may have already fired before

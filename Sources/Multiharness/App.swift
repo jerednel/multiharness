@@ -46,13 +46,19 @@ struct MultiharnessApp: App {
                 if let app {
                     app.sidecarBindingVersion += 1
                 }
-                // Re-point each per-workspace store at the new client. Active
-                // sidecar sessions don't survive a restart, so the next prompt
-                // will trigger a fresh agent.create through ensureSession's
-                // .task(id: bindingVersion) hook.
                 if let agentRegistry {
                     for store in agentRegistry.stores.values {
                         store.bind(control: client)
+                    }
+                }
+                // Recreate sessions for every workspace so any client (Mac
+                // UI, iOS companion) can prompt without first opening the
+                // workspace in the Mac UI. Sidecar restarts blow away
+                // in-memory sessions; this re-arms them.
+                if let app {
+                    Task { @MainActor in
+                        let all = (try? app.persistenceWorkspaces()) ?? []
+                        await app.bootstrapAllSessions(workspaces: all)
                     }
                 }
             }

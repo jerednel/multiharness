@@ -69,9 +69,16 @@ public final class AppEnvironment {
     }
 
     private func rebindControl(port: Int) {
-        // Tear down the dead client (if any), build a fresh one on the new port.
+        // Tear down the dead client (if any), build a fresh one on the new
+        // port. When remote access is enabled the sidecar enforces auth on
+        // every connection — including loopback — so we must hand the token
+        // to our own ControlClient too.
         control?.disconnect()
-        let client = ControlClient(port: port)
+        let client = ControlClient(
+            port: port,
+            host: "127.0.0.1",
+            authToken: remoteAccess.enabled ? remoteAccess.token : nil
+        )
         client.connect()
         self.control = client
         self.onControlChanged?(client)
