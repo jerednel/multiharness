@@ -148,6 +148,7 @@ export function registerMethods(
     "project.scan",
     "project.create",
     "models.listForProvider",
+    "fs.list",
   ]) {
     d.register(m, async (params) => {
       return await relay.dispatch(m, params);

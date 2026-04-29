@@ -27,6 +27,9 @@ enum RemoteHandlers {
         await relay.register(method: "models.listForProvider") { params in
             try await Self.modelsListForProvider(params: params, env: env, appStore: appStore)
         }
+        await relay.register(method: "fs.list") { params in
+            try await Self.fsList(params: params)
+        }
     }
 
     // MARK: - models.listForProvider
@@ -182,6 +185,36 @@ enum RemoteHandlers {
                 let isDir = (try? e.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
                 if isDir { stack.append((e, depth + 1)) }
             }
+        }
+    }
+
+    // MARK: - fs.list
+
+    /// List immediate subdirectories of a path on the Mac so iOS can drill
+    /// into arbitrary folders when adding a project. Hidden entries and
+    /// regular files are filtered out. Defaults to `$HOME` when no path
+    /// is provided.
+    @MainActor
+    private static func fsList(params: [String: Any]) async throws -> Any? {
+        let raw = (params["path"] as? String)?.trimmingCharacters(in: .whitespaces)
+        let path: String = (raw?.isEmpty == false ? raw! :
+                            FileManager.default.homeDirectoryForCurrentUser.path)
+        do {
+            let listing = try RemoteFs.list(path: path)
+            return [
+                "path": listing.path,
+                "parent": (listing.parent as Any?) ?? NSNull(),
+                "entries": listing.entries.map { e in
+                    [
+                        "name": e.name,
+                        "path": e.path,
+                        "isGitRepo": e.isGitRepo,
+                    ] as [String: Any]
+                },
+            ] as [String: Any]
+        } catch {
+            throw RemoteError.bad((error as? RemoteFs.ListError)?.errorDescription
+                                  ?? error.localizedDescription)
         }
     }
 
