@@ -125,6 +125,18 @@ public final class ConnectionStore: NSObject, ControlClientDelegate {
         }
     }
 
+    public func fetchModels(providerId: String) async throws -> [DiscoveredModel] {
+        let result = try await client.call(
+            method: "models.listForProvider",
+            params: ["providerId": providerId]
+        ) as? [String: Any]
+        let arr = (result?["models"] as? [[String: Any]]) ?? []
+        return arr.compactMap { dict in
+            guard let id = dict["id"] as? String, !id.isEmpty else { return nil }
+            return DiscoveredModel(id: id, name: dict["name"] as? String)
+        }
+    }
+
     public func createProject(
         name: String,
         repoPath: String,
@@ -159,6 +171,12 @@ public final class ConnectionStore: NSObject, ControlClientDelegate {
             self.state = .error(error.map { String(describing: $0) } ?? "disconnected")
         }
     }
+}
+
+public struct DiscoveredModel: Identifiable, Sendable, Hashable {
+    public let id: String
+    public let name: String?
+    public var displayName: String { name ?? id }
 }
 
 public struct RemoteWorkspace: Identifiable, Sendable, Hashable {

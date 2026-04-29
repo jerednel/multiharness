@@ -24,6 +24,49 @@ enum RemoteHandlers {
         await relay.register(method: "project.create") { params in
             try await Self.projectCreate(params: params, env: env, appStore: appStore)
         }
+        await relay.register(method: "models.listForProvider") { params in
+            try await Self.modelsListForProvider(params: params, env: env, appStore: appStore)
+        }
+    }
+
+    // MARK: - models.listForProvider
+
+    /// iOS asks the Mac to enumerate models for a registered provider.
+    /// Mac builds the full providerConfig (resolving the API key from
+    /// Keychain) and calls `models.list` on the sidecar locally — meaning
+    /// the API key never leaves the Mac.
+    @MainActor
+    private static func modelsListForProvider(
+        params: [String: Any],
+        env: AppEnvironment,
+        appStore: AppStore
+    ) async throws -> Any? {
+        guard let providerIdStr = params["providerId"] as? String,
+              let providerId = UUID(uuidString: providerIdStr) else {
+            throw RemoteError.bad("providerId required (UUID string)")
+        }
+        guard let provider = appStore.providers.first(where: { $0.id == providerId }) else {
+            throw RemoteError.bad("provider not found")
+        }
+        let cfg = appStore.providerConfig(
+            provider: provider,
+            modelId: provider.defaultModelId ?? ""
+        )
+        guard let client = env.control else {
+            throw RemoteError.bad("sidecar control client not bound")
+        }
+        let result = try await client.call(
+            method: "models.list",
+            params: ["providerConfig": cfg]
+        ) as? [String: Any]
+        let arr = (result?["models"] as? [[String: Any]]) ?? []
+        let trimmed = arr.compactMap { dict -> [String: Any]? in
+            guard let id = dict["id"] as? String, !id.isEmpty else { return nil }
+            var out: [String: Any] = ["id": id]
+            if let name = dict["name"] as? String { out["name"] = name }
+            return out
+        }
+        return ["models": trimmed]
     }
 
     // MARK: - workspace.create

@@ -92,7 +92,12 @@ export function registerMethods(
   // ── Relayed methods ─────────────────────────────────────────────────────
   // These are forwarded to the registered Mac handler client (which has
   // SQLite, git, NSOpenPanel, etc.) and the Mac's response comes back here.
-  for (const m of ["workspace.create", "project.scan", "project.create"]) {
+  for (const m of [
+    "workspace.create",
+    "project.scan",
+    "project.create",
+    "models.listForProvider",
+  ]) {
     d.register(m, async (params) => {
       return await relay.dispatch(m, params);
     });

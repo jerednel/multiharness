@@ -10,6 +10,10 @@ struct NewWorkspaceSheet: View {
     @State private var projectId: String = ""
     @State private var providerId: String = ""
     @State private var modelId: String = ""
+    @State private var manualMode = false
+    @State private var loadedModels: [DiscoveredModel] = []
+    @State private var loadingModels = false
+    @State private var modelLoadError: String?
     @State private var error: String?
     @State private var working = false
 
@@ -25,16 +29,50 @@ struct NewWorkspaceSheet: View {
                     }
                     TextField("Base branch (e.g. main)", text: $baseBranch)
                 }
-                Section("Model") {
+                Section {
                     Picker("Provider", selection: $providerId) {
                         ForEach(connection.providers) { p in
                             Text(p.name).tag(p.id)
                         }
                     }
-                    TextField("Model id (e.g. anthropic/claude-sonnet-4-6)",
-                              text: $modelId)
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
+                    if manualMode {
+                        TextField("Model id (e.g. anthropic/claude-sonnet-4-6)",
+                                  text: $modelId)
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.never)
+                    } else if loadingModels {
+                        HStack {
+                            ProgressView().controlSize(.small)
+                            Text("Loading models…").font(.caption).foregroundStyle(.secondary)
+                        }
+                    } else if let err = modelLoadError {
+                        Text(err).font(.caption).foregroundStyle(.red)
+                    } else if loadedModels.isEmpty {
+                        Text("No models available for this provider.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    } else {
+                        Picker("Model", selection: $modelId) {
+                            Text("Pick a model…").tag("")
+                            ForEach(loadedModels) { m in
+                                Text(m.displayName).tag(m.id)
+                            }
+                        }
+                    }
+                    Toggle("Enter model id manually", isOn: $manualMode)
+                        .font(.caption)
+                } header: {
+                    HStack {
+                        Text("Model")
+                        Spacer()
+                        if !manualMode {
+                            Button {
+                                Task { await loadModels() }
+                            } label: {
+                                Image(systemName: "arrow.clockwise")
+                            }
+                            .disabled(providerId.isEmpty || loadingModels)
+                        }
+                    }
                 }
                 if let err = error {
                     Section { Text(err).font(.caption).foregroundStyle(.red) }
@@ -57,6 +95,26 @@ struct NewWorkspaceSheet: View {
         .onAppear {
             projectId = connection.projects.first?.id ?? ""
             providerId = connection.providers.first?.id ?? ""
+            Task { await loadModels() }
+        }
+        .onChange(of: providerId) { _, _ in
+            modelId = ""
+            loadedModels = []
+            modelLoadError = nil
+            Task { await loadModels() }
+        }
+    }
+
+    @MainActor
+    private func loadModels() async {
+        guard !providerId.isEmpty, !manualMode else { return }
+        loadingModels = true
+        modelLoadError = nil
+        defer { loadingModels = false }
+        do {
+            loadedModels = try await connection.fetchModels(providerId: providerId)
+        } catch {
+            modelLoadError = String(describing: error)
         }
     }
 
