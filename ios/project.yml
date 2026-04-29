@@ -24,6 +24,10 @@ targets:
     type: application
     platform: iOS
     deploymentTarget: "17.0"
+    scheme:
+      gatherCoverageData: false
+      runWithoutBuilding: false
+      testTargets: []
     sources:
       - path: Sources/MultiharnessIOS
     info:
