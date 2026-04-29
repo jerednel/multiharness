@@ -237,7 +237,7 @@ struct SettingsSheet: View {
     @Binding var isPresented: Bool
     @State private var tab: SettingsTab = .providers
 
-    enum SettingsTab: Hashable { case providers, remote, permissions }
+    enum SettingsTab: Hashable { case providers, remote, permissions, sidebar }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -245,6 +245,7 @@ struct SettingsSheet: View {
                 tabButton("Providers", .providers)
                 tabButton("Remote access", .remote)
                 tabButton("Permissions", .permissions)
+                tabButton("Sidebar", .sidebar)
                 Spacer()
             }
             Divider()
@@ -255,6 +256,8 @@ struct SettingsSheet: View {
                 RemoteAccessTab(env: env)
             case .permissions:
                 PermissionsTab(env: env, appStore: appStore)
+            case .sidebar:
+                SidebarTab(appStore: appStore)
             }
             Spacer()
             HStack {
@@ -409,6 +412,25 @@ private struct ProvidersTab: View {
             apiKey: apiKey.isEmpty ? nil : apiKey
         )
         manualName = ""; manualBaseUrl = ""; apiKey = ""; selectedPresetId = ""
+    }
+}
+
+private struct SidebarTab: View {
+    @Bindable var appStore: AppStore
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Sidebar").font(.title3).bold()
+            Text("Choose how the sidebar lists your projects and workspaces.")
+                .font(.callout).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Picker("Layout", selection: $appStore.sidebarMode) {
+                ForEach(SidebarMode.allCases, id: \.self) { mode in
+                    Text(mode.label).tag(mode)
+                }
+            }
+            .pickerStyle(.radioGroup)
+        }
     }
 }
 

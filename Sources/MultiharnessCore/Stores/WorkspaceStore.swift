@@ -25,15 +25,36 @@ public final class WorkspaceStore {
         }
     }
 
+    /// Load every workspace across every project. Used by the all-projects
+    /// sidebar mode.
+    public func loadAll() {
+        load(projectId: nil)
+    }
+
     public func grouped() -> [(LifecycleState, [Workspace])] {
+        grouped(projectId: nil)
+    }
+
+    /// Group `projectId`'s workspaces by lifecycle state in sidebar order.
+    /// Pass `nil` to group across every loaded workspace.
+    public func grouped(projectId: UUID?) -> [(LifecycleState, [Workspace])] {
         var buckets: [LifecycleState: [Workspace]] = [:]
         for w in workspaces where w.archivedAt == nil {
+            if let pid = projectId, w.projectId != pid { continue }
             buckets[w.lifecycleState, default: []].append(w)
         }
         return LifecycleState.sidebarOrder.compactMap { state in
             guard let arr = buckets[state], !arr.isEmpty else { return nil }
             return (state, arr)
         }
+    }
+
+    /// Non-archived workspaces for `projectId`, sorted by createdAt
+    /// descending. Used by the all-projects flat view.
+    public func workspaces(for projectId: UUID) -> [Workspace] {
+        workspaces
+            .filter { $0.projectId == projectId && $0.archivedAt == nil }
+            .sorted { $0.createdAt > $1.createdAt }
     }
 
     public func selected() -> Workspace? {
@@ -73,6 +94,63 @@ public final class WorkspaceStore {
         workspaces.insert(ws, at: 0)
         selectedWorkspaceId = ws.id
         return ws
+    }
+
+    public enum QuickCreateError: Error, LocalizedError {
+        case noProviderAvailable
+        public var errorDescription: String? {
+            switch self {
+            case .noProviderAvailable:
+                return "No provider configured. Add one in Settings."
+            }
+        }
+    }
+
+    /// One-click workspace creation. Inherits provider/model/baseBranch
+    /// from the currently selected workspace (when it belongs to `project`)
+    /// or falls back to project defaults. Generates a unique
+    /// adjective-noun name.
+    @discardableResult
+    public func quickCreate(
+        project: Project,
+        providers: [ProviderRecord],
+        gitUserName: String
+    ) throws -> Workspace {
+        let inherit = selected().flatMap { $0.projectId == project.id ? $0 : nil }
+        let providerId = inherit?.providerId ?? project.defaultProviderId
+        let modelId = inherit?.modelId ?? project.defaultModelId
+        let baseBranch = inherit?.baseBranch ?? project.defaultBaseBranch
+
+        let provider: ProviderRecord
+        if let pid = providerId, let p = providers.first(where: { $0.id == pid }) {
+            provider = p
+        } else if let first = providers.first {
+            provider = first
+        } else {
+            throw QuickCreateError.noProviderAvailable
+        }
+
+        let resolvedModelId = modelId
+            ?? provider.defaultModelId
+            ?? ""
+        guard !resolvedModelId.isEmpty else {
+            throw QuickCreateError.noProviderAvailable
+        }
+
+        let existingSlugs = Set(
+            workspaces
+                .filter { $0.projectId == project.id }
+                .map { $0.slug }
+        )
+        let name = RandomName.generateUnique(avoiding: existingSlugs)
+        return try create(
+            project: project,
+            name: name,
+            baseBranch: baseBranch,
+            provider: provider,
+            modelId: resolvedModelId,
+            gitUserName: gitUserName
+        )
     }
 
     public func setLifecycle(_ ws: Workspace, _ state: LifecycleState) {

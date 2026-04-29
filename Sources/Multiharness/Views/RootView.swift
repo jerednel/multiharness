@@ -1,5 +1,6 @@
 import SwiftUI
 import MultiharnessCore
+import AppKit
 
 struct RootView: View {
     let env: AppEnvironment
@@ -11,6 +12,7 @@ struct RootView: View {
     @State private var showingNewWorkspace = false
     @State private var showingSettings = false
     @State private var showingNewProject = false
+    @State private var quickCreateError: String?
 
     enum SidebarSelection: Hashable { case workspaces, settings }
 
@@ -20,7 +22,7 @@ struct RootView: View {
         } detail: {
             detail
         }
-        .navigationTitle(appStore.selectedProject?.name ?? "Multiharness")
+        .navigationTitle(navigationTitle)
         .toolbar { toolbar }
         .sheet(isPresented: $showingNewWorkspace) {
             NewWorkspaceSheet(
@@ -35,29 +37,85 @@ struct RootView: View {
         .sheet(isPresented: $showingSettings) {
             SettingsSheet(env: env, appStore: appStore, isPresented: $showingSettings)
         }
+        .alert("Couldn't create workspace", isPresented: Binding(
+            get: { quickCreateError != nil },
+            set: { if !$0 { quickCreateError = nil } }
+        ), actions: {
+            Button("OK") { quickCreateError = nil }
+        }, message: {
+            Text(quickCreateError ?? "")
+        })
         .frame(minWidth: 1100, minHeight: 700)
+        .onChange(of: appStore.sidebarMode) { _, new in
+            reloadForMode(new)
+        }
+    }
+
+    private var navigationTitle: String {
+        switch appStore.sidebarMode {
+        case .singleProject:
+            return appStore.selectedProject?.name ?? "Multiharness"
+        case .allProjects:
+            return "Multiharness"
+        }
     }
 
     @ViewBuilder
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
-            ProjectPickerHeader(appStore: appStore, workspaceStore: workspaceStore, showingNewProject: $showingNewProject)
-                .padding(.horizontal, 12).padding(.vertical, 10)
-            Divider()
-            if appStore.selectedProject != nil {
-                WorkspaceSidebar(
+            switch appStore.sidebarMode {
+            case .singleProject:
+                ProjectPickerHeader(
+                    appStore: appStore,
                     workspaceStore: workspaceStore,
-                    selection: Binding(
-                        get: { workspaceStore.selectedWorkspaceId },
-                        set: { workspaceStore.selectedWorkspaceId = $0 }
+                    showingNewProject: $showingNewProject,
+                    onQuickCreate: { runQuickCreate(project: $0) }
+                )
+                    .padding(.horizontal, 12).padding(.vertical, 10)
+                Divider()
+                if appStore.selectedProject != nil {
+                    WorkspaceSidebar(
+                        workspaceStore: workspaceStore,
+                        selection: Binding(
+                            get: { workspaceStore.selectedWorkspaceId },
+                            set: { workspaceStore.selectedWorkspaceId = $0 }
+                        )
                     )
-                )
-            } else {
-                ContentUnavailableView(
-                    "No project selected",
-                    systemImage: "folder.badge.plus",
-                    description: Text("Add a project to get started.")
-                )
+                } else {
+                    ContentUnavailableView(
+                        "No project selected",
+                        systemImage: "folder.badge.plus",
+                        description: Text("Add a project to get started.")
+                    )
+                }
+            case .allProjects:
+                AllProjectsHeader(showingNewProject: $showingNewProject)
+                    .padding(.horizontal, 12).padding(.vertical, 10)
+                Divider()
+                if appStore.projects.isEmpty {
+                    ContentUnavailableView(
+                        "No projects yet",
+                        systemImage: "folder.badge.plus",
+                        description: Text("Add a project to get started.")
+                    )
+                } else {
+                    AllProjectsSidebar(
+                        appStore: appStore,
+                        workspaceStore: workspaceStore,
+                        selection: Binding(
+                            get: { workspaceStore.selectedWorkspaceId },
+                            set: { newID in
+                                workspaceStore.selectedWorkspaceId = newID
+                                if let id = newID,
+                                   let ws = workspaceStore.workspaces.first(where: { $0.id == id }),
+                                   appStore.selectedProjectId != ws.projectId {
+                                    appStore.selectedProjectId = ws.projectId
+                                }
+                            }
+                        ),
+                        onQuickCreate: { runQuickCreate(project: $0) }
+                    )
+                }
             }
             Spacer()
             Divider()
@@ -113,12 +171,37 @@ struct RootView: View {
             }
         }
     }
+
+    private func runQuickCreate(project: Project) {
+        do {
+            _ = try workspaceStore.quickCreate(
+                project: project,
+                providers: appStore.providers,
+                gitUserName: NSUserName()
+            )
+            if appStore.sidebarMode == .allProjects {
+                appStore.selectedProjectId = project.id
+            }
+        } catch {
+            quickCreateError = String(describing: error)
+        }
+    }
+
+    private func reloadForMode(_ mode: SidebarMode) {
+        switch mode {
+        case .singleProject:
+            workspaceStore.load(projectId: appStore.selectedProjectId)
+        case .allProjects:
+            workspaceStore.loadAll()
+        }
+    }
 }
 
 private struct ProjectPickerHeader: View {
     @Bindable var appStore: AppStore
     @Bindable var workspaceStore: WorkspaceStore
     @Binding var showingNewProject: Bool
+    var onQuickCreate: (Project) -> Void
 
     var body: some View {
         HStack(spacing: 8) {
@@ -152,6 +235,35 @@ private struct ProjectPickerHeader: View {
                 .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
             }
             .buttonStyle(.plain)
+            if let proj = appStore.selectedProject {
+                Button {
+                    onQuickCreate(proj)
+                } label: {
+                    Image(systemName: "plus").font(.body)
+                }
+                .buttonStyle(.borderless)
+                .disabled(appStore.providers.isEmpty)
+                .help("Quick-create workspace")
+            }
+        }
+    }
+}
+
+private struct AllProjectsHeader: View {
+    @Binding var showingNewProject: Bool
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "folder.fill")
+            Text("Projects").font(.headline)
+            Spacer()
+            Button {
+                showingNewProject = true
+            } label: {
+                Image(systemName: "folder.badge.plus")
+            }
+            .buttonStyle(.borderless)
+            .help("Add project")
         }
     }
 }

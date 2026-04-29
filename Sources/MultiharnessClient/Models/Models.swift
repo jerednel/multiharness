@@ -1,5 +1,17 @@
 import Foundation
 
+public enum SidebarMode: String, Codable, CaseIterable, Sendable, Equatable {
+    case singleProject = "single_project"
+    case allProjects = "all_projects"
+
+    public var label: String {
+        switch self {
+        case .singleProject: return "Single project (grouped by status)"
+        case .allProjects: return "All projects (collapsible)"
+        }
+    }
+}
+
 public enum LifecycleState: String, Codable, CaseIterable, Sendable, Equatable {
     case backlog
     case inProgress = "in_progress"

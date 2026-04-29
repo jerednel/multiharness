@@ -83,7 +83,12 @@ struct MultiharnessApp: App {
             BuiltinSeeds.ensureBuiltinProviders(app: app)
 
             let ws = WorkspaceStore(env: env)
-            ws.load(projectId: app.selectedProjectId)
+            switch app.sidebarMode {
+            case .singleProject:
+                ws.load(projectId: app.selectedProjectId)
+            case .allProjects:
+                ws.loadAll()
+            }
 
             self.env = env
             self.appStore = app

@@ -11,6 +11,13 @@ public final class AppStore {
     public var projects: [Project] = []
     public var providers: [ProviderRecord] = []
     public var selectedProjectId: UUID?
+    public var sidebarMode: SidebarMode = .singleProject {
+        didSet {
+            guard oldValue != sidebarMode else { return }
+            UserDefaults.standard.set(sidebarMode.rawValue, forKey: Self.sidebarModeDefaultsKey)
+        }
+    }
+    public static let sidebarModeDefaultsKey = "MultiharnessSidebarMode"
     public var sidecarStatus: SidecarManager.Status = .stopped
     public var lastError: String?
     /// Increments every time the sidecar (re)binds. Views observe this to
@@ -69,6 +76,10 @@ public final class AppStore {
 
     public init(env: AppEnvironment) {
         self.env = env
+        if let raw = UserDefaults.standard.string(forKey: Self.sidebarModeDefaultsKey),
+           let mode = SidebarMode(rawValue: raw) {
+            self.sidebarMode = mode
+        }
         // Sync current status — sidecar.start() may have already fired before
         // this store was constructed, in which case the callback below would
         // never see the .running transition.
