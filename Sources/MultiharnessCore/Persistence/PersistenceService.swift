@@ -135,8 +135,8 @@ public final class PersistenceService: @unchecked Sendable {
     public func upsertWorkspace(_ w: Workspace) throws {
         try db.executeUpdate(
             """
-            INSERT INTO workspaces (id, project_id, name, slug, branch_name, base_branch, worktree_path, lifecycle_state, provider_id, model_id, build_mode, created_at, archived_at, name_source, context_instructions)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO workspaces (id, project_id, name, slug, branch_name, base_branch, worktree_path, lifecycle_state, provider_id, model_id, build_mode, created_at, archived_at, name_source, context_instructions, last_viewed_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
               name=excluded.name,
               slug=excluded.slug,
@@ -149,7 +149,8 @@ public final class PersistenceService: @unchecked Sendable {
               build_mode=excluded.build_mode,
               archived_at=excluded.archived_at,
               name_source=excluded.name_source,
-              context_instructions=excluded.context_instructions;
+              context_instructions=excluded.context_instructions,
+              last_viewed_at=excluded.last_viewed_at;
             """
         ) { st in
             st.bind(1, w.id.uuidString)
@@ -167,15 +168,16 @@ public final class PersistenceService: @unchecked Sendable {
             st.bind(13, w.archivedAt)
             st.bind(14, w.nameSource.rawValue)
             st.bind(15, w.contextInstructions)
+            st.bind(16, w.lastViewedAt ?? Date())
         }
     }
 
     public func listWorkspaces(projectId: UUID? = nil) throws -> [Workspace] {
         let sql: String
         if projectId != nil {
-            sql = "SELECT id, project_id, name, slug, branch_name, base_branch, worktree_path, lifecycle_state, provider_id, model_id, build_mode, created_at, archived_at, name_source, context_instructions FROM workspaces WHERE project_id = ? ORDER BY created_at DESC;"
+            sql = "SELECT id, project_id, name, slug, branch_name, base_branch, worktree_path, lifecycle_state, provider_id, model_id, build_mode, created_at, archived_at, name_source, context_instructions, last_viewed_at FROM workspaces WHERE project_id = ? ORDER BY created_at DESC;"
         } else {
-            sql = "SELECT id, project_id, name, slug, branch_name, base_branch, worktree_path, lifecycle_state, provider_id, model_id, build_mode, created_at, archived_at, name_source, context_instructions FROM workspaces ORDER BY created_at DESC;"
+            sql = "SELECT id, project_id, name, slug, branch_name, base_branch, worktree_path, lifecycle_state, provider_id, model_id, build_mode, created_at, archived_at, name_source, context_instructions, last_viewed_at FROM workspaces ORDER BY created_at DESC;"
         }
         return try db.query(
             sql,
@@ -198,7 +200,8 @@ public final class PersistenceService: @unchecked Sendable {
                     createdAt: st.requiredDate(11),
                     archivedAt: st.date(12),
                     nameSource: st.string(13).flatMap(NameSource.init(rawValue:)) ?? .random,
-                    contextInstructions: st.string(14) ?? ""
+                    contextInstructions: st.string(14) ?? "",
+                    lastViewedAt: st.date(15)
                 )
             }
         )
@@ -207,6 +210,15 @@ public final class PersistenceService: @unchecked Sendable {
     public func deleteWorkspace(id: UUID) throws {
         try db.executeUpdate("DELETE FROM workspaces WHERE id = ?;") { st in
             st.bind(1, id.uuidString)
+        }
+    }
+
+    public func markWorkspaceViewed(id: UUID) throws {
+        try db.executeUpdate(
+            "UPDATE workspaces SET last_viewed_at = ? WHERE id = ?;"
+        ) { st in
+            st.bind(1, Date())
+            st.bind(2, id.uuidString)
         }
     }
 

@@ -206,4 +206,47 @@ final class PersistenceTests: XCTestCase {
         XCTAssertEqual(try svc.listProjects().first?.contextInstructions, "")
         XCTAssertEqual(try svc.listWorkspaces(projectId: proj.id).first?.contextInstructions, "")
     }
+
+    func testMigrationV6BackfillsLastViewedAt() throws {
+        let dir = try tempDir()
+        let svc = try PersistenceService(dataDir: dir)
+        let proj = Project(name: "P", slug: "p", repoPath: "/tmp/p")
+        try svc.upsertProject(proj)
+        let prov = ProviderRecord(name: "Local", kind: .openaiCompatible, baseUrl: "http://localhost:1234/v1")
+        try svc.upsertProvider(prov)
+        let ws = Workspace(
+            projectId: proj.id, name: "W", slug: "w",
+            branchName: "u/w", baseBranch: "main",
+            worktreePath: "/tmp/wt",
+            providerId: prov.id, modelId: "m"
+        )
+        try svc.upsertWorkspace(ws)
+        let loaded = try svc.listWorkspaces(projectId: proj.id)
+        XCTAssertEqual(loaded.count, 1)
+        let lvAt = loaded[0].lastViewedAt
+        XCTAssertNotNil(lvAt)
+        XCTAssertLessThanOrEqual(abs(lvAt!.timeIntervalSinceNow), 5)
+    }
+
+    func testMarkWorkspaceViewedUpdatesTimestamp() throws {
+        let dir = try tempDir()
+        let svc = try PersistenceService(dataDir: dir)
+        let proj = Project(name: "P", slug: "p", repoPath: "/tmp/p")
+        try svc.upsertProject(proj)
+        let prov = ProviderRecord(name: "Local", kind: .openaiCompatible, baseUrl: "http://localhost:1234/v1")
+        try svc.upsertProvider(prov)
+        let ws = Workspace(
+            projectId: proj.id, name: "W", slug: "w",
+            branchName: "u/w", baseBranch: "main",
+            worktreePath: "/tmp/wt",
+            providerId: prov.id, modelId: "m"
+        )
+        try svc.upsertWorkspace(ws)
+
+        let original = try svc.listWorkspaces(projectId: proj.id)[0].lastViewedAt!
+        Thread.sleep(forTimeInterval: 0.05)
+        try svc.markWorkspaceViewed(id: ws.id)
+        let after = try svc.listWorkspaces(projectId: proj.id)[0].lastViewedAt!
+        XCTAssertGreaterThan(after, original)
+    }
 }
