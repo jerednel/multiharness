@@ -28,6 +28,9 @@ public final class ControlClient: NSObject, @unchecked Sendable, URLSessionWebSo
     private var pending: [String: (Result<Any?, Error>) -> Void] = [:]
     private let queue = DispatchQueue(label: "ControlClient.queue")
 
+    private var isOpen: Bool = false
+    private var connectWaiters: [CheckedContinuation<Void, Error>] = []
+
     public init(port: Int) {
         self.url = URL(string: "ws://127.0.0.1:\(port)")!
         super.init()
@@ -45,9 +48,43 @@ public final class ControlClient: NSObject, @unchecked Sendable, URLSessionWebSo
     public func disconnect() {
         task?.cancel(with: .goingAway, reason: nil)
         task = nil
+        queue.async {
+            self.isOpen = false
+            for w in self.connectWaiters {
+                w.resume(throwing: ControlError.disconnected)
+            }
+            self.connectWaiters.removeAll()
+        }
+    }
+
+    /// Suspends until the WebSocket is open, or the timeout elapses.
+    public func awaitConnected(timeout: TimeInterval = 5.0) async throws {
+        if isOpen { return }
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            group.addTask {
+                try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
+                    self.queue.async {
+                        if self.isOpen { cont.resume(); return }
+                        self.connectWaiters.append(cont)
+                    }
+                }
+            }
+            group.addTask {
+                try await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+                throw ControlError.connectTimeout
+            }
+            try await group.next()
+            group.cancelAll()
+        }
     }
 
     public func call(method: String, params: [String: Any]) async throws -> Any? {
+        // Block briefly for the WebSocket to actually open. URLSessionWebSocketTask
+        // accepts send() before the connection is up, but the underlying TCP socket
+        // returns ENOTCONN — surfaced to callers as "Socket is not connected".
+        if !isOpen {
+            try await awaitConnected()
+        }
         let id = UUID().uuidString
         let frame: [String: Any] = ["id": id, "method": method, "params": params]
         let data = try JSONSerialization.data(withJSONObject: frame, options: [])
@@ -139,6 +176,12 @@ public final class ControlClient: NSObject, @unchecked Sendable, URLSessionWebSo
         webSocketTask: URLSessionWebSocketTask,
         didOpenWithProtocol protocol: String?
     ) {
+        queue.async {
+            self.isOpen = true
+            let pending = self.connectWaiters
+            self.connectWaiters.removeAll()
+            for w in pending { w.resume() }
+        }
         delegate?.controlClientDidConnect(self)
     }
 
@@ -148,6 +191,11 @@ public final class ControlClient: NSObject, @unchecked Sendable, URLSessionWebSo
         didCloseWith closeCode: URLSessionWebSocketTask.CloseCode,
         reason: Data?
     ) {
+        queue.async {
+            self.isOpen = false
+            for w in self.connectWaiters { w.resume(throwing: ControlError.disconnected) }
+            self.connectWaiters.removeAll()
+        }
         delegate?.controlClientDidDisconnect(self, error: nil)
     }
 }
@@ -155,10 +203,14 @@ public final class ControlClient: NSObject, @unchecked Sendable, URLSessionWebSo
 public enum ControlError: Error, CustomStringConvertible {
     case encodeFailed
     case remote(code: String, message: String)
+    case connectTimeout
+    case disconnected
     public var description: String {
         switch self {
         case .encodeFailed: return "failed to encode RPC frame as JSON"
         case .remote(let c, let m): return "[\(c)] \(m)"
+        case .connectTimeout: return "timed out waiting for control socket to connect"
+        case .disconnected: return "control socket disconnected"
         }
     }
 }
