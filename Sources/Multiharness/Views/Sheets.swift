@@ -375,6 +375,31 @@ private struct ProvidersTab: View {
                     }
                     Spacer()
                 }
+                HStack(spacing: 8) {
+                    Button {
+                        Task { await appStore.signInWithAnthropicConsole() }
+                    } label: {
+                        HStack(spacing: 6) {
+                            if appStore.anthropicConsoleLoginInProgress {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Image(systemName: "creditcard")
+                            }
+                            Text(hasConsoleProvider(appStore)
+                                 ? "Re-authenticate Claude Console"
+                                 : "Sign in with Claude (API Usage Billing)")
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.blue)
+                    .disabled(appStore.anthropicConsoleLoginInProgress)
+                    if let err = appStore.anthropicConsoleLoginError {
+                        Text(err).font(.caption).foregroundStyle(.red).lineLimit(2)
+                    } else if hasConsoleProvider(appStore) {
+                        Text("Signed in").font(.caption).foregroundStyle(.green)
+                    }
+                    Spacer()
+                }
             }
             ScrollView {
                 VStack(spacing: 4) {
@@ -417,6 +442,14 @@ private struct ProvidersTab: View {
                 Button("Add") { addProvider() }
                     .disabled(manualName.trimmingCharacters(in: .whitespaces).isEmpty)
             }
+        }
+    }
+
+    private func hasConsoleProvider(_ store: AppStore) -> Bool {
+        store.providers.contains { p in
+            p.kind == .piKnown
+            && p.piProvider == "anthropic"
+            && p.name == AppStore.anthropicConsoleProviderName
         }
     }
 
