@@ -50,11 +50,13 @@ public final class AppStore {
         guard let client = env.control else { return }
         for ws in workspaces where ws.archivedAt == nil {
             guard let provider = providers.first(where: { $0.id == ws.providerId }) else { continue }
+            guard let project = projects.first(where: { $0.id == ws.projectId }) else { continue }
             let cfg = providerConfig(provider: provider, modelId: ws.modelId)
+            let mode = ws.effectiveBuildMode(in: project)
             let params: [String: Any] = [
                 "workspaceId": ws.id.uuidString,
                 "worktreePath": ws.worktreePath,
-                "systemPrompt": "You are a helpful coding agent operating inside a git worktree. Use the available tools to read and modify files.",
+                "buildMode": mode.rawValue,
                 "providerConfig": cfg,
             ]
             do {
@@ -72,6 +74,15 @@ public final class AppStore {
                 )
             }
         }
+    }
+
+    @MainActor
+    public func setProjectDefaultBuildMode(projectId: UUID, mode: BuildMode) throws {
+        guard let idx = projects.firstIndex(where: { $0.id == projectId }) else { return }
+        var updated = projects[idx]
+        updated.defaultBuildMode = mode
+        try env.persistence.upsertProject(updated)
+        projects[idx] = updated
     }
 
     public init(env: AppEnvironment) {
