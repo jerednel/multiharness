@@ -212,6 +212,7 @@ public struct RemoteWorkspace: Identifiable, Sendable, Hashable {
     public let baseBranch: String
     public let lifecycleState: String
     public let projectId: String
+    public let contextInstructions: String
 
     init?(json: [String: Any]) {
         guard let id = json["id"] as? String,
@@ -224,6 +225,7 @@ public struct RemoteWorkspace: Identifiable, Sendable, Hashable {
         self.baseBranch = json["baseBranch"] as? String ?? ""
         self.lifecycleState = json["lifecycleState"] as? String ?? "in_progress"
         self.projectId = json["projectId"] as? String ?? ""
+        self.contextInstructions = json["contextInstructions"] as? String ?? ""
     }
 }
 
@@ -231,6 +233,7 @@ public struct RemoteProject: Identifiable, Sendable, Hashable {
     public let id: String
     public let name: String
     public let defaultBuildMode: BuildMode?
+    public let contextInstructions: String
     init?(json: [String: Any]) {
         guard let id = json["id"] as? String,
               let name = json["name"] as? String
@@ -238,6 +241,7 @@ public struct RemoteProject: Identifiable, Sendable, Hashable {
         self.id = id
         self.name = name
         self.defaultBuildMode = (json["defaultBuildMode"] as? String).flatMap(BuildMode.init(rawValue:))
+        self.contextInstructions = json["contextInstructions"] as? String ?? ""
     }
 }
 
