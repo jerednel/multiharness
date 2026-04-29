@@ -460,6 +460,7 @@ public final class AppStore {
                 anthropicConsoleLoginError = "sidecar returned an unexpected payload: \(String(describing: result))"
                 return
             }
+            let countBefore = providers.count
             addProvider(
                 name: Self.anthropicConsoleProviderName,
                 kind: .piKnown,
@@ -468,6 +469,10 @@ public final class AppStore {
                 defaultModelId: nil,
                 apiKey: apiKey
             )
+            if providers.count == countBefore {
+                anthropicConsoleLoginError =
+                    "minted API key, but failed to save provider locally: \(lastError ?? "unknown error"). Revoke the orphaned key in console.anthropic.com and retry."
+            }
         } catch {
             anthropicConsoleLoginError = String(describing: error)
         }

@@ -461,6 +461,11 @@ private struct ProvidersTab: View {
     }
 
     private func addProvider() {
+        if manualName == AppStore.anthropicConsoleProviderName {
+            appStore.lastError =
+                "Provider name \"\(AppStore.anthropicConsoleProviderName)\" is reserved — use the Sign in button instead."
+            return
+        }
         let pi: String?
         if manualKind == .piKnown {
             pi = ProviderPreset.builtins.first(where: { $0.id == selectedPresetId })?.piProvider
