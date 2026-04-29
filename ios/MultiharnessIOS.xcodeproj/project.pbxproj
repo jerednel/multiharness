@@ -10,6 +10,7 @@
 		26F8E52332D8F4C793011171 /* ConnectionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53F7B5701FD21794DAE10EBC /* ConnectionStore.swift */; };
 		2D1A006E3BE0CB107224909A /* MultiharnessClient in Frameworks */ = {isa = PBXBuildFile; productRef = 93AC74F73025A443D900DD41 /* MultiharnessClient */; };
 		3186CDDAFC48493B5715DF1F /* App.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F96F45BEEC202FC095E9F5C /* App.swift */; };
+		3BBBA435B96174C8D628C74A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 6AB5B7A5C62EABC14D79C4F0 /* Assets.xcassets */; };
 		72DAFA81CC94D8C2C55489C5 /* DiscoveryBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8F8840BC008DA280D106A3E /* DiscoveryBrowser.swift */; };
 		7AE5E0DDA072D2AF6BC5BAA2 /* WorkspacesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DF76228C3777F798E4B8408 /* WorkspacesView.swift */; };
 		8A9B5DD73FD755BB8444D789 /* RemoteAgentStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 840A215601F9E0C733815E32 /* RemoteAgentStore.swift */; };
@@ -25,11 +26,12 @@
 		2508B2990E575F586D8E6830 /* QRScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRScannerView.swift; sourceTree = "<group>"; };
 		29073A5DE9D5EE7CE5129B04 /* PairingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingView.swift; sourceTree = "<group>"; };
 		2F96F45BEEC202FC095E9F5C /* App.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App.swift; sourceTree = "<group>"; };
-		39CC0952E705BC2342609787 /* gwangju */ = {isa = PBXFileReference; lastKnownFileType = folder; name = gwangju; path = ..; sourceTree = SOURCE_ROOT; };
+		4ADB9872CE6CA151624526B7 /* lome */ = {isa = PBXFileReference; lastKnownFileType = folder; name = lome; path = ..; sourceTree = SOURCE_ROOT; };
 		4B19617671007E21225D2A51 /* PairingStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingStore.swift; sourceTree = "<group>"; };
 		535C55D1D0C280DF95F8DA33 /* CreateSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateSheets.swift; sourceTree = "<group>"; };
 		53F7B5701FD21794DAE10EBC /* ConnectionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionStore.swift; sourceTree = "<group>"; };
 		624C83AA83D7BBD38CB2D799 /* MultiharnessIOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = MultiharnessIOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		6AB5B7A5C62EABC14D79C4F0 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		6DF76228C3777F798E4B8408 /* WorkspacesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspacesView.swift; sourceTree = "<group>"; };
 		840A215601F9E0C733815E32 /* RemoteAgentStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteAgentStore.swift; sourceTree = "<group>"; };
 		9839A87870E46B4E1749BEFC /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
@@ -49,10 +51,18 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		115A15042E243C11CFD56AF1 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				6AB5B7A5C62EABC14D79C4F0 /* Assets.xcassets */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
 		AF0A3A399F6C652F0D19BA40 /* Packages */ = {
 			isa = PBXGroup;
 			children = (
-				39CC0952E705BC2342609787 /* gwangju */,
+				4ADB9872CE6CA151624526B7 /* lome */,
 			);
 			name = Packages;
 			sourceTree = "<group>";
@@ -80,6 +90,7 @@
 			children = (
 				D33A2C3AD1C7C225997A2C3E /* MultiharnessIOS */,
 				AF0A3A399F6C652F0D19BA40 /* Packages */,
+				115A15042E243C11CFD56AF1 /* Resources */,
 				CED5840A93A1FBE916E5E7B0 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -117,6 +128,7 @@
 			buildConfigurationList = E6FE609A6E1144A1FE4E78B9 /* Build configuration list for PBXNativeTarget "MultiharnessIOS" */;
 			buildPhases = (
 				5E8E01A76CCCC05BD78D147F /* Sources */,
+				1C7CE0D53849A513AE44B305 /* Resources */,
 				33AB56DA88F8953CCF330D18 /* Frameworks */,
 			);
 			buildRules = (
@@ -168,6 +180,17 @@
 		};
 /* End PBXProject section */
 
+/* Begin PBXResourcesBuildPhase section */
+		1C7CE0D53849A513AE44B305 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				3BBBA435B96174C8D628C74A /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		5E8E01A76CCCC05BD78D147F /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
@@ -193,6 +216,7 @@
 		3191DE62F4F52BEA78207793 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				INFOPLIST_FILE = Resources/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.multiharness.ios;
@@ -219,6 +243,7 @@
 		59B0B7082807AFAA606160CE /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				INFOPLIST_FILE = Resources/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.multiharness.ios;
