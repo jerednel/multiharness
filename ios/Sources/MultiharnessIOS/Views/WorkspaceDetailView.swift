@@ -9,7 +9,7 @@ struct WorkspaceDetailView: View {
     var body: some View {
         VStack(spacing: 0) {
             if let agent = connection.agents[workspace.id] {
-                ConversationList(agent: agent)
+                ConversationList(agent: agent, workspaceId: workspace.id)
             } else {
                 ProgressView().frame(maxHeight: .infinity)
             }
@@ -33,6 +33,7 @@ struct WorkspaceDetailView: View {
 
 private struct ConversationList: View {
     @Bindable var agent: RemoteAgentStore
+    let workspaceId: String
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -52,9 +53,10 @@ private struct ConversationList: View {
                     withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
                 }
             }
-            .onAppear {
-                // Land at the most recent message instead of the top.
-                // No animation — instant jump avoids the "scroll-down" tease.
+            .onChange(of: workspaceId, initial: true) { _, _ in
+                // Land at the most recent message on initial appearance and
+                // when switching workspaces. Instant jump avoids the
+                // "scroll-down" tease.
                 if let last = agent.turns.last {
                     proxy.scrollTo(last.id, anchor: .bottom)
                 } else if agent.isStreaming {

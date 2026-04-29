@@ -25,7 +25,7 @@ struct WorkspaceDetailView: View {
                 }
                 Divider()
                 if let store = agentRegistry.ensureStore(workspaceId: workspace.id) {
-                    ConversationView(store: store)
+                    ConversationView(store: store, workspaceId: workspace.id)
                     Divider()
                     Composer(
                         workspace: workspace,
@@ -139,6 +139,7 @@ private struct LifecycleBadge: View {
 
 private struct ConversationView: View {
     @Bindable var store: AgentStore
+    let workspaceId: UUID
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -161,6 +162,13 @@ private struct ConversationView: View {
             .onChange(of: store.isStreaming) { _, streaming in
                 if streaming {
                     withAnimation { proxy.scrollTo(thinkingCardId, anchor: .bottom) }
+                }
+            }
+            .onChange(of: workspaceId, initial: true) { _, _ in
+                if let last = store.turns.last {
+                    proxy.scrollTo(last.id, anchor: .bottom)
+                } else if store.isStreaming {
+                    proxy.scrollTo(thinkingCardId, anchor: .bottom)
                 }
             }
         }
