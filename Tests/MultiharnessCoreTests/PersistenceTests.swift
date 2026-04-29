@@ -249,4 +249,33 @@ final class PersistenceTests: XCTestCase {
         let after = try svc.listWorkspaces(projectId: proj.id)[0].lastViewedAt!
         XCTAssertGreaterThan(after, original)
     }
+
+    func testLastAssistantAtReadsLatestAgentEnd() throws {
+        let dir = try tempDir()
+        let svc = try PersistenceService(dataDir: dir)
+        let wsId = UUID()
+        let path = svc.messagesPath(workspaceId: wsId)
+        try FileManager.default.createDirectory(
+            at: path.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        // ts in milliseconds since 1970, matching the sidecar's JsonlWriter.
+        let lines = [
+            #"{"seq":0,"ts":1000,"event":{"type":"agent_start"}}"#,
+            #"{"seq":1,"ts":2000,"event":{"type":"message_end","message":{}}}"#,
+            #"{"seq":2,"ts":3000,"event":{"type":"agent_end","messages":[]}}"#,
+            #"{"seq":3,"ts":4000,"event":{"type":"agent_start"}}"#,
+            #"{"seq":4,"ts":5000,"event":{"type":"agent_end","messages":[]}}"#,
+        ].joined(separator: "\n") + "\n"
+        try lines.data(using: .utf8)!.write(to: path)
+        let result = try svc.lastAssistantAt(workspaceId: wsId)
+        XCTAssertEqual(result?.timeIntervalSince1970, 5.0) // 5000 ms
+    }
+
+    func testLastAssistantAtReturnsNilWhenFileMissing() throws {
+        let dir = try tempDir()
+        let svc = try PersistenceService(dataDir: dir)
+        let result = try svc.lastAssistantAt(workspaceId: UUID())
+        XCTAssertNil(result)
+    }
 }

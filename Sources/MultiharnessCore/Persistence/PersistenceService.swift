@@ -251,4 +251,31 @@ public final class PersistenceService: @unchecked Sendable {
             .appendingPathComponent(workspaceId.uuidString, isDirectory: true)
             .appendingPathComponent("messages.jsonl")
     }
+
+    /// Scan a workspace's messages.jsonl and return the timestamp of the most
+    /// recent `agent_end` event, or `nil` if the file is missing or empty.
+    /// Reads the whole file; this is acceptable because the file is small in
+    /// practice and we only call this once per workspace at app launch.
+    public func lastAssistantAt(workspaceId: UUID) throws -> Date? {
+        let path = messagesPath(workspaceId: workspaceId)
+        guard FileManager.default.fileExists(atPath: path.path) else { return nil }
+        let data = try Data(contentsOf: path)
+        guard let text = String(data: data, encoding: .utf8) else { return nil }
+        var maxMs: Int64 = -1
+        for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
+            guard let lineData = line.data(using: .utf8),
+                  let obj = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
+                  let event = obj["event"] as? [String: Any],
+                  event["type"] as? String == "agent_end"
+            else { continue }
+            let ts: Int64
+            if let n = obj["ts"] as? Int64 { ts = n }
+            else if let n = obj["ts"] as? Int { ts = Int64(n) }
+            else if let n = obj["ts"] as? Double { ts = Int64(n) }
+            else { continue }
+            if ts > maxMs { maxMs = ts }
+        }
+        if maxMs < 0 { return nil }
+        return Date(timeIntervalSince1970: TimeInterval(maxMs) / 1000.0)
+    }
 }
