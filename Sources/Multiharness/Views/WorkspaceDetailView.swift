@@ -146,7 +146,50 @@ private struct ConversationView: View {
 
 private struct TurnCard: View {
     let turn: ConversationTurn
+    @State private var expanded = false
+
     var body: some View {
+        if turn.role == .tool {
+            toolCard
+        } else {
+            messageCard
+        }
+    }
+
+    private var toolCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                expanded.toggle()
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                        .font(.caption2).foregroundStyle(.secondary).frame(width: 10)
+                    Image(systemName: "wrench.and.screwdriver").foregroundStyle(.orange).font(.caption)
+                    Text(turn.toolName ?? "tool").font(.caption).bold()
+                    Text("·").foregroundStyle(.secondary)
+                    Text(collapsedSummary).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    Spacer()
+                    if turn.streaming {
+                        ProgressView().scaleEffect(0.5).frame(width: 10, height: 10)
+                    }
+                }
+                .padding(.horizontal, 8).padding(.vertical, 6)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            if expanded {
+                Text(turn.text.isEmpty ? "(no output)" : turn.text)
+                    .font(.system(.caption, design: .monospaced))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(8)
+                    .textSelection(.enabled)
+            }
+        }
+        .background(Color.orange.opacity(0.07), in: RoundedRectangle(cornerRadius: 6))
+    }
+
+    private var messageCard: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
                 roleIcon
@@ -160,10 +203,21 @@ private struct TurnCard: View {
                 .font(.body)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(10)
-                .background(background, in: RoundedRectangle(cornerRadius: 8))
+                .background(messageBackground, in: RoundedRectangle(cornerRadius: 8))
                 .textSelection(.enabled)
         }
     }
+
+    private var collapsedSummary: String {
+        // Show the first non-empty line as a one-liner.
+        let firstLine = turn.text
+            .split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: true)
+            .first
+            .map(String.init) ?? ""
+        if firstLine.isEmpty { return turn.streaming ? "running…" : "done" }
+        return firstLine.count > 120 ? String(firstLine.prefix(120)) + "…" : firstLine
+    }
+
     private var roleLabel: String {
         switch turn.role {
         case .user: return "You"
@@ -171,6 +225,7 @@ private struct TurnCard: View {
         case .tool: return "Tool: \(turn.toolName ?? "?")"
         }
     }
+
     @ViewBuilder
     private var roleIcon: some View {
         switch turn.role {
@@ -179,7 +234,8 @@ private struct TurnCard: View {
         case .tool: Image(systemName: "wrench.and.screwdriver").foregroundStyle(.orange)
         }
     }
-    private var background: Color {
+
+    private var messageBackground: Color {
         switch turn.role {
         case .user: return Color.blue.opacity(0.08)
         case .assistant: return Color.purple.opacity(0.06)
