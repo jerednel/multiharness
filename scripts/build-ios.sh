@@ -36,15 +36,15 @@ if [ "${MULTIHARNESS_RESET_XCODE_CACHES:-0}" = "1" ]; then
   rm -rf MultiharnessIOS.xcodeproj/xcuserdata
 fi
 
-echo "==> Resolving Swift package dependencies (via workspace)"
-xcodebuild -workspace MultiharnessIOS.xcworkspace \
+echo "==> Resolving Swift package dependencies"
+xcodebuild -project MultiharnessIOS.xcodeproj \
     -scheme MultiharnessIOS \
     -destination 'generic/platform=iOS Simulator' \
     -resolvePackageDependencies \
     -quiet
 
-echo "==> Building for iOS Simulator (via workspace)"
-xcodebuild -workspace MultiharnessIOS.xcworkspace \
+echo "==> Building for iOS Simulator"
+xcodebuild -project MultiharnessIOS.xcodeproj \
     -scheme MultiharnessIOS \
     -destination 'generic/platform=iOS Simulator' \
     -quiet \
