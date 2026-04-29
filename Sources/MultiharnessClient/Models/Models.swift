@@ -35,6 +35,18 @@ public enum LifecycleState: String, Codable, CaseIterable, Sendable, Equatable {
     ]
 }
 
+public enum BuildMode: String, Codable, CaseIterable, Sendable, Equatable {
+    case primary
+    case shadowed
+
+    public var label: String {
+        switch self {
+        case .primary: return "This worktree"
+        case .shadowed: return "Local main"
+        }
+    }
+}
+
 public struct Project: Codable, Identifiable, Sendable, Equatable, Hashable {
     public var id: UUID
     public var name: String
