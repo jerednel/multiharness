@@ -17,7 +17,7 @@ describe("AgentRegistry", () => {
     await reg.create({
       workspaceId: "w1",
       worktreePath: worktree,
-      systemPrompt: "you are helpful",
+      buildMode: "primary",
       providerConfig: {
         kind: "openai-compatible",
         modelId: "x",
@@ -28,7 +28,7 @@ describe("AgentRegistry", () => {
       reg.create({
         workspaceId: "w1",
         worktreePath: worktree,
-        systemPrompt: "y",
+        buildMode: "primary",
         providerConfig: {
           kind: "openai-compatible",
           modelId: "x",
@@ -44,7 +44,7 @@ describe("AgentRegistry", () => {
     await reg.create({
       workspaceId: "w1",
       worktreePath: worktree,
-      systemPrompt: "y",
+      buildMode: "primary",
       providerConfig: {
         kind: "openai-compatible",
         modelId: "x",

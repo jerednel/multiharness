@@ -35,6 +35,7 @@ public final class AppStore {
     public var openaiLoginError: String?
 
     private let env: AppEnvironment
+    public var appEnv: AppEnvironment { env }
 
     /// Convenience: pull every workspace across every project from SQLite.
     /// Used at boot / sidecar-rebind to bootstrap sessions remotely.
@@ -47,31 +48,61 @@ public final class AppStore {
     /// first opening the workspace in the Mac UI. Idempotent — sessions that
     /// already exist surface "already exists" errors which we ignore.
     public func bootstrapAllSessions(workspaces: [Workspace]) async {
-        guard let client = env.control else { return }
         for ws in workspaces where ws.archivedAt == nil {
-            guard let provider = providers.first(where: { $0.id == ws.providerId }) else { continue }
-            let cfg = providerConfig(provider: provider, modelId: ws.modelId)
-            let params: [String: Any] = [
-                "workspaceId": ws.id.uuidString,
-                "worktreePath": ws.worktreePath,
-                "systemPrompt": "You are a helpful coding agent operating inside a git worktree. Use the available tools to read and modify files.",
-                "providerConfig": cfg,
-            ]
             do {
-                _ = try await client.call(method: "agent.create", params: params)
-            } catch let e as ControlError {
-                if case .remote(_, let msg) = e, msg.contains("already exists") {
-                    continue
-                }
-                FileHandle.standardError.write(
-                    "[bootstrap] agent.create for \(ws.name) failed: \(e)\n".data(using: .utf8) ?? Data()
-                )
+                try await createAgentSession(for: ws)
+            } catch AgentSessionError.controlClientUnavailable,
+                    AgentSessionError.providerNotFound,
+                    AgentSessionError.projectNotFound {
+                continue  // bootstrap skips silently like before
             } catch {
                 FileHandle.standardError.write(
-                    "[bootstrap] agent.create for \(ws.name) error: \(error)\n".data(using: .utf8) ?? Data()
+                    "[bootstrap] agent.create for \(ws.name) failed: \(error)\n".data(using: .utf8) ?? Data()
                 )
             }
         }
+    }
+
+    /// Create an agent session in the sidecar for the given workspace.
+    /// Swallows "already exists" (idempotent). Throws `AgentSessionError` for
+    /// missing pre-conditions and re-throws other `ControlError`s so callers
+    /// can surface them to the user.
+    @MainActor
+    public func createAgentSession(for workspace: Workspace) async throws {
+        guard let client = env.control else {
+            throw AgentSessionError.controlClientUnavailable
+        }
+        guard let provider = providers.first(where: { $0.id == workspace.providerId }) else {
+            throw AgentSessionError.providerNotFound
+        }
+        guard let project = projects.first(where: { $0.id == workspace.projectId }) else {
+            throw AgentSessionError.projectNotFound
+        }
+        let cfg = providerConfig(provider: provider, modelId: workspace.modelId)
+        let mode = workspace.effectiveBuildMode(in: project)
+        let params: [String: Any] = [
+            "workspaceId": workspace.id.uuidString,
+            "worktreePath": workspace.worktreePath,
+            "buildMode": mode.rawValue,
+            "providerConfig": cfg,
+        ]
+        do {
+            _ = try await client.call(method: "agent.create", params: params)
+        } catch let e as ControlError {
+            if case .remote(_, let msg) = e, msg.contains("already exists") {
+                return  // benign — both callers treat this as success
+            }
+            throw e
+        }
+    }
+
+    @MainActor
+    public func setProjectDefaultBuildMode(projectId: UUID, mode: BuildMode) throws {
+        guard let idx = projects.firstIndex(where: { $0.id == projectId }) else { return }
+        var updated = projects[idx]
+        updated.defaultBuildMode = mode
+        try env.persistence.upsertProject(updated)
+        projects[idx] = updated
     }
 
     public init(env: AppEnvironment) {
@@ -364,6 +395,22 @@ public final class AppStore {
             #if canImport(AppKit)
             NSWorkspace.shared.open(u)
             #endif
+        }
+    }
+}
+
+// MARK: - AgentSessionError
+
+public enum AgentSessionError: Error, CustomStringConvertible {
+    case controlClientUnavailable
+    case providerNotFound
+    case projectNotFound
+
+    public var description: String {
+        switch self {
+        case .controlClientUnavailable: return "control client not connected"
+        case .providerNotFound: return "provider not found"
+        case .projectNotFound: return "project not found"
         }
     }
 }

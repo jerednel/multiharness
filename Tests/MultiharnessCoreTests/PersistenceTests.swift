@@ -75,4 +75,54 @@ final class PersistenceTests: XCTestCase {
         XCTAssertEqual(slugify("Weird!@#chars"), "weird-chars")
         XCTAssertEqual(slugify(""), "item")
     }
+
+    func testBuildModeRoundtripsForProjectAndWorkspace() throws {
+        let dir = try tempDir()
+        let svc = try PersistenceService(dataDir: dir)
+        let proj = Project(
+            name: "P", slug: "p", repoPath: "/tmp/p", defaultBuildMode: .shadowed
+        )
+        try svc.upsertProject(proj)
+        let prov = ProviderRecord(
+            name: "Local",
+            kind: .openaiCompatible,
+            baseUrl: "http://localhost:1234/v1"
+        )
+        try svc.upsertProvider(prov)
+        let ws = Workspace(
+            projectId: proj.id,
+            name: "Feature",
+            slug: "feature",
+            branchName: "user/feature",
+            baseBranch: "main",
+            worktreePath: "/tmp/wt",
+            providerId: prov.id,
+            modelId: "qwen2.5-7b-instruct",
+            buildMode: .primary
+        )
+        try svc.upsertWorkspace(ws)
+        let projects = try svc.listProjects()
+        XCTAssertEqual(projects.first(where: { $0.id == proj.id })?.defaultBuildMode, .shadowed)
+        let workspaces = try svc.listWorkspaces(projectId: proj.id)
+        XCTAssertEqual(workspaces.first?.buildMode, .primary)
+    }
+
+    func testNullBuildModeStaysNull() throws {
+        let dir = try tempDir()
+        let svc = try PersistenceService(dataDir: dir)
+        let proj = Project(name: "P", slug: "p", repoPath: "/tmp/p")
+        try svc.upsertProject(proj)
+        let prov = ProviderRecord(name: "L", kind: .openaiCompatible, baseUrl: "http://x")
+        try svc.upsertProvider(prov)
+        let ws = Workspace(
+            projectId: proj.id,
+            name: "W", slug: "w",
+            branchName: "u/w", baseBranch: "main", worktreePath: "/tmp/w",
+            providerId: prov.id, modelId: "m"
+        )
+        try svc.upsertWorkspace(ws)
+        let loaded = try svc.listWorkspaces(projectId: proj.id)
+        XCTAssertNil(loaded.first?.buildMode)
+        XCTAssertNil(try svc.listProjects().first(where: { $0.id == proj.id })?.defaultBuildMode)
+    }
 }

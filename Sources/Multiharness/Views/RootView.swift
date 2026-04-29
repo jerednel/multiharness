@@ -12,6 +12,7 @@ struct RootView: View {
     @State private var showingNewWorkspace = false
     @State private var showingSettings = false
     @State private var showingNewProject = false
+    @State private var showingReconcile = false
     @State private var quickCreateError: String?
 
     enum SidebarSelection: Hashable { case workspaces, settings }
@@ -33,6 +34,16 @@ struct RootView: View {
         }
         .sheet(isPresented: $showingNewProject) {
             NewProjectSheet(appStore: appStore, isPresented: $showingNewProject)
+        }
+        .sheet(isPresented: $showingReconcile) {
+            if let proj = appStore.selectedProject {
+                ReconcileSheet(
+                    appStore: appStore,
+                    workspaceStore: workspaceStore,
+                    project: proj,
+                    isPresented: $showingReconcile
+                )
+            }
         }
         .sheet(isPresented: $showingSettings) {
             SettingsSheet(env: env, appStore: appStore, isPresented: $showingSettings)
@@ -69,6 +80,7 @@ struct RootView: View {
                     appStore: appStore,
                     workspaceStore: workspaceStore,
                     showingNewProject: $showingNewProject,
+                    showingReconcile: $showingReconcile,
                     onQuickCreate: { runQuickCreate(project: $0) }
                 )
                     .padding(.horizontal, 12).padding(.vertical, 10)
@@ -201,6 +213,7 @@ private struct ProjectPickerHeader: View {
     @Bindable var appStore: AppStore
     @Bindable var workspaceStore: WorkspaceStore
     @Binding var showingNewProject: Bool
+    @Binding var showingReconcile: Bool
     var onQuickCreate: (Project) -> Void
 
     var body: some View {
@@ -237,6 +250,14 @@ private struct ProjectPickerHeader: View {
             .buttonStyle(.plain)
             if let proj = appStore.selectedProject {
                 Button {
+                    showingReconcile = true
+                } label: {
+                    Image(systemName: "arrow.triangle.merge").font(.body)
+                }
+                .buttonStyle(.borderless)
+                .disabled(!eligibleWorkspacesExist(in: proj))
+                .help("Reconcile workspaces")
+                Button {
                     onQuickCreate(proj)
                 } label: {
                     Image(systemName: "plus").font(.body)
@@ -245,6 +266,14 @@ private struct ProjectPickerHeader: View {
                 .disabled(appStore.providers.isEmpty)
                 .help("Quick-create workspace")
             }
+        }
+    }
+
+    private func eligibleWorkspacesExist(in proj: Project) -> Bool {
+        workspaceStore.workspaces.contains { ws in
+            ws.projectId == proj.id
+                && ws.archivedAt == nil
+                && (ws.lifecycleState == .done || ws.lifecycleState == .inReview)
         }
     }
 }

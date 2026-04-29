@@ -98,6 +98,15 @@ enum RemoteHandlers {
             throw RemoteError.bad("modelId required")
         }
 
+        var buildMode: BuildMode? = nil
+        if let raw = params["buildMode"] as? String {
+            guard let parsed = BuildMode(rawValue: raw) else {
+                throw RemoteError.bad("invalid buildMode: \(raw)")
+            }
+            buildMode = parsed
+        }
+        let makeProjectDefault = (params["makeProjectDefault"] as? Bool) ?? false
+
         guard let project = appStore.projects.first(where: { $0.id == projectId }) else {
             throw RemoteError.bad("project not found")
         }
@@ -107,17 +116,25 @@ enum RemoteHandlers {
         let baseBranch = (params["baseBranch"] as? String) ?? project.defaultBaseBranch
         let userName = NSUserName()
 
+        if makeProjectDefault, let mode = buildMode {
+            try appStore.setProjectDefaultBuildMode(projectId: project.id, mode: mode)
+        }
+
         let workspace = try workspaceStore.create(
             project: project,
             name: name,
             baseBranch: baseBranch,
             provider: provider,
             modelId: modelId,
-            gitUserName: userName
+            gitUserName: userName,
+            buildMode: buildMode
         )
 
-        // Bootstrap an agent session so iOS can prompt immediately.
         await appStore.bootstrapAllSessions(workspaces: [workspace])
+
+        let resolvedMode = workspace.effectiveBuildMode(
+            in: appStore.projects.first(where: { $0.id == project.id }) ?? project
+        )
 
         return [
             "id": workspace.id.uuidString,
@@ -126,6 +143,7 @@ enum RemoteHandlers {
             "worktreePath": workspace.worktreePath,
             "lifecycleState": workspace.lifecycleState.rawValue,
             "modelId": workspace.modelId,
+            "buildMode": resolvedMode.rawValue,
         ]
     }
 

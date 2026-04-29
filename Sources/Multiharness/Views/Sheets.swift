@@ -82,6 +82,8 @@ struct NewWorkspaceSheet: View {
     @State private var baseBranch: String = ""
     @State private var providerId: UUID?
     @State private var modelId: String = ""
+    @State private var buildMode: BuildMode = .primary
+    @State private var makeProjectDefault: Bool = false
     @State private var error: String?
     @State private var creating = false
 
@@ -98,6 +100,17 @@ struct NewWorkspaceSheet: View {
                             Text(p.name).tag(Optional(p.id))
                         }
                     }
+                    Picker("Build target", selection: $buildMode) {
+                        ForEach(BuildMode.allCases, id: \.self) { m in
+                            Text(m.label).tag(m)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    Toggle(
+                        "Make default for this project",
+                        isOn: $makeProjectDefault
+                    )
+                    .disabled(buildMode == effectiveProjectDefault(proj))
                 }
                 Divider()
                 ModelPicker(
@@ -121,13 +134,26 @@ struct NewWorkspaceSheet: View {
                 .disabled(creating || !canCreate)
             }
         }
-        .padding(24).frame(width: 600, height: 620)
+        .padding(24).frame(width: 600, height: 680)
         .onAppear {
             if let proj = appStore.selectedProject, baseBranch.isEmpty {
                 baseBranch = proj.defaultBaseBranch
             }
             if providerId == nil { providerId = appStore.providers.first?.id }
+            if let proj = appStore.selectedProject {
+                buildMode = effectiveProjectDefault(proj)
+            }
         }
+        .onChange(of: buildMode) { _, newValue in
+            if let proj = appStore.selectedProject,
+               newValue == effectiveProjectDefault(proj) {
+                makeProjectDefault = false
+            }
+        }
+    }
+
+    private func effectiveProjectDefault(_ proj: Project) -> BuildMode {
+        proj.defaultBuildMode ?? .primary
     }
 
     private var canCreate: Bool {
@@ -148,6 +174,11 @@ struct NewWorkspaceSheet: View {
         creating = true
         defer { creating = false }
         do {
+            if makeProjectDefault {
+                try appStore.setProjectDefaultBuildMode(projectId: proj.id, mode: buildMode)
+            }
+            let storedMode: BuildMode? =
+                buildMode == effectiveProjectDefault(proj) ? nil : buildMode
             let userName = NSUserName()
             _ = try workspaceStore.create(
                 project: proj,
@@ -155,7 +186,8 @@ struct NewWorkspaceSheet: View {
                 baseBranch: baseBranch.isEmpty ? proj.defaultBaseBranch : baseBranch,
                 provider: provider,
                 modelId: modelId,
-                gitUserName: userName
+                gitUserName: userName,
+                buildMode: storedMode
             )
             isPresented = false
         } catch {

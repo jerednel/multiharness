@@ -102,7 +102,9 @@ public final class ConnectionStore: NSObject, ControlClientDelegate {
         name: String,
         baseBranch: String?,
         providerId: String,
-        modelId: String
+        modelId: String,
+        buildMode: BuildMode? = nil,
+        makeProjectDefault: Bool = false
     ) async throws {
         var params: [String: Any] = [
             "projectId": projectId,
@@ -111,6 +113,8 @@ public final class ConnectionStore: NSObject, ControlClientDelegate {
             "modelId": modelId,
         ]
         if let bb = baseBranch, !bb.isEmpty { params["baseBranch"] = bb }
+        if let mode = buildMode { params["buildMode"] = mode.rawValue }
+        if makeProjectDefault { params["makeProjectDefault"] = true }
         _ = try await client.call(method: "workspace.create", params: params)
         await refreshWorkspaces()
     }
@@ -226,12 +230,14 @@ public struct RemoteWorkspace: Identifiable, Sendable, Hashable {
 public struct RemoteProject: Identifiable, Sendable, Hashable {
     public let id: String
     public let name: String
+    public let defaultBuildMode: BuildMode?
     init?(json: [String: Any]) {
         guard let id = json["id"] as? String,
               let name = json["name"] as? String
         else { return nil }
         self.id = id
         self.name = name
+        self.defaultBuildMode = (json["defaultBuildMode"] as? String).flatMap(BuildMode.init(rawValue:))
     }
 }
 

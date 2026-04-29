@@ -51,6 +51,11 @@ public struct Migrations {
         v1,
         // v2: persist security-scoped bookmark for the repo path
         "ALTER TABLE projects ADD COLUMN repo_bookmark BLOB;",
+        // v3: build mode toggle
+        """
+        ALTER TABLE projects ADD COLUMN default_build_mode TEXT;
+        ALTER TABLE workspaces ADD COLUMN build_mode TEXT;
+        """,
     ]
 
     public static func apply(_ db: Database) throws {

@@ -109,7 +109,7 @@ describe("e2e: server + websocket + mock provider", () => {
     await call("agent.create", {
       workspaceId: "w1",
       worktreePath: worktree,
-      systemPrompt: "you are helpful",
+      buildMode: "primary",
       providerConfig: {
         kind: "openai-compatible",
         modelId: "mock-model",

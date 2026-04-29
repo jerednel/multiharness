@@ -2,6 +2,7 @@ import type { Dispatcher } from "./dispatcher.js";
 import type { AgentRegistry } from "./agentRegistry.js";
 import type { ProviderConfig } from "./providers.js";
 import { listModels } from "./providers.js";
+import { resolveConflictHunk } from "./conflictResolver.js";
 import { log } from "./logger.js";
 import { DataReader } from "./dataReader.js";
 import type { Relay } from "./relay.js";
@@ -32,12 +33,16 @@ export function registerMethods(
   d.register("agent.create", async (p) => {
     const workspaceId = requireString(p, "workspaceId");
     const worktreePath = requireString(p, "worktreePath");
-    const systemPrompt = requireString(p, "systemPrompt");
+    const buildModeRaw = requireString(p, "buildMode");
+    if (buildModeRaw !== "primary" && buildModeRaw !== "shadowed") {
+      throw new Error(`invalid_build_mode: ${buildModeRaw}`);
+    }
+    const buildMode = buildModeRaw as "primary" | "shadowed";
     const providerConfig = p.providerConfig as ProviderConfig | undefined;
     if (!providerConfig || typeof providerConfig !== "object") {
       throw new Error("providerConfig must be an object");
     }
-    await registry.create({ workspaceId, worktreePath, systemPrompt, providerConfig });
+    await registry.create({ workspaceId, worktreePath, buildMode, providerConfig });
     return { ok: true };
   });
 
@@ -78,6 +83,21 @@ export function registerMethods(
   });
 
   d.register("agent.list", () => ({ workspaceIds: registry.list() }));
+
+  d.register("agent.resolveConflictHunk", async (p) => {
+    const filePath = requireString(p, "filePath");
+    const fileContext = requireString(p, "fileContext");
+    const providerConfig = p.providerConfig as ProviderConfig | undefined;
+    if (!providerConfig || typeof providerConfig !== "object") {
+      throw new Error("providerConfig must be an object");
+    }
+    return await resolveConflictHunk({
+      providerConfig,
+      filePath,
+      fileContext,
+      oauthStore,
+    });
+  });
 
   // Read-only views into the Mac app's persisted state, served to iOS.
   d.register("remote.workspaces", () => ({

@@ -79,17 +79,31 @@ struct AllProjectsSidebar: View {
     /// Called when the user taps "+" on a project header.
     var onQuickCreate: (Project) -> Void
 
+    @State private var pendingReconcileProject: Project? = nil
+
     var body: some View {
         List(selection: $selection) {
             ForEach(appStore.projects) { project in
                 ProjectDisclosure(
                     project: project,
                     workspaceStore: workspaceStore,
-                    onQuickCreate: { onQuickCreate(project) }
+                    onQuickCreate: { onQuickCreate(project) },
+                    onReconcile: { pendingReconcileProject = project }
                 )
             }
         }
         .listStyle(.sidebar)
+        .sheet(item: $pendingReconcileProject) { proj in
+            ReconcileSheet(
+                appStore: appStore,
+                workspaceStore: workspaceStore,
+                project: proj,
+                isPresented: Binding(
+                    get: { pendingReconcileProject != nil },
+                    set: { if !$0 { pendingReconcileProject = nil } }
+                )
+            )
+        }
     }
 }
 
@@ -97,6 +111,7 @@ private struct ProjectDisclosure: View {
     let project: Project
     @Bindable var workspaceStore: WorkspaceStore
     let onQuickCreate: () -> Void
+    let onReconcile: () -> Void
 
     @State private var isExpanded: Bool
     @State private var groupByStatus: Bool
@@ -104,11 +119,13 @@ private struct ProjectDisclosure: View {
     init(
         project: Project,
         workspaceStore: WorkspaceStore,
-        onQuickCreate: @escaping () -> Void
+        onQuickCreate: @escaping () -> Void,
+        onReconcile: @escaping () -> Void
     ) {
         self.project = project
         self.workspaceStore = workspaceStore
         self.onQuickCreate = onQuickCreate
+        self.onReconcile = onReconcile
         let expandedKey = Self.expandedKey(project.id)
         let groupKey = Self.groupKey(project.id)
         let defaults = UserDefaults.standard
@@ -148,12 +165,27 @@ private struct ProjectDisclosure: View {
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
+            Button(action: onReconcile) {
+                Image(systemName: "arrow.triangle.merge")
+                    .font(.caption)
+            }
+            .buttonStyle(.borderless)
+            .disabled(!hasEligibleWorkspaces)
+            .help("Reconcile workspaces")
             Button(action: onQuickCreate) {
                 Image(systemName: "plus")
                     .font(.caption)
             }
             .buttonStyle(.borderless)
             .help("Quick-create workspace")
+        }
+    }
+
+    private var hasEligibleWorkspaces: Bool {
+        workspaceStore.workspaces.contains { ws in
+            ws.projectId == project.id
+                && ws.archivedAt == nil
+                && (ws.lifecycleState == .done || ws.lifecycleState == .inReview)
         }
     }
 
