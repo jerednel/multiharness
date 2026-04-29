@@ -149,11 +149,9 @@ struct WorkspaceRow: View {
             if isStreaming {
                 ProgressView()
                     .controlSize(.small)
-                    .scaleEffect(0.7)
-                    .frame(width: 14, height: 14)
             } else if isUnseen {
                 Circle()
-                    .fill(Color.accentColor)
+                    .fill(Color.blue)
                     .frame(width: 7, height: 7)
                     .accessibilityLabel("Unseen response")
             }
