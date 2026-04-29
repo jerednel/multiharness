@@ -116,15 +116,21 @@ private struct TurnRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(turn.role == .user ? "You" : "Agent")
                     .font(.caption).bold().foregroundStyle(.secondary)
-                Text(turn.text)
-                    .font(.body)
-                    .padding(8)
-                    .background(
-                        turn.role == .user ? Color.blue.opacity(0.10) : Color.purple.opacity(0.07),
-                        in: RoundedRectangle(cornerRadius: 8)
-                    )
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                Group {
+                    if turn.role == .assistant {
+                        MarkdownMessageText(turn.text)
+                    } else {
+                        Text(turn.text)
+                            .textSelection(.enabled)
+                    }
+                }
+                .font(.body)
+                .padding(8)
+                .background(
+                    turn.role == .user ? Color.blue.opacity(0.10) : Color.purple.opacity(0.07),
+                    in: RoundedRectangle(cornerRadius: 8)
+                )
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
     }
