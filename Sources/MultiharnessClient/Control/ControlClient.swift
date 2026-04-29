@@ -31,15 +31,22 @@ public final class ControlClient: NSObject, @unchecked Sendable, URLSessionWebSo
     private var isOpen: Bool = false
     private var connectWaiters: [CheckedContinuation<Void, Error>] = []
 
-    public init(port: Int) {
-        self.url = URL(string: "ws://127.0.0.1:\(port)")!
+    private let authToken: String?
+
+    public init(port: Int, host: String = "127.0.0.1", authToken: String? = nil) {
+        self.url = URL(string: "ws://\(host):\(port)")!
+        self.authToken = authToken
         super.init()
         let config = URLSessionConfiguration.default
         self.session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
     }
 
     public func connect() {
-        let t = session.webSocketTask(with: url)
+        var req = URLRequest(url: url)
+        if let token = authToken {
+            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        let t = session.webSocketTask(with: req)
         task = t
         t.resume()
         listen()

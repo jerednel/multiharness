@@ -3,10 +3,16 @@ import type { AgentRegistry } from "./agentRegistry.js";
 import type { ProviderConfig } from "./providers.js";
 import { listModels } from "./providers.js";
 import { log } from "./logger.js";
+import { DataReader } from "./dataReader.js";
 
 const VERSION = "0.1.0";
 
-export function registerMethods(d: Dispatcher, registry: AgentRegistry): void {
+export function registerMethods(
+  d: Dispatcher,
+  registry: AgentRegistry,
+  dataDir: string,
+): void {
+  const reader = new DataReader(dataDir);
   d.register("health.ping", () => ({ pong: true, version: VERSION }));
 
   d.register("agent.create", async (p) => {
@@ -58,6 +64,19 @@ export function registerMethods(d: Dispatcher, registry: AgentRegistry): void {
   });
 
   d.register("agent.list", () => ({ workspaceIds: registry.list() }));
+
+  // Read-only views into the Mac app's persisted state, served to iOS.
+  d.register("remote.workspaces", () => ({
+    workspaces: reader.listWorkspaces(),
+    projects: reader.listProjects(),
+    providers: reader.listProviders(),
+  }));
+
+  d.register("remote.history", async (p) => {
+    const workspaceId = requireString(p, "workspaceId");
+    const turns = await reader.historyTurns(workspaceId);
+    return { turns };
+  });
 
   d.register("models.list", async (p) => {
     const providerConfig = p.providerConfig as ProviderConfig | undefined;

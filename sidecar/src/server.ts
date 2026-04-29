@@ -60,7 +60,7 @@ export async function startServer(opts: ServerOptions): Promise<ServerHandle> {
 
   const registry = new AgentRegistry(opts.dataDir, sink);
   const dispatcher = new Dispatcher();
-  registerMethods(dispatcher, registry);
+  registerMethods(dispatcher, registry, opts.dataDir);
 
   const expectedAuth = opts.authToken ? `Bearer ${opts.authToken}` : null;
   const isPrivateBind =

@@ -1,0 +1,164 @@
+import Foundation
+import Observation
+import MultiharnessClient
+
+/// One open WebSocket session against a paired Mac. Holds the live
+/// `ControlClient`, the workspace list it has fetched, and per-workspace
+/// agent stores keyed by workspaceId.
+@MainActor
+@Observable
+public final class ConnectionStore: NSObject, ControlClientDelegate {
+    public enum State: Equatable {
+        case disconnected
+        case connecting
+        case connected
+        case error(String)
+    }
+
+    public var state: State = .disconnected
+    public var workspaces: [RemoteWorkspace] = []
+    public var providers: [RemoteProvider] = []
+    public var projects: [RemoteProject] = []
+    public var agents: [String: RemoteAgentStore] = [:]
+    public let host: String
+    public let port: Int
+
+    private let client: ControlClient
+
+    public init(host: String, port: Int, token: String) {
+        self.host = host
+        self.port = port
+        self.client = ControlClient(port: port, host: host, authToken: token)
+        super.init()
+        self.client.delegate = self
+    }
+
+    public func connect() {
+        state = .connecting
+        client.connect()
+    }
+
+    public func disconnect() {
+        client.disconnect()
+        state = .disconnected
+    }
+
+    public func refreshWorkspaces() async {
+        do {
+            // Custom RPC: ask Mac for workspaces. (We'll add this RPC server-side too.)
+            let result = try await client.call(method: "remote.workspaces", params: [:])
+                as? [String: Any]
+            guard let arr = result?["workspaces"] as? [[String: Any]] else { return }
+            self.workspaces = arr.compactMap(RemoteWorkspace.init(json:))
+            if let ps = result?["projects"] as? [[String: Any]] {
+                self.projects = ps.compactMap(RemoteProject.init(json:))
+            }
+            if let pv = result?["providers"] as? [[String: Any]] {
+                self.providers = pv.compactMap(RemoteProvider.init(json:))
+            }
+        } catch {
+            self.state = .error(String(describing: error))
+        }
+    }
+
+    public func openWorkspace(_ ws: RemoteWorkspace) async {
+        if agents[ws.id] != nil { return }
+        let store = RemoteAgentStore(workspaceId: ws.id)
+        // Pre-populate from history fetched from Mac.
+        do {
+            let result = try await client.call(
+                method: "remote.history",
+                params: ["workspaceId": ws.id]
+            ) as? [String: Any]
+            if let turns = result?["turns"] as? [[String: Any]] {
+                store.turns = turns.compactMap(RemoteAgentStore.turn(from:))
+            }
+        } catch { /* non-fatal */ }
+        agents[ws.id] = store
+    }
+
+    public func sendPrompt(workspaceId: String, message: String) async {
+        let store = agents[workspaceId]
+        store?.turns.append(ConversationTurn(role: .user, text: message))
+        store?.isStreaming = true
+        do {
+            _ = try await client.call(
+                method: "agent.prompt",
+                params: ["workspaceId": workspaceId, "message": message]
+            )
+        } catch {
+            store?.isStreaming = false
+            store?.turns.append(ConversationTurn(
+                role: .assistant,
+                text: "⚠️ " + String(describing: error)
+            ))
+        }
+    }
+
+    // MARK: ControlClientDelegate
+
+    nonisolated public func controlClient(_ client: ControlClient, didReceiveEvent event: AgentEventEnvelope) {
+        Task { @MainActor in
+            self.agents[event.workspaceId]?.handleEvent(event)
+        }
+    }
+
+    nonisolated public func controlClientDidConnect(_ client: ControlClient) {
+        Task { @MainActor in
+            self.state = .connected
+            await self.refreshWorkspaces()
+        }
+    }
+
+    nonisolated public func controlClientDidDisconnect(_ client: ControlClient, error: Error?) {
+        Task { @MainActor in
+            self.state = .error(error.map { String(describing: $0) } ?? "disconnected")
+        }
+    }
+}
+
+public struct RemoteWorkspace: Identifiable, Sendable, Hashable {
+    public let id: String
+    public let name: String
+    public let branchName: String
+    public let baseBranch: String
+    public let lifecycleState: String
+    public let projectId: String
+
+    init?(json: [String: Any]) {
+        guard let id = json["id"] as? String,
+              let name = json["name"] as? String,
+              let branch = json["branchName"] as? String
+        else { return nil }
+        self.id = id
+        self.name = name
+        self.branchName = branch
+        self.baseBranch = json["baseBranch"] as? String ?? ""
+        self.lifecycleState = json["lifecycleState"] as? String ?? "in_progress"
+        self.projectId = json["projectId"] as? String ?? ""
+    }
+}
+
+public struct RemoteProject: Identifiable, Sendable, Hashable {
+    public let id: String
+    public let name: String
+    init?(json: [String: Any]) {
+        guard let id = json["id"] as? String,
+              let name = json["name"] as? String
+        else { return nil }
+        self.id = id
+        self.name = name
+    }
+}
+
+public struct RemoteProvider: Identifiable, Sendable, Hashable {
+    public let id: String
+    public let name: String
+    init?(json: [String: Any]) {
+        guard let id = json["id"] as? String,
+              let name = json["name"] as? String
+        else { return nil }
+        self.id = id
+        self.name = name
+    }
+}

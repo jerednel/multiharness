@@ -17,3 +17,5 @@ DerivedData/
 
 # logs
 *.log
+ios/MultiharnessIOS.xcodeproj/xcuserdata/
+ios/MultiharnessIOS.xcodeproj/project.xcworkspace/xcuserdata/

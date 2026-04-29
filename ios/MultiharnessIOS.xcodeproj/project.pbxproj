@@ -1,0 +1,279 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 54;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		26F8E52332D8F4C793011171 /* ConnectionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53F7B5701FD21794DAE10EBC /* ConnectionStore.swift */; };
+		2D1A006E3BE0CB107224909A /* MultiharnessClient in Frameworks */ = {isa = PBXBuildFile; productRef = 93AC74F73025A443D900DD41 /* MultiharnessClient */; };
+		3186CDDAFC48493B5715DF1F /* App.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F96F45BEEC202FC095E9F5C /* App.swift */; };
+		72DAFA81CC94D8C2C55489C5 /* DiscoveryBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8F8840BC008DA280D106A3E /* DiscoveryBrowser.swift */; };
+		7AE5E0DDA072D2AF6BC5BAA2 /* WorkspacesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DF76228C3777F798E4B8408 /* WorkspacesView.swift */; };
+		8A9B5DD73FD755BB8444D789 /* RemoteAgentStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 840A215601F9E0C733815E32 /* RemoteAgentStore.swift */; };
+		A8F86A624BDF83FB10348C60 /* PairingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B19617671007E21225D2A51 /* PairingStore.swift */; };
+		C692339C5D5B18178BC0A045 /* QRScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2508B2990E575F586D8E6830 /* QRScannerView.swift */; };
+		CB00A24741C9882474E3AA99 /* WorkspaceDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F970F56F4F3B5B839A3C392C /* WorkspaceDetailView.swift */; };
+		D862250D0DF95EE38666D6DC /* PairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29073A5DE9D5EE7CE5129B04 /* PairingView.swift */; };
+		EEBFF7FC24C8C9FB5B3AC548 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9839A87870E46B4E1749BEFC /* RootView.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		2508B2990E575F586D8E6830 /* QRScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRScannerView.swift; sourceTree = "<group>"; };
+		29073A5DE9D5EE7CE5129B04 /* PairingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingView.swift; sourceTree = "<group>"; };
+		2F96F45BEEC202FC095E9F5C /* App.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App.swift; sourceTree = "<group>"; };
+		39CC0952E705BC2342609787 /* gwangju */ = {isa = PBXFileReference; lastKnownFileType = folder; name = gwangju; path = ..; sourceTree = SOURCE_ROOT; };
+		4B19617671007E21225D2A51 /* PairingStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingStore.swift; sourceTree = "<group>"; };
+		53F7B5701FD21794DAE10EBC /* ConnectionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionStore.swift; sourceTree = "<group>"; };
+		624C83AA83D7BBD38CB2D799 /* MultiharnessIOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = MultiharnessIOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		6DF76228C3777F798E4B8408 /* WorkspacesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspacesView.swift; sourceTree = "<group>"; };
+		840A215601F9E0C733815E32 /* RemoteAgentStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteAgentStore.swift; sourceTree = "<group>"; };
+		9839A87870E46B4E1749BEFC /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		C8F8840BC008DA280D106A3E /* DiscoveryBrowser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscoveryBrowser.swift; sourceTree = "<group>"; };
+		F970F56F4F3B5B839A3C392C /* WorkspaceDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceDetailView.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		33AB56DA88F8953CCF330D18 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				2D1A006E3BE0CB107224909A /* MultiharnessClient in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		AF0A3A399F6C652F0D19BA40 /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				39CC0952E705BC2342609787 /* gwangju */,
+			);
+			name = Packages;
+			sourceTree = "<group>";
+		};
+		B55DEBA7B044EB8D175CCDE4 /* Stores */ = {
+			isa = PBXGroup;
+			children = (
+				53F7B5701FD21794DAE10EBC /* ConnectionStore.swift */,
+				4B19617671007E21225D2A51 /* PairingStore.swift */,
+				840A215601F9E0C733815E32 /* RemoteAgentStore.swift */,
+			);
+			path = Stores;
+			sourceTree = "<group>";
+		};
+		CED5840A93A1FBE916E5E7B0 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				624C83AA83D7BBD38CB2D799 /* MultiharnessIOS.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		D065E45959A4E8B477C65658 = {
+			isa = PBXGroup;
+			children = (
+				D33A2C3AD1C7C225997A2C3E /* MultiharnessIOS */,
+				AF0A3A399F6C652F0D19BA40 /* Packages */,
+				CED5840A93A1FBE916E5E7B0 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		D33A2C3AD1C7C225997A2C3E /* MultiharnessIOS */ = {
+			isa = PBXGroup;
+			children = (
+				2F96F45BEEC202FC095E9F5C /* App.swift */,
+				B55DEBA7B044EB8D175CCDE4 /* Stores */,
+				FB3EAF6000F52116F79DF1C1 /* Views */,
+			);
+			name = MultiharnessIOS;
+			path = Sources/MultiharnessIOS;
+			sourceTree = "<group>";
+		};
+		FB3EAF6000F52116F79DF1C1 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				C8F8840BC008DA280D106A3E /* DiscoveryBrowser.swift */,
+				29073A5DE9D5EE7CE5129B04 /* PairingView.swift */,
+				2508B2990E575F586D8E6830 /* QRScannerView.swift */,
+				9839A87870E46B4E1749BEFC /* RootView.swift */,
+				F970F56F4F3B5B839A3C392C /* WorkspaceDetailView.swift */,
+				6DF76228C3777F798E4B8408 /* WorkspacesView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		A868B7092E1CA4BD89C9C1E0 /* MultiharnessIOS */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E6FE609A6E1144A1FE4E78B9 /* Build configuration list for PBXNativeTarget "MultiharnessIOS" */;
+			buildPhases = (
+				5E8E01A76CCCC05BD78D147F /* Sources */,
+				33AB56DA88F8953CCF330D18 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = MultiharnessIOS;
+			packageProductDependencies = (
+				93AC74F73025A443D900DD41 /* MultiharnessClient */,
+			);
+			productName = MultiharnessIOS;
+			productReference = 624C83AA83D7BBD38CB2D799 /* MultiharnessIOS.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		B00683BA083E7653AF2C3462 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					A868B7092E1CA4BD89C9C1E0 = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = F377EF6E4E1F32493803E208 /* Build configuration list for PBXProject "MultiharnessIOS" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = D065E45959A4E8B477C65658;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				D98D6D3EF8826C80BC1933AD /* XCLocalSwiftPackageReference ".." */,
+			);
+			preferredProjectObjectVersion = 54;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				A868B7092E1CA4BD89C9C1E0 /* MultiharnessIOS */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		5E8E01A76CCCC05BD78D147F /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				3186CDDAFC48493B5715DF1F /* App.swift in Sources */,
+				26F8E52332D8F4C793011171 /* ConnectionStore.swift in Sources */,
+				72DAFA81CC94D8C2C55489C5 /* DiscoveryBrowser.swift in Sources */,
+				A8F86A624BDF83FB10348C60 /* PairingStore.swift in Sources */,
+				D862250D0DF95EE38666D6DC /* PairingView.swift in Sources */,
+				C692339C5D5B18178BC0A045 /* QRScannerView.swift in Sources */,
+				8A9B5DD73FD755BB8444D789 /* RemoteAgentStore.swift in Sources */,
+				EEBFF7FC24C8C9FB5B3AC548 /* RootView.swift in Sources */,
+				CB00A24741C9882474E3AA99 /* WorkspaceDetailView.swift in Sources */,
+				7AE5E0DDA072D2AF6BC5BAA2 /* WorkspacesView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		3191DE62F4F52BEA78207793 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				INFOPLIST_FILE = Resources/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.multiharness.ios;
+				PRODUCT_NAME = MultiharnessIOS;
+				SUPPORTS_MACCATALYST = NO;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		326153693CE22B98E06E8AD9 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.multiharness.ios;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.10;
+			};
+			name = Debug;
+		};
+		59B0B7082807AFAA606160CE /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				INFOPLIST_FILE = Resources/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.multiharness.ios;
+				PRODUCT_NAME = MultiharnessIOS;
+				SUPPORTS_MACCATALYST = NO;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		B4C56ADADF8017F6921D2A2E /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.multiharness.ios;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.10;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		E6FE609A6E1144A1FE4E78B9 /* Build configuration list for PBXNativeTarget "MultiharnessIOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				59B0B7082807AFAA606160CE /* Debug */,
+				3191DE62F4F52BEA78207793 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		F377EF6E4E1F32493803E208 /* Build configuration list for PBXProject "MultiharnessIOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				326153693CE22B98E06E8AD9 /* Debug */,
+				B4C56ADADF8017F6921D2A2E /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		D98D6D3EF8826C80BC1933AD /* XCLocalSwiftPackageReference ".." */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ..;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		93AC74F73025A443D900DD41 /* MultiharnessClient */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = MultiharnessClient;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = B00683BA083E7653AF2C3462 /* Project object */;
+}
