@@ -90,14 +90,28 @@ export class DataReader {
   }
 
   /** Reduce the persisted JSONL into a flat list of turns suitable for the
-   *  iOS UI: { role, text, toolName? } per item. */
-  async historyTurns(workspaceId: string): Promise<
-    Array<{ role: "user" | "assistant" | "tool"; text: string; toolName?: string }>
-  > {
+   *  iOS UI: { role, text, toolName? } per item.
+   *
+   *  Bounded so a long chat or a single huge pasted message never blows
+   *  past the WebSocket frame ceiling on the iOS side. Returns the most
+   *  recent `limit` turns (default 500). Each user/assistant turn's text
+   *  is capped at `perTurnTextLimit` bytes (default 64 KiB); tool results
+   *  keep their existing 800-char preview. `total` is the full count
+   *  before slicing so the UI can say "older messages omitted". */
+  async historyTurns(
+    workspaceId: string,
+    options?: { limit?: number; perTurnTextLimit?: number },
+  ): Promise<{
+    turns: Array<{ role: "user" | "assistant" | "tool"; text: string; toolName?: string }>;
+    hasMore: boolean;
+    total: number;
+  }> {
+    const limit = Math.max(1, options?.limit ?? 500);
+    const perTurnTextLimit = Math.max(256, options?.perTurnTextLimit ?? 64 * 1024);
     const path = join(this.dataDir, "workspaces", workspaceId, "messages.jsonl");
-    if (!existsSync(path)) return [];
+    if (!existsSync(path)) return { turns: [], hasMore: false, total: 0 };
     const text = await readFile(path, "utf8");
-    const turns: Array<{ role: "user" | "assistant" | "tool"; text: string; toolName?: string }> =
+    const all: Array<{ role: "user" | "assistant" | "tool"; text: string; toolName?: string }> =
       [];
     for (const line of text.split("\n")) {
       if (!line.trim()) continue;
@@ -112,11 +126,15 @@ export class DataReader {
       if (event.type === "message_end") {
         const msg = event.message;
         if (!msg) continue;
-        const text = extractText(msg.content);
-        if (msg.role === "user" && text) {
-          turns.push({ role: "user", text });
-        } else if (msg.role === "assistant" && text) {
-          turns.push({ role: "assistant", text });
+        const t = extractText(msg.content);
+        if (!t) continue;
+        const capped = t.length > perTurnTextLimit
+          ? t.slice(0, perTurnTextLimit) + "…"
+          : t;
+        if (msg.role === "user") {
+          all.push({ role: "user", text: capped });
+        } else if (msg.role === "assistant") {
+          all.push({ role: "assistant", text: capped });
         }
       } else if (event.type === "tool_execution_end") {
         const toolName = event.toolName ?? "tool";
@@ -126,10 +144,12 @@ export class DataReader {
           const t = String(content[0].text);
           preview = t.length > 800 ? t.slice(0, 800) + "…" : t;
         }
-        turns.push({ role: "tool", text: preview, toolName });
+        all.push({ role: "tool", text: preview, toolName });
       }
     }
-    return turns;
+    const total = all.length;
+    const turns = total > limit ? all.slice(total - limit) : all;
+    return { turns, hasMore: total > turns.length, total };
   }
 }
 

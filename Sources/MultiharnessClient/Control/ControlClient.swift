@@ -47,6 +47,9 @@ public final class ControlClient: NSObject, @unchecked Sendable, URLSessionWebSo
             req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
         let t = session.webSocketTask(with: req)
+        // Default is 1 MiB; trips on agent.create with large project/workspace
+        // context, on user-pasted prompts, and on big tool_execution_end frames.
+        t.maximumMessageSize = 64 * 1024 * 1024
         task = t
         t.resume()
         listen()
@@ -104,12 +107,23 @@ public final class ControlClient: NSObject, @unchecked Sendable, URLSessionWebSo
         }
     }
 
+    /// Slightly under `maximumMessageSize` so callers see a typed error
+    /// before the WebSocket layer rejects with a cryptic POSIX EMSGSIZE.
+    private static let preflightSizeLimit = 60 * 1024 * 1024
+
     private func sendFramed(_ frame: [String: Any]) async throws -> Any? {
         if !isOpen { try await awaitConnected() }
         let id = UUID().uuidString
         var withId = frame
         withId["id"] = id
         let data = try JSONSerialization.data(withJSONObject: withId, options: [])
+        if data.count > Self.preflightSizeLimit {
+            throw ControlError.messageTooLarge(
+                bytes: data.count,
+                limit: Self.preflightSizeLimit,
+                method: frame["method"] as? String
+            )
+        }
         guard let text = String(data: data, encoding: .utf8) else {
             throw ControlError.encodeFailed
         }
@@ -253,12 +267,23 @@ public enum ControlError: Error, CustomStringConvertible {
     case remote(code: String, message: String)
     case connectTimeout
     case disconnected
+    case messageTooLarge(bytes: Int, limit: Int, method: String?)
     public var description: String {
         switch self {
         case .encodeFailed: return "failed to encode RPC frame as JSON"
         case .remote(let c, let m): return "[\(c)] \(m)"
         case .connectTimeout: return "timed out waiting for control socket to connect"
         case .disconnected: return "control socket disconnected"
+        case .messageTooLarge(let bytes, let limit, let method):
+            let mb = Double(bytes) / (1024 * 1024)
+            let cap = Double(limit) / (1024 * 1024)
+            let m = method.map { "\($0) " } ?? ""
+            return String(
+                format: "%@RPC payload is too large to send (%.1f MB; limit %.0f MB). "
+                    + "This is usually an oversized project/workspace context, a "
+                    + "very long pasted message, or a huge tool result.",
+                m, mb, cap
+            )
         }
     }
 }

@@ -139,8 +139,8 @@ export function registerMethods(
 
   d.register("remote.history", async (p) => {
     const workspaceId = requireString(p, "workspaceId");
-    const turns = await reader.historyTurns(workspaceId);
-    return { turns };
+    const limit = typeof p.limit === "number" ? p.limit : undefined;
+    return await reader.historyTurns(workspaceId, { limit });
   });
 
   d.register("models.list", async (p) => {
