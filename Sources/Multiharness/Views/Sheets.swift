@@ -237,13 +237,14 @@ struct SettingsSheet: View {
     @Binding var isPresented: Bool
     @State private var tab: SettingsTab = .providers
 
-    enum SettingsTab: Hashable { case providers, remote }
+    enum SettingsTab: Hashable { case providers, remote, permissions }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 0) {
                 tabButton("Providers", .providers)
                 tabButton("Remote access", .remote)
+                tabButton("Permissions", .permissions)
                 Spacer()
             }
             Divider()
@@ -252,6 +253,8 @@ struct SettingsSheet: View {
                 ProvidersTab(appStore: appStore)
             case .remote:
                 RemoteAccessTab(env: env)
+            case .permissions:
+                PermissionsTab(env: env, appStore: appStore)
             }
             Spacer()
             HStack {
@@ -391,6 +394,127 @@ private struct RemoteAccessTab: View {
                     Text("Waiting for sidecar to bind…").font(.callout).foregroundStyle(.secondary)
                 }
             }
+        }
+    }
+}
+
+private struct PermissionsTab: View {
+    let env: AppEnvironment
+    @Bindable var appStore: AppStore
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Permissions").font(.title3).bold()
+            Text("When the iPhone asks the Mac to do something (open a workspace, create one, run tools), the Mac may need permission to access folders under Documents, Desktop, etc. Without an active person at the Mac to click \"Allow,\" the request hangs.")
+                .font(.callout).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Divider()
+            Text("Projects").font(.headline)
+            if appStore.projects.isEmpty {
+                Text("No projects yet.").font(.callout).foregroundStyle(.secondary)
+            } else {
+                ScrollView {
+                    VStack(spacing: 4) {
+                        ForEach(appStore.projects) { p in
+                            ProjectAccessRow(env: env, appStore: appStore, project: p)
+                        }
+                    }
+                }
+                .frame(minHeight: 160, maxHeight: 280)
+            }
+
+            Divider()
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Power-user shortcut").font(.headline)
+                Text("System Settings → Privacy & Security → Full Disk Access → add Multiharness. Skips every Documents/Desktop prompt — appropriate if you want the iPhone to drive your Mac unattended.")
+                    .font(.callout).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button {
+                    if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
+                        NSWorkspace.shared.open(url)
+                    }
+                } label: {
+                    Label("Open Full Disk Access settings", systemImage: "lock.open")
+                }
+            }
+        }
+    }
+}
+
+private struct ProjectAccessRow: View {
+    let env: AppEnvironment
+    @Bindable var appStore: AppStore
+    let project: Project
+    @State private var status: AccessStatus = .checking
+
+    enum AccessStatus { case checking, granted, missing, stale }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon).foregroundStyle(color)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(project.name).font(.body)
+                Text(project.repoPath).font(.caption2).foregroundStyle(.secondary)
+                    .lineLimit(1).truncationMode(.head)
+            }
+            Spacer()
+            Button {
+                regrant()
+            } label: {
+                Text(status == .granted ? "Re-grant" : "Grant access")
+            }
+            .buttonStyle(.bordered)
+        }
+        .padding(.horizontal, 8).padding(.vertical, 6)
+        .background(.background)
+        .onAppear { status = check() }
+    }
+
+    private var icon: String {
+        switch status {
+        case .checking: return "circle"
+        case .granted: return "checkmark.circle.fill"
+        case .missing: return "exclamationmark.triangle.fill"
+        case .stale: return "exclamationmark.triangle"
+        }
+    }
+
+    private var color: Color {
+        switch status {
+        case .checking: return .secondary
+        case .granted: return .green
+        case .missing: return .red
+        case .stale: return .orange
+        }
+    }
+
+    private func check() -> AccessStatus {
+        guard let bm = project.repoBookmark else { return .missing }
+        if BookmarkScope.isStale(bm) { return .stale }
+        return .granted
+    }
+
+    private func regrant() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.directoryURL = URL(fileURLWithPath: project.repoPath)
+        panel.prompt = "Grant access"
+        panel.message = "Pick the project's folder again to grant Multiharness ongoing access. The folder must match \(project.repoPath)."
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        // Update the project's bookmark by re-adding (which captures a new
+        // bookmark while the implicit grant is fresh).
+        if let bm = try? BookmarkScope.makeBookmark(for: url) {
+            var updated = project
+            updated.repoBookmark = bm
+            try? env.persistence.upsertProject(updated)
+            if let idx = appStore.projects.firstIndex(where: { $0.id == project.id }) {
+                appStore.projects[idx] = updated
+            }
+            _ = BookmarkScope.shared.resolve(id: project.id, bookmark: bm)
+            status = .granted
         }
     }
 }

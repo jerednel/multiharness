@@ -13,6 +13,10 @@ public final class AppStore {
     /// Increments every time the sidecar (re)binds. Views observe this to
     /// re-run their per-workspace `agent.create` after a sidecar restart.
     public var sidecarBindingVersion: Int = 0
+    /// Number of in-flight relay requests from remote clients (iOS). When
+    /// non-zero the Mac UI surfaces a small "iPhone activity" indicator so
+    /// the user knows to glance over in case a TCC dialog needs approval.
+    public var remoteActivityCount: Int = 0
 
     private let env: AppEnvironment
 

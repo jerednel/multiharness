@@ -61,8 +61,18 @@ struct RootView: View {
             }
             Spacer()
             Divider()
-            SidecarStatusBadge(status: appStore.sidecarStatus)
-                .padding(.horizontal, 12).padding(.vertical, 8)
+            VStack(alignment: .leading, spacing: 4) {
+                SidecarStatusBadge(status: appStore.sidecarStatus)
+                if appStore.remoteActivityCount > 0 {
+                    HStack(spacing: 6) {
+                        Image(systemName: "iphone.radiowaves.left.and.right")
+                            .foregroundStyle(.blue)
+                        Text("iPhone request waiting")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .padding(.horizontal, 12).padding(.vertical, 8)
         }
         .navigationSplitViewColumnWidth(min: 230, ideal: 260, max: 320)
     }

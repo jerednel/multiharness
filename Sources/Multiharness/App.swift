@@ -56,6 +56,13 @@ struct MultiharnessApp: App {
                 }
                 Task { await relayHandler.bind(client: client) }
                 Task { await relayHandler.registerWithSidecar() }
+                if let app {
+                    Task {
+                        await relayHandler.setActivityCallback { count in
+                            Task { @MainActor in app.remoteActivityCount = count }
+                        }
+                    }
+                }
                 // Recreate sessions for every workspace so any client (Mac
                 // UI, iOS companion) can prompt without first opening the
                 // workspace in the Mac UI. Sidecar restarts blow away

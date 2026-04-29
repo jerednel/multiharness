@@ -9,6 +9,8 @@ public actor RelayHandler {
 
     private var handlers: [String: Handler] = [:]
     private weak var client: ControlClient?
+    private var inFlight: [String: String] = [:]   // relayId → method
+    public var onActivityChange: (@Sendable (Int) -> Void)?
 
     public init() {}
 
@@ -20,6 +22,11 @@ public actor RelayHandler {
         handlers[method] = handler
     }
 
+    public func setActivityCallback(_ cb: @escaping @Sendable (Int) -> Void) {
+        self.onActivityChange = cb
+        cb(inFlight.count)
+    }
+
     /// Called by the Mac's ControlClient delegate when a `relay_request`
     /// event arrives. Looks up the handler, runs it, sends the response
     /// (success or error) back via `relay.respond`.
@@ -29,6 +36,12 @@ public actor RelayHandler {
               let method = event.payload["method"] as? String
         else { return }
         let params = (event.payload["params"] as? [String: Any]) ?? [:]
+        inFlight[relayId] = method
+        onActivityChange?(inFlight.count)
+        defer {
+            inFlight.removeValue(forKey: relayId)
+            onActivityChange?(inFlight.count)
+        }
         let h = handlers[method]
         do {
             let result: Any?
