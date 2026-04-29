@@ -47,9 +47,43 @@ cat > "$CONTENTS/Info.plist" <<PLIST
 </plist>
 PLIST
 
-echo "==> Ad-hoc signing app"
+pick_identity() {
+  # 1. Honor explicit override
+  if [ -n "${MULTIHARNESS_CODESIGN_CN:-}" ]; then
+    echo "$MULTIHARNESS_CODESIGN_CN"
+    return
+  fi
+  local ids
+  ids="$(security find-identity -v -p codesigning 2>/dev/null)" || true
+  # 2. Apple Development cert is best for local builds — properly trusted,
+  #    AMFI happy, runs with full developer permissions.
+  local apple_dev
+  apple_dev="$(printf '%s\n' "$ids" | awk -F'"' '/Apple Development/ {print $2; exit}')"
+  if [ -n "$apple_dev" ]; then echo "$apple_dev"; return; fi
+  # 3. Developer ID Application — for distribution but works locally too.
+  local devid
+  devid="$(printf '%s\n' "$ids" | awk -F'"' '/Developer ID Application/ {print $2; exit}')"
+  if [ -n "$devid" ]; then echo "$devid"; return; fi
+  # 4. Self-signed dev cert from setup-codesign.sh
+  if printf '%s\n' "$ids" | awk -F'"' '{print $2}' | grep -Fxq "Multiharness Dev"; then
+    echo "Multiharness Dev"
+    return
+  fi
+  # 5. Last resort
+  echo "-"
+}
+
+IDENT="$(pick_identity)"
+if [ "$IDENT" = "-" ]; then
+  echo "==> No suitable code-signing identity found — falling back to ad-hoc."
+  echo "    Run 'bash scripts/setup-codesign.sh' once to create a self-signed"
+  echo "    cert, or install Xcode and an Apple Developer account."
+else
+  echo "==> Signing with '$IDENT'"
+fi
 codesign --remove-signature "$APP_DIR" 2>/dev/null || true
-codesign --force --deep --sign - "$APP_DIR"
+codesign --force --sign "$IDENT" --options runtime "$CONTENTS/Resources/multiharness-sidecar"
+codesign --force --deep --sign "$IDENT" --options runtime "$APP_DIR"
 
 echo "==> Done: $APP_DIR"
 ls -la "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
