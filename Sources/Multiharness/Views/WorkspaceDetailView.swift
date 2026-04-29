@@ -64,34 +64,20 @@ struct WorkspaceDetailView: View {
     private func ensureSession() async {
         sessionReady = false
         sessionError = nil
-        guard let client = env.control else {
-            sessionError = "control client not connected"
-            return
-        }
-        guard let provider = appStore.providers.first(where: { $0.id == workspace.providerId }) else {
-            sessionError = "provider not found"
-            return
-        }
         creatingSession = true
         defer { creatingSession = false }
-
-        let providerCfg = appStore.providerConfig(provider: provider, modelId: workspace.modelId)
-        let params: [String: Any] = [
-            "workspaceId": workspace.id.uuidString,
-            "worktreePath": workspace.worktreePath,
-            "systemPrompt": "You are a helpful coding agent operating inside a git worktree. Use the available tools to read and modify files.",
-            "providerConfig": providerCfg,
-        ]
         do {
-            _ = try await client.call(method: "agent.create", params: params)
+            try await appStore.createAgentSession(for: workspace)
             sessionReady = true
         } catch let e as ControlError {
-            // "already exists" is a benign race when reopening a workspace.
+            // "already exists" is handled inside the helper, but be defensive.
             if case let .remote(_, msg) = e, msg.contains("already exists") {
                 sessionReady = true
             } else {
                 sessionError = e.description
             }
+        } catch let e as AgentSessionError {
+            sessionError = e.description
         } catch {
             sessionError = String(describing: error)
         }
