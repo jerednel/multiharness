@@ -2,11 +2,12 @@ import { join } from "node:path";
 import { AgentSession, type EventSink } from "./agentSession.js";
 import type { ProviderConfig } from "./providers.js";
 import type { OAuthStore } from "./oauthStore.js";
+import type { BuildMode } from "./prompts.js";
 
 export type CreateOptions = {
   workspaceId: string;
   worktreePath: string;
-  systemPrompt: string;
+  buildMode: BuildMode;
   providerConfig: ProviderConfig;
 };
 

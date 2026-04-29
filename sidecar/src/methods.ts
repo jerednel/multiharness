@@ -32,12 +32,16 @@ export function registerMethods(
   d.register("agent.create", async (p) => {
     const workspaceId = requireString(p, "workspaceId");
     const worktreePath = requireString(p, "worktreePath");
-    const systemPrompt = requireString(p, "systemPrompt");
+    const buildModeRaw = requireString(p, "buildMode");
+    if (buildModeRaw !== "primary" && buildModeRaw !== "shadowed") {
+      throw new Error(`invalid_build_mode: ${buildModeRaw}`);
+    }
+    const buildMode = buildModeRaw as "primary" | "shadowed";
     const providerConfig = p.providerConfig as ProviderConfig | undefined;
     if (!providerConfig || typeof providerConfig !== "object") {
       throw new Error("providerConfig must be an object");
     }
-    await registry.create({ workspaceId, worktreePath, systemPrompt, providerConfig });
+    await registry.create({ workspaceId, worktreePath, buildMode, providerConfig });
     return { ok: true };
   });
 

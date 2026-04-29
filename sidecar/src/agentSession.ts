@@ -8,13 +8,14 @@ import {
   getOpenAICodexAccessToken,
   type OAuthStore,
 } from "./oauthStore.js";
+import { buildSystemPrompt, type BuildMode } from "./prompts.js";
 
 export type EventSink = (workspaceId: string, ev: AgentEvent) => void;
 
 export type AgentSessionOptions = {
   workspaceId: string;
   worktreePath: string;
-  systemPrompt: string;
+  buildMode: BuildMode;
   providerConfig: ProviderConfig;
   jsonlPath: string;
   sink: EventSink;
@@ -40,7 +41,7 @@ export class AgentSession {
     const staticKey = apiKeyFor(cfg);
     this.agent = new Agent({
       initialState: {
-        systemPrompt: opts.systemPrompt,
+        systemPrompt: buildSystemPrompt(opts.buildMode),
         model: buildModel(cfg) as any,
         tools: buildTools(opts.worktreePath),
       },
