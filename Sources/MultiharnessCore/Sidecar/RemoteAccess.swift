@@ -32,13 +32,45 @@ public final class RemoteAccess {
     private var bonjour: NetService?
     private var bonjourDelegate: BonjourDelegate?
 
+    /// All routable IPv4 interfaces present on the box, ordered with the
+    /// best default first (Tailscale > Wi-Fi/Ethernet > anything else).
+    public private(set) var interfaces: [NetworkInterface] = []
+    /// User-selected interface to advertise in the pairing QR. Persisted.
+    public var selectedHost: String? {
+        didSet {
+            try? persistence.setSetting(selectedHostKey, value: selectedHost ?? "")
+        }
+    }
+    private let selectedHostKey = "remote_access.selected_host"
+
     public init(persistence: PersistenceService, keychain: KeychainService) {
         self.persistence = persistence
         self.keychain = keychain
         let stored = (try? persistence.getSetting(self.settingsKey)) ?? "0"
         self.enabled = (stored == "1")
         self.token = (try? keychain.getKey(account: keychainAccount))
-        self.lanAddress = Self.primaryLanAddress()
+        self.interfaces = Self.routableInterfaces()
+        self.lanAddress = self.interfaces.first?.ipv4
+        let savedHost = (try? persistence.getSetting(selectedHostKey)) ?? nil
+        if let s = savedHost, !s.isEmpty, interfaces.contains(where: { $0.ipv4 == s }) {
+            self.selectedHost = s
+        } else {
+            // Default: prefer Tailscale, otherwise the first routable interface.
+            self.selectedHost = interfaces.first(where: { $0.kind == .tailscale })?.ipv4
+                ?? interfaces.first?.ipv4
+        }
+    }
+
+    /// Re-scan interfaces; call when the user opens the pairing panel.
+    public func refreshInterfaces() {
+        interfaces = Self.routableInterfaces()
+        if let host = selectedHost, !interfaces.contains(where: { $0.ipv4 == host }) {
+            selectedHost = interfaces.first(where: { $0.kind == .tailscale })?.ipv4
+                ?? interfaces.first?.ipv4
+        } else if selectedHost == nil {
+            selectedHost = interfaces.first(where: { $0.kind == .tailscale })?.ipv4
+                ?? interfaces.first?.ipv4
+        }
     }
 
     /// Generate and persist a fresh token. Returns the new value.
@@ -58,7 +90,7 @@ public final class RemoteAccess {
     /// Format: `mh://<host>:<port>?token=<token>&name=<encoded-host-name>`
     public func pairingString(host: String? = nil) -> String? {
         guard let token, let port = publicPort else { return nil }
-        let h = host ?? lanAddress ?? "127.0.0.1"
+        let h = host ?? selectedHost ?? lanAddress ?? "127.0.0.1"
         let name = ProcessInfo.processInfo.hostName
             .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
         return "mh://\(h):\(port)?token=\(token)&name=\(name)"
@@ -114,11 +146,21 @@ public final class RemoteAccess {
         }
     }
 
-    /// Best-effort primary IPv4 on a non-loopback interface (en0/en1).
+    /// Best-effort primary IPv4 on a non-loopback interface — returns the
+    /// first interface from `routableInterfaces()`. Kept as a convenience.
     public static func primaryLanAddress() -> String? {
+        routableInterfaces().first?.ipv4
+    }
+
+    /// Enumerate all UP, non-loopback IPv4 interfaces on the box, classified
+    /// by kind so the pairing UI can label them sensibly. Interfaces are
+    /// returned in priority order: Tailscale first (best for cross-network
+    /// access), then Wi-Fi/Ethernet (LAN), then everything else.
+    public static func routableInterfaces() -> [NetworkInterface] {
         var ifaddr: UnsafeMutablePointer<ifaddrs>?
-        guard getifaddrs(&ifaddr) == 0 else { return nil }
+        guard getifaddrs(&ifaddr) == 0 else { return [] }
         defer { freeifaddrs(ifaddr) }
+        var found: [NetworkInterface] = []
         var ptr = ifaddr
         while let p = ptr {
             defer { ptr = p.pointee.ifa_next }
@@ -128,13 +170,68 @@ public final class RemoteAccess {
                   (flags & IFF_LOOPBACK) == 0,
                   addr.sa_family == UInt8(AF_INET) else { continue }
             let name = String(cString: p.pointee.ifa_name)
-            guard name == "en0" || name == "en1" else { continue }
-            var host = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+            var hostBuf = [CChar](repeating: 0, count: Int(NI_MAXHOST))
             getnameinfo(p.pointee.ifa_addr, socklen_t(p.pointee.ifa_addr.pointee.sa_len),
-                        &host, socklen_t(host.count),
+                        &hostBuf, socklen_t(hostBuf.count),
                         nil, 0, NI_NUMERICHOST)
-            return String(cString: host)
+            let ipv4 = String(cString: hostBuf)
+            // Skip link-local (169.254.x) and APIPA-style addresses.
+            if ipv4.hasPrefix("169.254.") { continue }
+            let kind = NetworkInterface.classify(ifname: name, ipv4: ipv4)
+            found.append(NetworkInterface(name: name, ipv4: ipv4, kind: kind))
         }
-        return nil
+        return found.sorted { a, b in
+            a.kind.priority < b.kind.priority
+        }
+    }
+}
+
+/// A routable network interface present on the host.
+public struct NetworkInterface: Sendable, Hashable, Identifiable {
+    public enum Kind: String, Sendable {
+        case tailscale
+        case wifiOrEthernet
+        case other
+
+        public var label: String {
+            switch self {
+            case .tailscale: return "Tailscale"
+            case .wifiOrEthernet: return "Wi-Fi / Ethernet"
+            case .other: return "Other"
+            }
+        }
+
+        var priority: Int {
+            switch self {
+            case .tailscale: return 0
+            case .wifiOrEthernet: return 1
+            case .other: return 2
+            }
+        }
+    }
+
+    public var id: String { ipv4 }
+    public let name: String      // e.g. "en0", "utun4"
+    public let ipv4: String      // e.g. "10.0.0.70", "100.110.118.112"
+    public let kind: Kind
+
+    public var displayLabel: String {
+        "\(kind.label) — \(ipv4)"
+    }
+
+    static func classify(ifname: String, ipv4: String) -> Kind {
+        // Tailscale uses the 100.64.0.0/10 CGNAT range and its tunnel iface
+        // is `utun*` on macOS. Both signals together avoid false-positives.
+        if ifname.hasPrefix("utun") {
+            let parts = ipv4.split(separator: ".").compactMap { Int($0) }
+            if parts.count == 4, parts[0] == 100, (64...127).contains(parts[1]) {
+                return .tailscale
+            }
+            return .other
+        }
+        if ifname == "en0" || ifname == "en1" || ifname == "en2" {
+            return .wifiOrEthernet
+        }
+        return .other
     }
 }

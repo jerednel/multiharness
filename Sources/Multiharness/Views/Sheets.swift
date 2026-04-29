@@ -385,8 +385,8 @@ private struct RemoteAccessTab: View {
 
             if env.remoteAccess.enabled {
                 Divider()
-                if let pairing = env.remoteAccess.pairingString() {
-                    PairingPanel(pairingString: pairing)
+                if env.remoteAccess.publicPort != nil {
+                    PairingPanel(remoteAccess: env.remoteAccess)
                 } else {
                     Text("Waiting for sidecar to bind…").font(.callout).foregroundStyle(.secondary)
                 }
@@ -396,13 +396,15 @@ private struct RemoteAccessTab: View {
 }
 
 private struct PairingPanel: View {
-    let pairingString: String
+    @Bindable var remoteAccess: RemoteAccess
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Pair an iOS device").font(.headline)
+            interfacePicker
             HStack(alignment: .top, spacing: 16) {
-                if let qr = makeQR(pairingString) {
+                if let pairing = remoteAccess.pairingString(),
+                   let qr = makeQR(pairing) {
                     Image(nsImage: qr)
                         .interpolation(.none)
                         .resizable()
@@ -413,17 +415,56 @@ private struct PairingPanel: View {
                     Text("Scan in Multiharness for iOS, or paste this string into the manual pairing field.")
                         .font(.caption).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
-                    Text(pairingString)
-                        .font(.system(.caption, design: .monospaced))
-                        .padding(8)
-                        .background(.quaternary, in: RoundedRectangle(cornerRadius: 4))
-                        .textSelection(.enabled)
-                    Button("Copy") {
-                        let pb = NSPasteboard.general
-                        pb.clearContents()
-                        pb.setString(pairingString, forType: .string)
+                    if let pairing = remoteAccess.pairingString() {
+                        Text(pairing)
+                            .font(.system(.caption, design: .monospaced))
+                            .padding(8)
+                            .background(.quaternary, in: RoundedRectangle(cornerRadius: 4))
+                            .textSelection(.enabled)
+                        Button("Copy") {
+                            let pb = NSPasteboard.general
+                            pb.clearContents()
+                            pb.setString(pairing, forType: .string)
+                        }
                     }
                 }
+            }
+        }
+        .onAppear { remoteAccess.refreshInterfaces() }
+    }
+
+    @ViewBuilder
+    private var interfacePicker: some View {
+        if remoteAccess.interfaces.isEmpty {
+            Text("No routable interfaces found.").font(.caption).foregroundStyle(.red)
+        } else {
+            HStack(spacing: 8) {
+                Text("Network").font(.caption).foregroundStyle(.secondary)
+                Picker("", selection: Binding(
+                    get: { remoteAccess.selectedHost ?? remoteAccess.interfaces.first?.ipv4 ?? "" },
+                    set: { remoteAccess.selectedHost = $0 }
+                )) {
+                    ForEach(remoteAccess.interfaces) { iface in
+                        HStack {
+                            Image(systemName: iface.kind == .tailscale ? "network.badge.shield.half.filled" : "network")
+                                .foregroundStyle(iface.kind == .tailscale ? .green : .blue)
+                            Text(iface.displayLabel)
+                        }
+                        .tag(iface.ipv4)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                if let host = remoteAccess.selectedHost,
+                   let kind = remoteAccess.interfaces.first(where: { $0.ipv4 == host })?.kind,
+                   kind == .tailscale {
+                    Text("Reachable from anywhere on your tailnet")
+                        .font(.caption2).foregroundStyle(.green)
+                } else {
+                    Text("LAN-only — phone must be on the same Wi-Fi")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+                Spacer()
             }
         }
     }
