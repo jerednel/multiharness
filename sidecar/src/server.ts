@@ -99,8 +99,18 @@ export async function startServer(opts: ServerOptions): Promise<ServerHandle> {
           log.warn("bad frame", { err: String(e) });
           return;
         }
+        // Log every method dispatch with size + first 80 chars of params
+        // so the last method name + payload is visible just before any crash.
+        const paramsStr = JSON.stringify(req.params);
+        log.warn("dispatch", {
+          method: req.method,
+          id: req.id,
+          paramsBytes: paramsStr.length,
+          paramsPreview: paramsStr.slice(0, 80),
+        });
         const out = await dispatcher.dispatch(req.id, req.method, req.params);
         ws.send(out);
+        log.warn("dispatched", { method: req.method, id: req.id, replyBytes: out.length });
       },
     },
   };

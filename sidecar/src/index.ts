@@ -36,14 +36,21 @@ for (const sig of ["SIGTERM", "SIGINT", "SIGABRT", "SIGPIPE", "SIGSEGV"] as cons
   });
 }
 
-// Periodically log memory usage so OOM kills have context.
+// Heartbeat every 2 seconds at warn level — we want this visible without
+// elevating MULTIHARNESS_LOG_LEVEL. If the sidecar dies suddenly we'll see
+// the time-of-last-beat and the trailing memory footprint.
+let heartbeatSeq = 0;
 setInterval(() => {
+  heartbeatSeq++;
   const m = process.memoryUsage();
-  log.debug("mem", {
+  log.warn("heartbeat", {
+    seq: heartbeatSeq,
     rssMB: Math.round(m.rss / 1024 / 1024),
     heapUsedMB: Math.round(m.heapUsed / 1024 / 1024),
+    extMB: Math.round((m.external ?? 0) / 1024 / 1024),
+    uptimeS: Math.round(process.uptime()),
   });
-}, 30_000).unref();
+}, 2_000).unref();
 
 const port = portEnv ? Number.parseInt(portEnv, 10) : undefined;
 if (portEnv && (port == null || Number.isNaN(port))) {
