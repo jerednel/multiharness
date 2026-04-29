@@ -52,6 +52,15 @@ private struct ConversationList: View {
                     withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
                 }
             }
+            .onAppear {
+                // Land at the most recent message instead of the top.
+                // No animation — instant jump avoids the "scroll-down" tease.
+                if let last = agent.turns.last {
+                    proxy.scrollTo(last.id, anchor: .bottom)
+                } else if agent.isStreaming {
+                    proxy.scrollTo("thinking", anchor: .bottom)
+                }
+            }
         }
     }
 }
