@@ -50,3 +50,33 @@ xcodebuild -project MultiharnessIOS.xcodeproj \
     -quiet \
     build
 echo "==> iOS build OK"
+
+# Opt-in: install on a Simulator + launch. Saves having to switch to Xcode
+# and click ⌘R after every change.
+if [ "${MULTIHARNESS_RUN_SIM:-0}" = "1" ]; then
+  SIM_ID="${MULTIHARNESS_SIM_ID:-}"
+  if [ -z "$SIM_ID" ]; then
+    SIM_ID="$(xcrun simctl list devices available 2>/dev/null \
+        | awk -F'[()]' '/iPhone 1[5-9]|iPhone 1[0-9]/ {print $2; exit}')"
+  fi
+  if [ -z "$SIM_ID" ]; then
+    echo "==> No iPhone simulator found; skipping run."
+    exit 0
+  fi
+  echo "==> Booting simulator $SIM_ID (no-op if already booted)"
+  xcrun simctl boot "$SIM_ID" 2>/dev/null || true
+  open -a Simulator
+  echo "==> Building for $SIM_ID"
+  rm -rf build
+  xcodebuild -project MultiharnessIOS.xcodeproj \
+      -scheme MultiharnessIOS \
+      -destination "id=$SIM_ID" \
+      -derivedDataPath build \
+      ARCHS=arm64 ONLY_ACTIVE_ARCH=YES \
+      -quiet build
+  APP_PATH="$(find build/Build/Products -maxdepth 4 -name 'MultiharnessIOS.app' -type d | head -1)"
+  echo "==> Installing $APP_PATH"
+  xcrun simctl install "$SIM_ID" "$APP_PATH"
+  echo "==> Launching com.multiharness.ios"
+  xcrun simctl launch "$SIM_ID" com.multiharness.ios
+fi
