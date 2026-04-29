@@ -95,6 +95,50 @@ public final class ConnectionStore: NSObject, ControlClientDelegate {
         }
     }
 
+    // MARK: Mac-relayed mutations
+
+    public func createWorkspace(
+        projectId: String,
+        name: String,
+        baseBranch: String?,
+        providerId: String,
+        modelId: String
+    ) async throws {
+        var params: [String: Any] = [
+            "projectId": projectId,
+            "name": name,
+            "providerId": providerId,
+            "modelId": modelId,
+        ]
+        if let bb = baseBranch, !bb.isEmpty { params["baseBranch"] = bb }
+        _ = try await client.call(method: "workspace.create", params: params)
+        await refreshWorkspaces()
+    }
+
+    public func scanRepos() async throws -> [(name: String, path: String)] {
+        let result = try await client.call(method: "project.scan", params: [:]) as? [String: Any]
+        let arr = result?["repos"] as? [[String: Any]] ?? []
+        return arr.compactMap { dict in
+            guard let path = dict["path"] as? String,
+                  let name = dict["name"] as? String else { return nil }
+            return (name, path)
+        }
+    }
+
+    public func createProject(
+        name: String,
+        repoPath: String,
+        defaultBaseBranch: String?
+    ) async throws {
+        var params: [String: Any] = [
+            "name": name,
+            "repoPath": repoPath,
+        ]
+        if let b = defaultBaseBranch, !b.isEmpty { params["defaultBaseBranch"] = b }
+        _ = try await client.call(method: "project.create", params: params)
+        await refreshWorkspaces()
+    }
+
     // MARK: ControlClientDelegate
 
     nonisolated public func controlClient(_ client: ControlClient, didReceiveEvent event: AgentEventEnvelope) {

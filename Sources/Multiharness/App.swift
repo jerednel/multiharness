@@ -7,6 +7,7 @@ struct MultiharnessApp: App {
     @State private var appStore: AppStore?
     @State private var workspaceStore: WorkspaceStore?
     @State private var agentRegistry = AgentRegistryStore()
+    @State private var relayHandler = RelayHandler()
     @State private var bootError: String?
 
     var body: some Scene {
@@ -41,6 +42,7 @@ struct MultiharnessApp: App {
             let app = AppStore(env: env)
             // Wire control-rebind BEFORE start() so the very first onPortBound
             // event (fired by start) drives the same path as later restarts.
+            let relayHandler = self.relayHandler
             env.onControlChanged = { [weak app, weak agentRegistry] client in
                 client.delegate = agentRegistry
                 if let app {
@@ -50,7 +52,10 @@ struct MultiharnessApp: App {
                     for store in agentRegistry.stores.values {
                         store.bind(control: client)
                     }
+                    agentRegistry.relayHandler = relayHandler
                 }
+                Task { await relayHandler.bind(client: client) }
+                Task { await relayHandler.registerWithSidecar() }
                 // Recreate sessions for every workspace so any client (Mac
                 // UI, iOS companion) can prompt without first opening the
                 // workspace in the Mac UI. Sidecar restarts blow away
@@ -77,6 +82,13 @@ struct MultiharnessApp: App {
             self.appStore = app
             self.workspaceStore = ws
             self.agentRegistry.bindEnvironment(env: env, appStore: app)
+            // Wire up the Mac-side handlers iOS will reach via the relay.
+            await RemoteHandlers.register(
+                on: relayHandler,
+                env: env,
+                appStore: app,
+                workspaceStore: ws
+            )
         } catch {
             self.bootError = String(describing: error)
         }
@@ -89,6 +101,7 @@ final class AgentRegistryStore: NSObject, ControlClientDelegate {
     var stores: [UUID: AgentStore] = [:]
     weak var env: AppEnvironment?
     weak var appStore: AppStore?
+    var relayHandler: RelayHandler?
 
     func bindEnvironment(env: AppEnvironment, appStore: AppStore) {
         self.env = env
@@ -105,6 +118,13 @@ final class AgentRegistryStore: NSObject, ControlClientDelegate {
     }
 
     nonisolated func controlClient(_ client: ControlClient, didReceiveEvent event: AgentEventEnvelope) {
+        if event.type == "relay_request" {
+            // Relay events don't carry a workspaceId — route to the handler.
+            Task { @MainActor in
+                if let h = self.relayHandler { await h.handle(event) }
+            }
+            return
+        }
         Task { @MainActor in
             guard let id = UUID(uuidString: event.workspaceId) else { return }
             self.stores[id]?.handleEvent(event)

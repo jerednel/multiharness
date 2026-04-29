@@ -4,6 +4,7 @@ import type { ProviderConfig } from "./providers.js";
 import { listModels } from "./providers.js";
 import { log } from "./logger.js";
 import { DataReader } from "./dataReader.js";
+import type { Relay } from "./relay.js";
 
 const VERSION = "0.1.0";
 
@@ -11,6 +12,7 @@ export function registerMethods(
   d: Dispatcher,
   registry: AgentRegistry,
   dataDir: string,
+  relay: Relay,
 ): void {
   const reader = new DataReader(dataDir);
   d.register("health.ping", () => ({ pong: true, version: VERSION }));
@@ -86,6 +88,15 @@ export function registerMethods(
     const models = await listModels(providerConfig);
     return { models };
   });
+
+  // ── Relayed methods ─────────────────────────────────────────────────────
+  // These are forwarded to the registered Mac handler client (which has
+  // SQLite, git, NSOpenPanel, etc.) and the Mac's response comes back here.
+  for (const m of ["workspace.create", "project.scan", "project.create"]) {
+    d.register(m, async (params) => {
+      return await relay.dispatch(m, params);
+    });
+  }
 }
 
 function requireString(p: Record<string, unknown>, name: string): string {

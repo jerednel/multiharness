@@ -7,6 +7,7 @@ import { AgentRegistry } from "./agentRegistry.js";
 import { registerMethods } from "./methods.js";
 import { parseFrame, formatEvent } from "./rpc.js";
 import { log } from "./logger.js";
+import { Relay } from "./relay.js";
 
 export type ServerOptions = {
   socketPath?: string;
@@ -59,8 +60,9 @@ export async function startServer(opts: ServerOptions): Promise<ServerHandle> {
   };
 
   const registry = new AgentRegistry(opts.dataDir, sink);
+  const relay = new Relay();
   const dispatcher = new Dispatcher();
-  registerMethods(dispatcher, registry, opts.dataDir);
+  registerMethods(dispatcher, registry, opts.dataDir, relay);
 
   const expectedAuth = opts.authToken ? `Bearer ${opts.authToken}` : null;
   const isPrivateBind =
@@ -88,6 +90,7 @@ export async function startServer(opts: ServerOptions): Promise<ServerHandle> {
       },
       close(ws: WS) {
         clients.delete(ws);
+        relay.unsetHandlerIfMatches(ws);
         log.info("client disconnected", { count: clients.size });
       },
       async message(ws: WS, raw: string | Buffer) {
@@ -99,8 +102,26 @@ export async function startServer(opts: ServerOptions): Promise<ServerHandle> {
           log.warn("bad frame", { err: String(e) });
           return;
         }
-        // Log every method dispatch with size + first 80 chars of params
-        // so the last method name + payload is visible just before any crash.
+        // Special-case the two relay-control methods so they hit the per-
+        // connection relay state directly.
+        if (req.method === "client.register") {
+          const role = (req.params as { role?: string }).role;
+          if (role === "handler") {
+            relay.setHandler(ws);
+            ws.send(JSON.stringify({ id: req.id, result: { ok: true } }));
+            return;
+          }
+        }
+        if (req.method === "relay.respond") {
+          const { relayId, result, error } = req.params as {
+            relayId: string;
+            result?: unknown;
+            error?: { code: string; message: string };
+          };
+          relay.acceptResponse(relayId, result, error);
+          ws.send(JSON.stringify({ id: req.id, result: { ok: true } }));
+          return;
+        }
         const paramsStr = JSON.stringify(req.params);
         log.warn("dispatch", {
           method: req.method,

@@ -4,6 +4,8 @@ import MultiharnessClient
 struct WorkspacesView: View {
     @Bindable var connection: ConnectionStore
     let onUnpair: () -> Void
+    @State private var showingNewWorkspace = false
+    @State private var showingNewProject = false
 
     var body: some View {
         Group {
@@ -21,6 +23,18 @@ struct WorkspacesView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
+                    Button {
+                        showingNewWorkspace = true
+                    } label: {
+                        Label("New workspace", systemImage: "plus.rectangle.on.rectangle")
+                    }
+                    .disabled(connection.projects.isEmpty || connection.providers.isEmpty)
+                    Button {
+                        showingNewProject = true
+                    } label: {
+                        Label("Add project", systemImage: "folder.badge.plus")
+                    }
+                    Divider()
                     Button(role: .destructive) {
                         onUnpair()
                     } label: {
@@ -32,6 +46,12 @@ struct WorkspacesView: View {
             }
         }
         .refreshable { await connection.refreshWorkspaces() }
+        .sheet(isPresented: $showingNewWorkspace) {
+            NewWorkspaceSheet(connection: connection, isPresented: $showingNewWorkspace)
+        }
+        .sheet(isPresented: $showingNewProject) {
+            NewProjectSheet(connection: connection, isPresented: $showingNewProject)
+        }
     }
 
     private var connectingView: some View {
