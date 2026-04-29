@@ -143,6 +143,13 @@ final class AgentRegistryStore: NSObject, ControlClientDelegate {
             }
             return
         }
+        if event.type == "anthropic_console_auth_url" {
+            let urlString = event.payload["url"] as? String
+            Task { @MainActor in
+                if let urlString { self.appStore?.openAnthropicAuthURL(urlString) }
+            }
+            return
+        }
         if event.type == "openai_auth_url" {
             let urlString = event.payload["url"] as? String
             Task { @MainActor in
