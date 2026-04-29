@@ -70,7 +70,8 @@ public final class WorkspaceStore {
         provider: ProviderRecord,
         modelId: String,
         gitUserName: String,
-        buildMode: BuildMode? = nil
+        buildMode: BuildMode? = nil,
+        nameSource: NameSource = .named
     ) throws -> Workspace {
         let slug = slugify(name)
         let branch = "\(slugify(gitUserName))/\(slug)"
@@ -90,12 +91,63 @@ public final class WorkspaceStore {
             worktreePath: path.path,
             providerId: provider.id,
             modelId: modelId,
-            buildMode: buildMode
+            buildMode: buildMode,
+            nameSource: nameSource
         )
         try env.persistence.upsertWorkspace(ws)
         workspaces.insert(ws, at: 0)
         selectedWorkspaceId = ws.id
         return ws
+    }
+
+    /// Update only the display name of a workspace. The slug, branch name,
+    /// and worktree path stay frozen at their original values — see
+    /// docs/superpowers/specs/2026-04-29-ai-workspace-names-design.md.
+    /// Always flips `nameSource` to `.named` so future AI rename attempts
+    /// are skipped.
+    public func rename(_ ws: Workspace, to newName: String) {
+        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        guard let idx = workspaces.firstIndex(where: { $0.id == ws.id }) else { return }
+        var updated = workspaces[idx]
+        updated.name = trimmed
+        updated.nameSource = .named
+        do {
+            try env.persistence.upsertWorkspace(updated)
+            workspaces[idx] = updated
+        } catch {
+            lastError = String(describing: error)
+        }
+    }
+
+    /// Request a rename through the sidecar. The call goes out as
+    /// `workspace.rename` and round-trips back to this Mac process via the
+    /// relay handler, which calls `rename(_:to:)` to update the in-memory
+    /// store; the sidecar additionally broadcasts a `workspace_updated`
+    /// event so connected iOS clients pick up the new name.
+    public func requestRename(_ ws: Workspace, to newName: String) async throws {
+        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        guard let client = env.control else {
+            throw RenameError.controlClientUnavailable
+        }
+        _ = try await client.call(
+            method: "workspace.rename",
+            params: [
+                "workspaceId": ws.id.uuidString,
+                "name": trimmed,
+            ]
+        )
+    }
+
+    public enum RenameError: Error, LocalizedError {
+        case controlClientUnavailable
+        public var errorDescription: String? {
+            switch self {
+            case .controlClientUnavailable:
+                return "Sidecar isn't running yet — try again in a moment."
+            }
+        }
     }
 
     public enum QuickCreateError: Error, LocalizedError {
@@ -151,7 +203,8 @@ public final class WorkspaceStore {
             baseBranch: baseBranch,
             provider: provider,
             modelId: resolvedModelId,
-            gitUserName: gitUserName
+            gitUserName: gitUserName,
+            nameSource: .random
         )
     }
 

@@ -27,7 +27,7 @@
 		2508B2990E575F586D8E6830 /* QRScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRScannerView.swift; sourceTree = "<group>"; };
 		29073A5DE9D5EE7CE5129B04 /* PairingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingView.swift; sourceTree = "<group>"; };
 		2F96F45BEEC202FC095E9F5C /* App.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App.swift; sourceTree = "<group>"; };
-		3174153BDB0DB75368932AE8 /* las-vegas */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "las-vegas"; path = ..; sourceTree = SOURCE_ROOT; };
+		3BDD74080E32A8F9BE2E621F /* sao-paulo */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "sao-paulo"; path = ..; sourceTree = SOURCE_ROOT; };
 		4B19617671007E21225D2A51 /* PairingStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingStore.swift; sourceTree = "<group>"; };
 		535C55D1D0C280DF95F8DA33 /* CreateSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateSheets.swift; sourceTree = "<group>"; };
 		53F7B5701FD21794DAE10EBC /* ConnectionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionStore.swift; sourceTree = "<group>"; };
@@ -64,7 +64,7 @@
 		AF0A3A399F6C652F0D19BA40 /* Packages */ = {
 			isa = PBXGroup;
 			children = (
-				3174153BDB0DB75368932AE8 /* las-vegas */,
+				3BDD74080E32A8F9BE2E621F /* sao-paulo */,
 			);
 			name = Packages;
 			sourceTree = "<group>";

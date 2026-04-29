@@ -61,9 +61,21 @@ export async function startServer(opts: ServerOptions): Promise<ServerHandle> {
   };
 
   const oauthStore = new OAuthStore(opts.dataDir);
-  const registry = new AgentRegistry(opts.dataDir, sink, oauthStore);
   const relay = new Relay();
   const dispatcher = new Dispatcher();
+  // The registry needs a way to rename workspaces (used by the AI-naming
+  // task on first prompt). Route it through the dispatcher so it shares
+  // the workspace.rename handler's broadcast side effect; the closure
+  // captures `dispatcher`, which is constructed above this line and
+  // populated by registerMethods below.
+  const registry = new AgentRegistry(
+    opts.dataDir,
+    sink,
+    oauthStore,
+    async (workspaceId: string, name: string) => {
+      await dispatcher.invoke("workspace.rename", { workspaceId, name });
+    },
+  );
   registerMethods(dispatcher, registry, opts.dataDir, relay, oauthStore, sink);
 
   const expectedAuth = opts.authToken ? `Bearer ${opts.authToken}` : null;

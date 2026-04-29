@@ -18,6 +18,11 @@ enum RemoteHandlers {
                 env: env, appStore: appStore, workspaceStore: workspaceStore
             )
         }
+        await relay.register(method: "workspace.rename") { params in
+            try await Self.workspaceRename(
+                params: params, workspaceStore: workspaceStore
+            )
+        }
         await relay.register(method: "project.scan") { _ in
             try await Self.projectScan()
         }
@@ -70,6 +75,38 @@ enum RemoteHandlers {
             return out
         }
         return ["models": trimmed]
+    }
+
+    // MARK: - workspace.rename
+
+    /// Display-name-only rename. Slug, branch_name, and worktree_path stay
+    /// frozen — see docs/superpowers/specs/2026-04-29-ai-workspace-names-design.md.
+    @MainActor
+    private static func workspaceRename(
+        params: [String: Any],
+        workspaceStore: WorkspaceStore
+    ) async throws -> Any? {
+        guard let idStr = params["workspaceId"] as? String,
+              let id = UUID(uuidString: idStr) else {
+            throw RemoteError.bad("workspaceId required (UUID string)")
+        }
+        guard let raw = params["name"] as? String else {
+            throw RemoteError.bad("name required")
+        }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.count <= 80 else {
+            throw RemoteError.bad("name must be 1–80 characters")
+        }
+        guard let ws = workspaceStore.workspaces.first(where: { $0.id == id }) else {
+            throw RemoteError.bad("workspace not found")
+        }
+        workspaceStore.rename(ws, to: trimmed)
+        return [
+            "ok": true,
+            "workspaceId": id.uuidString,
+            "name": trimmed,
+            "nameSource": NameSource.named.rawValue,
+        ] as [String: Any]
     }
 
     // MARK: - workspace.create

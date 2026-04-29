@@ -5,6 +5,8 @@ struct WorkspaceSidebar: View {
     @Bindable var workspaceStore: WorkspaceStore
     @Binding var selection: UUID?
 
+    @State private var renameTarget: Workspace?
+
     var body: some View {
         List(selection: $selection) {
             ForEach(workspaceStore.grouped(), id: \.0) { (state, items) in
@@ -18,10 +20,22 @@ struct WorkspaceSidebar: View {
             }
         }
         .listStyle(.sidebar)
+        .sheet(item: $renameTarget) { ws in
+            RenameWorkspaceSheet(
+                workspaceStore: workspaceStore,
+                workspace: ws,
+                isPresented: Binding(
+                    get: { renameTarget != nil },
+                    set: { if !$0 { renameTarget = nil } }
+                )
+            )
+        }
     }
 
     @ViewBuilder
     private func workspaceContextMenu(_ ws: Workspace) -> some View {
+        Button("Rename…") { renameTarget = ws }
+        Divider()
         ForEach(LifecycleState.allCases, id: \.self) { other in
             Button(other.label) {
                 workspaceStore.setLifecycle(ws, other)
@@ -34,6 +48,77 @@ struct WorkspaceSidebar: View {
         }
         Button("Archive + remove worktree", role: .destructive) {
             workspaceStore.archive(ws, removeWorktree: true)
+        }
+    }
+}
+
+struct RenameWorkspaceSheet: View {
+    @Bindable var workspaceStore: WorkspaceStore
+    let workspace: Workspace
+    @Binding var isPresented: Bool
+
+    @State private var draft: String
+    @State private var error: String?
+    @State private var inFlight: Bool = false
+
+    init(
+        workspaceStore: WorkspaceStore,
+        workspace: Workspace,
+        isPresented: Binding<Bool>
+    ) {
+        self.workspaceStore = workspaceStore
+        self.workspace = workspace
+        self._isPresented = isPresented
+        self._draft = State(initialValue: workspace.name)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Rename workspace").font(.title2).bold()
+            Text("Branch and worktree path stay the same — only the display name changes.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            TextField("Workspace name", text: $draft)
+                .textFieldStyle(.roundedBorder)
+                .onSubmit { commit() }
+            if let err = error {
+                Text(err).font(.caption).foregroundStyle(.red)
+            }
+            HStack {
+                Spacer()
+                Button("Cancel") { isPresented = false }
+                    .keyboardShortcut(.cancelAction)
+                Button("Save") { commit() }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(!isValid || inFlight)
+            }
+        }
+        .padding(24)
+        .frame(width: 420)
+    }
+
+    private var trimmed: String {
+        draft.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var isValid: Bool {
+        let t = trimmed
+        return !t.isEmpty && t.count <= 80 && t != workspace.name
+    }
+
+    private func commit() {
+        guard isValid, !inFlight else { return }
+        inFlight = true
+        let snapshot = workspace
+        let newName = trimmed
+        Task { @MainActor in
+            defer { inFlight = false }
+            do {
+                try await workspaceStore.requestRename(snapshot, to: newName)
+                isPresented = false
+            } catch {
+                self.error = String(describing: error)
+            }
         }
     }
 }
@@ -115,6 +200,7 @@ private struct ProjectDisclosure: View {
 
     @State private var isExpanded: Bool
     @State private var groupByStatus: Bool
+    @State private var renameTarget: Workspace?
 
     init(
         project: Project,
@@ -146,6 +232,16 @@ private struct ProjectDisclosure: View {
         }
         .onChange(of: groupByStatus) { _, new in
             UserDefaults.standard.set(new, forKey: Self.groupKey(project.id))
+        }
+        .sheet(item: $renameTarget) { ws in
+            RenameWorkspaceSheet(
+                workspaceStore: workspaceStore,
+                workspace: ws,
+                isPresented: Binding(
+                    get: { renameTarget != nil },
+                    set: { if !$0 { renameTarget = nil } }
+                )
+            )
         }
     }
 
@@ -218,6 +314,8 @@ private struct ProjectDisclosure: View {
 
     @ViewBuilder
     private func workspaceContextMenu(_ ws: Workspace) -> some View {
+        Button("Rename…") { renameTarget = ws }
+        Divider()
         ForEach(LifecycleState.allCases, id: \.self) { other in
             Button(other.label) {
                 workspaceStore.setLifecycle(ws, other)
