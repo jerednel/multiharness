@@ -28,6 +28,11 @@ public final class AgentStore {
         guard let data = try? Data(contentsOf: path),
               let text = String(data: data, encoding: .utf8) else { return }
         var loaded: [ConversationTurn] = []
+        var groupId: String?
+        var groupCounter = 0
+        // Re-derived from agent_start/agent_end markers in the JSONL so
+        // history rehydration produces the same group structure as the
+        // live event stream.
         for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
             guard let lineData = line.data(using: .utf8),
                   let obj = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
@@ -35,6 +40,11 @@ public final class AgentStore {
                   let type = event["type"] as? String
             else { continue }
             switch type {
+            case "agent_start":
+                groupCounter += 1
+                groupId = "g\(groupCounter)"
+            case "agent_end":
+                groupId = nil
             case "message_end":
                 guard let msg = event["message"] as? [String: Any],
                       let role = msg["role"] as? String
@@ -43,23 +53,41 @@ public final class AgentStore {
                 switch role {
                 case "user":
                     if !text.isEmpty {
+                        // User turns are added before agent_start in the live
+                        // flow, so they have no groupId. Persisted user
+                        // message_end events arrive inside the active group;
+                        // strip the groupId here so loaded history matches
+                        // the live structure.
                         loaded.append(ConversationTurn(role: .user, text: text))
                     }
                 case "assistant":
                     if !text.isEmpty {
-                        loaded.append(ConversationTurn(role: .assistant, text: text))
+                        loaded.append(ConversationTurn(
+                            role: .assistant,
+                            text: text,
+                            groupId: groupId
+                        ))
                     }
                 default:
                     break
                 }
-            case "tool_execution_end":
+            case "tool_execution_start":
                 let toolName = event["toolName"] as? String ?? "tool"
-                let preview = Self.extractToolResultPreview(event["result"])
+                let argsDescription = (event["args"] as? [String: Any])?["description"] as? String
                 loaded.append(ConversationTurn(
                     role: .tool,
-                    text: preview,
-                    toolName: toolName
+                    text: "",
+                    toolName: toolName,
+                    toolCallDescription: argsDescription,
+                    groupId: groupId
                 ))
+            case "tool_execution_end":
+                // Attach result to the most recent tool turn — mirrors the
+                // live handleEvent path, which assumes serial execution.
+                let preview = Self.extractToolResultPreview(event["result"])
+                if let idx = loaded.indices.reversed().first(where: { loaded[$0].role == .tool }) {
+                    loaded[idx].text = preview
+                }
             default:
                 break
             }
@@ -99,6 +127,12 @@ public final class AgentStore {
     /// an empty card.
     private var assistantTurnPending = false
 
+    /// Allocated on agent_start, cleared on agent_end. Every turn appended
+    /// while this is set carries it so the renderer can collapse the run
+    /// into a single disclosure group ("6 tool calls, 1 message").
+    private var currentGroupId: String?
+    private var liveGroupCounter: Int = 0
+
     /// Force-clear streaming flags. Used when the underlying ControlClient
     /// disconnects mid-turn (sidecar crash, network blip). Caller is the
     /// AgentRegistryStore via its delegate path.
@@ -109,8 +143,10 @@ public final class AgentStore {
             for i in turns.indices { turns[i].streaming = false }
             turns.append(ConversationTurn(
                 role: .assistant,
-                text: "⚠️ Connection to the agent dropped mid-response. The session was reopened; please try again."
+                text: "⚠️ Connection to the agent dropped mid-response. The session was reopened; please try again.",
+                groupId: currentGroupId
             ))
+            currentGroupId = nil
         }
     }
 
@@ -119,9 +155,14 @@ public final class AgentStore {
         switch event.type {
         case "agent_start":
             isStreaming = true
+            liveGroupCounter += 1
+            // Distinct prefix from history-replay ids ("g…") so live runs
+            // can never collide with rehydrated ones in the same session.
+            currentGroupId = "live-\(liveGroupCounter)"
         case "agent_end":
             isStreaming = false
             assistantTurnPending = false
+            currentGroupId = nil
             for i in turns.indices { turns[i].streaming = false }
         case "message_start":
             if let msg = event.payload["message"] as? [String: Any],
@@ -133,7 +174,12 @@ public final class AgentStore {
                evt["type"] as? String == "text_delta",
                let delta = evt["delta"] as? String {
                 if assistantTurnPending {
-                    turns.append(ConversationTurn(role: .assistant, text: "", streaming: true))
+                    turns.append(ConversationTurn(
+                        role: .assistant,
+                        text: "",
+                        groupId: currentGroupId,
+                        streaming: true
+                    ))
                     assistantTurnPending = false
                 }
                 if let lastIdx = turns.indices.last,
@@ -158,6 +204,7 @@ public final class AgentStore {
                 turns.append(ConversationTurn(
                     role: .assistant,
                     text: "⚠️ " + errText,
+                    groupId: currentGroupId,
                     streaming: false
                 ))
             }
@@ -169,15 +216,24 @@ public final class AgentStore {
             turns.append(ConversationTurn(
                 role: .assistant,
                 text: "⚠️ " + msg,
+                groupId: currentGroupId,
                 streaming: false
             ))
         case "tool_execution_start":
             let name = event.payload["toolName"] as? String ?? "tool"
-            let args = event.payload["args"]
+            let args = event.payload["args"] as? [String: Any]
+            let callDesc = args?["description"] as? String
             let argText: String
             if let args { argText = "\(args)" } else { argText = "" }
             let preview = argText.count > 200 ? String(argText.prefix(200)) + "…" : argText
-            turns.append(ConversationTurn(role: .tool, text: preview, toolName: name, streaming: true))
+            turns.append(ConversationTurn(
+                role: .tool,
+                text: preview,
+                toolName: name,
+                toolCallDescription: callDesc,
+                groupId: currentGroupId,
+                streaming: true
+            ))
         case "tool_execution_end":
             if let lastIdx = turns.indices.last, turns[lastIdx].role == .tool {
                 turns[lastIdx].streaming = false

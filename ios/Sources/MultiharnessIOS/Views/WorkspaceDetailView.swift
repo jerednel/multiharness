@@ -84,10 +84,16 @@ private struct ConversationList: View {
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
-                    ForEach(agent.turns) { turn in
-                        TurnRow(turn: turn).id(turn.id)
+                    ForEach(groupConversationTurns(agent.turns), id: \.id) { row in
+                        switch row {
+                        case .single(let turn):
+                            TurnRow(turn: turn).id(turn.id)
+                        case .group(let id, let children):
+                            ResponseGroupRow(groupId: id, children: children)
+                                .id(id)
+                        }
                     }
-                    if agent.isStreaming {
+                    if agent.isStreaming && !hasActiveGroup {
                         ThinkingRow().id("thinking")
                     }
                 }
@@ -108,6 +114,97 @@ private struct ConversationList: View {
                     proxy.scrollTo("thinking", anchor: .bottom)
                 }
             }
+        }
+    }
+
+    private var hasActiveGroup: Bool {
+        guard let last = agent.turns.last, last.groupId != nil else { return false }
+        return agent.isStreaming
+    }
+}
+
+private struct ResponseGroupRow: View {
+    let groupId: String
+    let children: [ConversationTurn]
+
+    @State private var manuallyToggled = false
+    @State private var manualExpanded = false
+
+    private var isStreaming: Bool {
+        children.contains(where: { $0.streaming })
+    }
+
+    private var expanded: Bool {
+        manuallyToggled ? manualExpanded : isStreaming
+    }
+
+    private var liftedFinalIndex: Int? {
+        children.indices.reversed().first(where: {
+            children[$0].role == .assistant && !children[$0].text.isEmpty
+        })
+    }
+
+    private var collapsedChildren: [ConversationTurn] {
+        guard let lifted = liftedFinalIndex else { return children }
+        var copy = children
+        copy.remove(at: lifted)
+        return copy
+    }
+
+    private var liftedFinal: ConversationTurn? {
+        liftedFinalIndex.map { children[$0] }
+    }
+
+    private var summary: String {
+        let toolCount = children.filter { $0.role == .tool }.count
+        let messageCount = children.filter {
+            $0.role == .assistant && !$0.text.isEmpty
+        }.count
+        var parts: [String] = []
+        if toolCount > 0 {
+            parts.append("\(toolCount) tool call\(toolCount == 1 ? "" : "s")")
+        }
+        if messageCount > 0 {
+            parts.append("\(messageCount) message\(messageCount == 1 ? "" : "s")")
+        }
+        if parts.isEmpty { return isStreaming ? "thinking…" : "no output" }
+        return parts.joined(separator: ", ")
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button {
+                manuallyToggled = true
+                manualExpanded.toggle()
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                        .font(.caption2).foregroundStyle(.secondary).frame(width: 10)
+                    Image(systemName: "sparkles").font(.caption).foregroundStyle(.purple)
+                    Text(summary).font(.caption).foregroundStyle(.secondary)
+                    if isStreaming {
+                        ProgressView().scaleEffect(0.5).frame(width: 10, height: 10)
+                    }
+                    Spacer()
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if expanded {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(collapsedChildren) { turn in
+                        TurnRow(turn: turn).id(turn.id)
+                    }
+                }
+            }
+
+            if let final = liftedFinal {
+                TurnRow(turn: final).id(final.id)
+            }
+        }
+        .onChange(of: isStreaming) { _, nowStreaming in
+            if nowStreaming { manuallyToggled = false }
         }
     }
 }
@@ -132,9 +229,15 @@ private struct TurnRow: View {
                         .font(.caption2).foregroundStyle(.secondary).frame(width: 10)
                     Image(systemName: "wrench.and.screwdriver")
                         .foregroundStyle(.orange).font(.caption)
-                    Text(turn.toolName ?? "tool").font(.caption).bold()
-                    Text("·").foregroundStyle(.secondary)
-                    Text(summary).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    Text(turn.toolStepLabel).font(.caption).bold()
+                    if let raw = turn.toolName,
+                       turn.toolCallDescription?.isEmpty == false {
+                        Text(raw)
+                            .font(.system(.caption2, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 4).padding(.vertical, 1)
+                            .background(Color.secondary.opacity(0.1), in: RoundedRectangle(cornerRadius: 3))
+                    }
                     Spacer()
                     if turn.streaming {
                         ProgressView().scaleEffect(0.5).frame(width: 10, height: 10)
@@ -182,13 +285,6 @@ private struct TurnRow: View {
         }
     }
 
-    private var summary: String {
-        let firstLine = turn.text
-            .split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: true)
-            .first.map(String.init) ?? ""
-        if firstLine.isEmpty { return turn.streaming ? "running…" : "done" }
-        return firstLine.count > 80 ? String(firstLine.prefix(80)) + "…" : firstLine
-    }
 }
 
 private struct ThinkingRow: View {

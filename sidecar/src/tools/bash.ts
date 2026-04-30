@@ -4,6 +4,12 @@ import { resolveInside } from "../pathGuard.js";
 
 const Params = Type.Object({
   command: Type.String(),
+  description: Type.Optional(
+    Type.String({
+      description:
+        "Short imperative phrase describing the action, e.g. 'Show working tree status' or 'Run unit tests'. Shown to the user as the step label. 5–8 words.",
+    }),
+  ),
   working_dir: Type.Optional(
     Type.String({ description: "Optional path inside the worktree to use as cwd." }),
   ),
@@ -19,7 +25,7 @@ export function bashTool(worktreePath: string): AgentTool<typeof Params> {
     description:
       "Run a shell command in /bin/zsh inside the workspace's worktree. Captures stdout, stderr, and exit code.",
     parameters: Params,
-    execute: async (_id, { command, working_dir, timeout_ms }) => {
+    execute: async (_id, { command, working_dir, timeout_ms, description: _description }) => {
       const cwd = working_dir ? resolveInside(worktreePath, working_dir) : worktreePath;
       const proc = Bun.spawn(["/bin/zsh", "-c", command], {
         cwd,

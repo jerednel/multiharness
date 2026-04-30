@@ -12,6 +12,10 @@ public final class RemoteAgentStore {
     public var isStreaming: Bool = false
     public var lastError: String?
     private var assistantTurnPending = false
+    /// Allocated on agent_start, cleared on agent_end. Mirrors the macOS
+    /// AgentStore so the iOS UI can collapse runs into a single group.
+    private var currentGroupId: String?
+    private var liveGroupCounter: Int = 0
 
     public init(workspaceId: String) {
         self.workspaceId = workspaceId
@@ -22,15 +26,24 @@ public final class RemoteAgentStore {
         switch event.type {
         case "agent_start":
             isStreaming = true
+            liveGroupCounter += 1
+            // Distinct prefix from history-replay ids ("g…") so live runs
+            // can never collide with rehydrated ones in the same session.
+            currentGroupId = "live-\(liveGroupCounter)"
         case "agent_end":
             isStreaming = false
             assistantTurnPending = false
+            currentGroupId = nil
             for i in turns.indices { turns[i].streaming = false }
         case "agent_error":
             let msg = (event.payload["message"] as? String) ?? "agent error"
             lastError = msg
             assistantTurnPending = false
-            turns.append(ConversationTurn(role: .assistant, text: "⚠️ " + msg))
+            turns.append(ConversationTurn(
+                role: .assistant,
+                text: "⚠️ " + msg,
+                groupId: currentGroupId
+            ))
         case "message_start":
             if let msg = event.payload["message"] as? [String: Any],
                (msg["role"] as? String) == "assistant" {
@@ -41,7 +54,12 @@ public final class RemoteAgentStore {
                (evt["type"] as? String) == "text_delta",
                let delta = evt["delta"] as? String {
                 if assistantTurnPending {
-                    turns.append(ConversationTurn(role: .assistant, text: "", streaming: true))
+                    turns.append(ConversationTurn(
+                        role: .assistant,
+                        text: "",
+                        groupId: currentGroupId,
+                        streaming: true
+                    ))
                     assistantTurnPending = false
                 }
                 if let last = turns.indices.last, turns[last].role == .assistant {
@@ -53,10 +71,14 @@ public final class RemoteAgentStore {
             if let last = turns.indices.last { turns[last].streaming = false }
         case "tool_execution_start":
             let name = event.payload["toolName"] as? String ?? "tool"
+            let args = event.payload["args"] as? [String: Any]
+            let callDesc = args?["description"] as? String
             turns.append(ConversationTurn(
                 role: .tool,
                 text: "",
                 toolName: name,
+                toolCallDescription: callDesc,
+                groupId: currentGroupId,
                 streaming: true
             ))
         case "tool_execution_end":
@@ -84,7 +106,9 @@ public final class RemoteAgentStore {
         return ConversationTurn(
             role: r,
             text: text,
-            toolName: json["toolName"] as? String
+            toolName: json["toolName"] as? String,
+            toolCallDescription: json["toolCallDescription"] as? String,
+            groupId: json["groupId"] as? String
         )
     }
 }

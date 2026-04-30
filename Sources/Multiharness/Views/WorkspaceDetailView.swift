@@ -132,10 +132,16 @@ private struct ConversationView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    ForEach(store.turns) { turn in
-                        TurnCard(turn: turn).id(turn.id)
+                    ForEach(groupConversationTurns(store.turns), id: \.id) { row in
+                        switch row {
+                        case .single(let turn):
+                            TurnCard(turn: turn).id(turn.id)
+                        case .group(let id, let children):
+                            ResponseGroupView(groupId: id, children: children)
+                                .id(id)
+                        }
                     }
-                    if store.isStreaming {
+                    if store.isStreaming && !hasActiveGroup {
                         ThinkingCard().id(thinkingCardId)
                     }
                 }
@@ -159,6 +165,14 @@ private struct ConversationView: View {
                 }
             }
         }
+    }
+
+    /// True iff there's an in-progress group already at the bottom — in
+    /// that case the group's own header carries the streaming indicator,
+    /// so we suppress the standalone ThinkingCard.
+    private var hasActiveGroup: Bool {
+        guard let last = store.turns.last, last.groupId != nil else { return false }
+        return store.isStreaming
     }
 
     private let thinkingCardId = "thinking-card"
@@ -195,6 +209,102 @@ private struct ThinkingCard: View {
     }
 }
 
+/// Collapsible container for one agent_start..agent_end response. While
+/// any child is streaming, expands automatically; once the run finishes,
+/// auto-collapses to a one-line summary the user can re-open. The final
+/// assistant message renders outside the collapse so post-collapse it
+/// still reads like a normal reply.
+private struct ResponseGroupView: View {
+    let groupId: String
+    let children: [ConversationTurn]
+
+    @State private var manuallyToggled = false
+    @State private var manualExpanded = false
+
+    private var isStreaming: Bool {
+        children.contains(where: { $0.streaming })
+    }
+
+    private var expanded: Bool {
+        manuallyToggled ? manualExpanded : isStreaming
+    }
+
+    /// Index of the assistant turn we lift OUT of the collapse so the
+    /// final reply remains readable when collapsed. Picks the last
+    /// non-empty assistant turn in the group; nil if there isn't one yet.
+    private var liftedFinalIndex: Int? {
+        children.indices.reversed().first(where: {
+            children[$0].role == .assistant && !children[$0].text.isEmpty
+        })
+    }
+
+    private var collapsedChildren: [ConversationTurn] {
+        guard let lifted = liftedFinalIndex else { return children }
+        var copy = children
+        copy.remove(at: lifted)
+        return copy
+    }
+
+    private var liftedFinal: ConversationTurn? {
+        liftedFinalIndex.map { children[$0] }
+    }
+
+    private var summary: String {
+        let toolCount = children.filter { $0.role == .tool }.count
+        let messageCount = children.filter {
+            $0.role == .assistant && !$0.text.isEmpty
+        }.count
+        var parts: [String] = []
+        if toolCount > 0 {
+            parts.append("\(toolCount) tool call\(toolCount == 1 ? "" : "s")")
+        }
+        if messageCount > 0 {
+            parts.append("\(messageCount) message\(messageCount == 1 ? "" : "s")")
+        }
+        if parts.isEmpty { return isStreaming ? "thinking…" : "no output" }
+        return parts.joined(separator: ", ")
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button {
+                manuallyToggled = true
+                manualExpanded.toggle()
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                        .font(.caption2).foregroundStyle(.secondary).frame(width: 10)
+                    Image(systemName: "sparkles").font(.caption).foregroundStyle(.purple)
+                    Text(summary).font(.caption).foregroundStyle(.secondary)
+                    if isStreaming {
+                        ProgressView().scaleEffect(0.5).frame(width: 10, height: 10)
+                    }
+                    Spacer()
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if expanded {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(collapsedChildren) { turn in
+                        TurnCard(turn: turn).id(turn.id)
+                    }
+                }
+            }
+
+            if let final = liftedFinal {
+                TurnCard(turn: final).id(final.id)
+            }
+        }
+        // When a streaming run completes, snap back to "follow streaming"
+        // mode so the next run auto-expands then auto-collapses again.
+        .onChange(of: isStreaming) { _, nowStreaming in
+            if nowStreaming { manuallyToggled = false }
+        }
+    }
+}
+
 private struct TurnCard: View {
     let turn: ConversationTurn
     @State private var expanded = false
@@ -216,9 +326,15 @@ private struct TurnCard: View {
                     Image(systemName: expanded ? "chevron.down" : "chevron.right")
                         .font(.caption2).foregroundStyle(.secondary).frame(width: 10)
                     Image(systemName: "wrench.and.screwdriver").foregroundStyle(.orange).font(.caption)
-                    Text(turn.toolName ?? "tool").font(.caption).bold()
-                    Text("·").foregroundStyle(.secondary)
-                    Text(collapsedSummary).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    Text(turn.toolStepLabel).font(.caption).bold()
+                    if let raw = turn.toolName,
+                       turn.toolCallDescription?.isEmpty == false {
+                        Text(raw)
+                            .font(.system(.caption2, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 4).padding(.vertical, 1)
+                            .background(Color.secondary.opacity(0.1), in: RoundedRectangle(cornerRadius: 3))
+                    }
                     Spacer()
                     if turn.streaming {
                         ProgressView().scaleEffect(0.5).frame(width: 10, height: 10)
@@ -265,21 +381,11 @@ private struct TurnCard: View {
         }
     }
 
-    private var collapsedSummary: String {
-        // Show the first non-empty line as a one-liner.
-        let firstLine = turn.text
-            .split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: true)
-            .first
-            .map(String.init) ?? ""
-        if firstLine.isEmpty { return turn.streaming ? "running…" : "done" }
-        return firstLine.count > 120 ? String(firstLine.prefix(120)) + "…" : firstLine
-    }
-
     private var roleLabel: String {
         switch turn.role {
         case .user: return "You"
         case .assistant: return "Agent"
-        case .tool: return "Tool: \(turn.toolName ?? "?")"
+        case .tool: return "Tool: \(turn.toolStepLabel)"
         }
     }
 

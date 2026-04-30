@@ -93,7 +93,9 @@ export class DataReader {
   }
 
   /** Reduce the persisted JSONL into a flat list of turns suitable for the
-   *  iOS UI: { role, text, toolName? } per item.
+   *  iOS UI: { role, text, toolName?, toolCallDescription?, groupId? }
+   *  per item. groupId tags every turn that came between an agent_start
+   *  and agent_end so iOS can collapse one run into a single group.
    *
    *  Bounded so a long chat or a single huge pasted message never blows
    *  past the WebSocket frame ceiling on the iOS side. Returns the most
@@ -105,7 +107,13 @@ export class DataReader {
     workspaceId: string,
     options?: { limit?: number; perTurnTextLimit?: number },
   ): Promise<{
-    turns: Array<{ role: "user" | "assistant" | "tool"; text: string; toolName?: string }>;
+    turns: Array<{
+      role: "user" | "assistant" | "tool";
+      text: string;
+      toolName?: string;
+      toolCallDescription?: string;
+      groupId?: string;
+    }>;
     hasMore: boolean;
     total: number;
   }> {
@@ -114,8 +122,15 @@ export class DataReader {
     const path = join(this.dataDir, "workspaces", workspaceId, "messages.jsonl");
     if (!existsSync(path)) return { turns: [], hasMore: false, total: 0 };
     const text = await readFile(path, "utf8");
-    const all: Array<{ role: "user" | "assistant" | "tool"; text: string; toolName?: string }> =
-      [];
+    const all: Array<{
+      role: "user" | "assistant" | "tool";
+      text: string;
+      toolName?: string;
+      toolCallDescription?: string;
+      groupId?: string;
+    }> = [];
+    let groupId: string | undefined;
+    let groupCounter = 0;
     for (const line of text.split("\n")) {
       if (!line.trim()) continue;
       let obj: any;
@@ -126,7 +141,15 @@ export class DataReader {
       }
       const event = obj?.event;
       if (!event) continue;
-      if (event.type === "message_end") {
+      if (event.type === "agent_start") {
+        // Synthesize a stable per-run id. Real UUIDs would be nicer but
+        // these are only consumed for equality comparison by the iOS
+        // grouping helper, so a counter is enough.
+        groupCounter += 1;
+        groupId = `g${groupCounter}`;
+      } else if (event.type === "agent_end") {
+        groupId = undefined;
+      } else if (event.type === "message_end") {
         const msg = event.message;
         if (!msg) continue;
         const t = extractText(msg.content);
@@ -135,19 +158,39 @@ export class DataReader {
           ? t.slice(0, perTurnTextLimit) + "…"
           : t;
         if (msg.role === "user") {
+          // Live flow appends user turn ungrouped (before agent_start).
+          // Replay sees user message_end inside the group; keep it
+          // ungrouped to match.
           all.push({ role: "user", text: capped });
         } else if (msg.role === "assistant") {
-          all.push({ role: "assistant", text: capped });
+          all.push({ role: "assistant", text: capped, groupId });
         }
-      } else if (event.type === "tool_execution_end") {
+      } else if (event.type === "tool_execution_start") {
         const toolName = event.toolName ?? "tool";
+        const toolCallDescription = event.args?.description;
+        all.push({
+          role: "tool",
+          text: "",
+          toolName,
+          ...(toolCallDescription ? { toolCallDescription } : {}),
+          ...(groupId ? { groupId } : {}),
+        });
+      } else if (event.type === "tool_execution_end") {
         let preview = "";
         const content = event.result?.content;
         if (Array.isArray(content) && content[0]?.text) {
           const t = String(content[0].text);
           preview = t.length > 800 ? t.slice(0, 800) + "…" : t;
         }
-        all.push({ role: "tool", text: preview, toolName });
+        // Attach the result to the most recent tool turn — mirrors the
+        // serial-execution assumption the live store makes.
+        for (let i = all.length - 1; i >= 0; i--) {
+          const turn = all[i];
+          if (turn && turn.role === "tool") {
+            turn.text = preview;
+            break;
+          }
+        }
       }
     }
     const total = all.length;

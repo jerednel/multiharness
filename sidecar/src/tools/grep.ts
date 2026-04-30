@@ -14,6 +14,12 @@ const Params = Type.Object({
   glob: Type.Optional(
     Type.String({ description: "Optional glob filter (e.g. '**/*.ts')." }),
   ),
+  description: Type.Optional(
+    Type.String({
+      description:
+        "Short imperative phrase describing the search, e.g. 'Search for handleEvent'. Shown to the user as the step label. 5–8 words.",
+    }),
+  ),
 });
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
@@ -25,7 +31,7 @@ export function grepTool(worktreePath: string): AgentTool<typeof Params> {
     label: "Grep",
     description: "Search for a regular expression across files in the worktree.",
     parameters: Params,
-    execute: async (_id, { pattern, path, glob }) => {
+    execute: async (_id, { pattern, path, glob, description: _description }) => {
       const root = resolve(worktreePath);
       const re = new RegExp(pattern);
       const matches: { path: string; line: number; text: string }[] = [];
