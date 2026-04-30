@@ -50,6 +50,61 @@ public struct WorktreeService: Sendable {
             .filter { !$0.isEmpty }
     }
 
+    public func hasOriginRemote(repoPath: String) throws -> Bool {
+        let out = try runGit(at: repoPath, args: ["remote"])
+        return out.split(separator: "\n")
+            .map { String($0).trimmingCharacters(in: .whitespaces) }
+            .contains("origin")
+    }
+
+    public func listOriginBranches(repoPath: String) throws -> [String] {
+        let out = try runGit(at: repoPath, args: [
+            "for-each-ref", "refs/remotes/origin", "--format=%(refname:short)",
+        ])
+        return out.split(separator: "\n")
+            .map { String($0).trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty && $0 != "origin/HEAD" }
+    }
+
+    /// Best-effort `git fetch origin` with a timeout. Throws on non-zero
+    /// exit or when the timeout elapses.
+    public func fetchOrigin(repoPath: String, timeoutSeconds: TimeInterval) throws {
+        let p = Process()
+        p.launchPath = "/usr/bin/git"
+        p.arguments = ["fetch", "origin"]
+        p.currentDirectoryURL = URL(fileURLWithPath: repoPath)
+        let outPipe = Pipe()
+        let errPipe = Pipe()
+        p.standardOutput = outPipe
+        p.standardError = errPipe
+        try p.run()
+
+        let deadline = Date().addingTimeInterval(timeoutSeconds)
+        while p.isRunning {
+            if Date() >= deadline {
+                p.terminate()
+                _ = p.waitUntilExit()
+                throw WorktreeError.gitFailed(
+                    args: ["fetch", "origin"],
+                    exitCode: -1,
+                    stderr: "fetch timed out after \(Int(timeoutSeconds))s"
+                )
+            }
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        if p.terminationStatus != 0 {
+            let stderr = String(
+                data: errPipe.fileHandleForReading.readDataToEndOfFile(),
+                encoding: .utf8
+            ) ?? ""
+            throw WorktreeError.gitFailed(
+                args: ["fetch", "origin"],
+                exitCode: p.terminationStatus,
+                stderr: stderr
+            )
+        }
+    }
+
     public func currentBranch(repoPath: String) throws -> String {
         try runGit(at: repoPath, args: ["rev-parse", "--abbrev-ref", "HEAD"])
             .trimmingCharacters(in: .whitespacesAndNewlines)
