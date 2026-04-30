@@ -43,6 +43,7 @@ struct WorkspaceDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task(id: workspace.id) {
             await connection.openWorkspace(workspace)
+            await connection.markViewed(workspaceId: workspace.id)
         }
     }
 

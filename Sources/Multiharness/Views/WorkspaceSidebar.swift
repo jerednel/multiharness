@@ -3,6 +3,7 @@ import MultiharnessCore
 
 struct WorkspaceSidebar: View {
     @Bindable var workspaceStore: WorkspaceStore
+    @Bindable var agentRegistry: AgentRegistryStore
     @Binding var selection: UUID?
 
     @State private var renameTarget: Workspace?
@@ -12,9 +13,13 @@ struct WorkspaceSidebar: View {
             ForEach(workspaceStore.grouped(), id: \.0) { (state, items) in
                 Section(state.label) {
                     ForEach(items) { ws in
-                        WorkspaceRow(ws: ws)
-                            .tag(ws.id as UUID?)
-                            .contextMenu { workspaceContextMenu(ws) }
+                        WorkspaceRow(
+                            ws: ws,
+                            isStreaming: agentRegistry.stores[ws.id]?.isStreaming ?? false,
+                            isUnseen: workspaceStore.unseen(ws)
+                        )
+                        .tag(ws.id as UUID?)
+                        .contextMenu { workspaceContextMenu(ws) }
                     }
                 }
             }
@@ -126,6 +131,8 @@ struct RenameWorkspaceSheet: View {
 struct WorkspaceRow: View {
     let ws: Workspace
     var showLifecycleDot: Bool = false
+    var isStreaming: Bool = false
+    var isUnseen: Bool = false
 
     var body: some View {
         HStack(alignment: .center, spacing: 8) {
@@ -137,6 +144,16 @@ struct WorkspaceRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(ws.name).font(.body)
                 Text(ws.branchName).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+            }
+            Spacer(minLength: 0)
+            if isStreaming {
+                ProgressView()
+                    .controlSize(.small)
+            } else if isUnseen {
+                Circle()
+                    .fill(Color.blue)
+                    .frame(width: 7, height: 7)
+                    .accessibilityLabel("Unseen response")
             }
         }
         .padding(.vertical, 2)
@@ -160,6 +177,7 @@ struct WorkspaceRow: View {
 struct AllProjectsSidebar: View {
     @Bindable var appStore: AppStore
     @Bindable var workspaceStore: WorkspaceStore
+    @Bindable var agentRegistry: AgentRegistryStore
     @Binding var selection: UUID?
     /// Called when the user taps "+" on a project header.
     var onQuickCreate: (Project) -> Void
@@ -173,6 +191,7 @@ struct AllProjectsSidebar: View {
                     project: project,
                     appStore: appStore,
                     workspaceStore: workspaceStore,
+                    agentRegistry: agentRegistry,
                     onQuickCreate: { onQuickCreate(project) },
                     onReconcile: { pendingReconcileProject = project }
                 )
@@ -197,6 +216,7 @@ private struct ProjectDisclosure: View {
     let project: Project
     @Bindable var appStore: AppStore
     @Bindable var workspaceStore: WorkspaceStore
+    let agentRegistry: AgentRegistryStore
     let onQuickCreate: () -> Void
     let onReconcile: () -> Void
 
@@ -209,12 +229,14 @@ private struct ProjectDisclosure: View {
         project: Project,
         appStore: AppStore,
         workspaceStore: WorkspaceStore,
+        agentRegistry: AgentRegistryStore,
         onQuickCreate: @escaping () -> Void,
         onReconcile: @escaping () -> Void
     ) {
         self.project = project
         self.appStore = appStore
         self.workspaceStore = workspaceStore
+        self.agentRegistry = agentRegistry
         self.onQuickCreate = onQuickCreate
         self.onReconcile = onReconcile
         let expandedKey = Self.expandedKey(project.id)
@@ -315,17 +337,26 @@ private struct ProjectDisclosure: View {
             ForEach(workspaceStore.grouped(projectId: project.id), id: \.0) { (state, items) in
                 Section(state.label) {
                     ForEach(items) { ws in
-                        WorkspaceRow(ws: ws)
-                            .tag(ws.id as UUID?)
-                            .contextMenu { workspaceContextMenu(ws) }
+                        WorkspaceRow(
+                            ws: ws,
+                            isStreaming: agentRegistry.stores[ws.id]?.isStreaming ?? false,
+                            isUnseen: workspaceStore.unseen(ws)
+                        )
+                        .tag(ws.id as UUID?)
+                        .contextMenu { workspaceContextMenu(ws) }
                     }
                 }
             }
         } else {
             ForEach(items) { ws in
-                WorkspaceRow(ws: ws, showLifecycleDot: true)
-                    .tag(ws.id as UUID?)
-                    .contextMenu { workspaceContextMenu(ws) }
+                WorkspaceRow(
+                    ws: ws,
+                    showLifecycleDot: true,
+                    isStreaming: agentRegistry.stores[ws.id]?.isStreaming ?? false,
+                    isUnseen: workspaceStore.unseen(ws)
+                )
+                .tag(ws.id as UUID?)
+                .contextMenu { workspaceContextMenu(ws) }
             }
         }
     }

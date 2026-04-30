@@ -45,6 +45,12 @@ enum RemoteHandlers {
                 params: params, env: env, appStore: appStore
             )
         }
+        await relay.register(method: "workspace.markViewed") { params in
+            try await Self.workspaceMarkViewed(
+                params: params,
+                workspaceStore: workspaceStore
+            )
+        }
     }
 
     // MARK: - workspace.setContext
@@ -79,6 +85,21 @@ enum RemoteHandlers {
         let text = (params["contextInstructions"] as? String) ?? ""
         try await appStore.setProjectContext(projectId: id, text: text)
         return ["ok": true]
+    }
+
+    // MARK: - workspace.markViewed
+
+    @MainActor
+    private static func workspaceMarkViewed(
+        params: [String: Any],
+        workspaceStore: WorkspaceStore
+    ) async throws -> Any? {
+        guard let idStr = params["workspaceId"] as? String,
+              let id = UUID(uuidString: idStr) else {
+            throw RemoteError.bad("workspaceId required (UUID string)")
+        }
+        workspaceStore.markViewed(id)
+        return ["workspaceId": idStr]
     }
 
     // MARK: - models.listForProvider

@@ -136,6 +136,21 @@ public final class ConnectionStore: NSObject, ControlClientDelegate {
         )
     }
 
+    public func markViewed(workspaceId: String) async {
+        do {
+            _ = try await client.call(
+                method: "workspace.markViewed",
+                params: ["workspaceId": workspaceId]
+            )
+            let now = Int64(Date().timeIntervalSince1970 * 1000)
+            if let idx = workspaces.firstIndex(where: { $0.id == workspaceId }) {
+                workspaces[idx] = workspaces[idx].withMarkViewed(at: now)
+            }
+        } catch {
+            // Non-fatal — the next remote.workspaces refresh will reconcile.
+        }
+    }
+
     public func scanRepos() async throws -> [(name: String, path: String)] {
         let result = try await client.call(method: "project.scan", params: [:]) as? [String: Any]
         let arr = result?["repos"] as? [[String: Any]] ?? []
@@ -197,6 +212,20 @@ public final class ConnectionStore: NSObject, ControlClientDelegate {
     // MARK: ControlClientDelegate
 
     nonisolated public func controlClient(_ client: ControlClient, didReceiveEvent event: AgentEventEnvelope) {
+        if event.type == "workspace.activity" {
+            let wsId = event.workspaceId
+            let isStreaming = (event.payload["isStreaming"] as? Bool) ?? false
+            let lastAssistantAt = RemoteWorkspace.int64(event.payload["lastAssistantAt"])
+            Task { @MainActor in
+                if let idx = self.workspaces.firstIndex(where: { $0.id == wsId }) {
+                    self.workspaces[idx] = self.workspaces[idx].withActivity(
+                        isStreaming: isStreaming,
+                        lastAssistantAt: lastAssistantAt
+                    )
+                }
+            }
+            return
+        }
         if event.type == "workspace_updated" {
             let wsId = event.workspaceId
             let newName = event.payload["name"] as? String
@@ -241,6 +270,29 @@ public struct RemoteWorkspace: Identifiable, Sendable, Hashable {
     public let lifecycleState: String
     public let projectId: String
     public let contextInstructions: String
+    public let lastViewedAt: Int64?
+    public let lastAssistantAt: Int64?
+    public let isStreaming: Bool
+
+    /// Computed locally from `lastAssistantAt` and `lastViewedAt`. The
+    /// sidecar provides an `unseen` field too, but we recompute so live
+    /// `workspace.activity` events that only carry `lastAssistantAt`
+    /// don't leave us stale.
+    public var unseen: Bool {
+        guard let last = lastAssistantAt else { return false }
+        guard let viewed = lastViewedAt else { return true }
+        return last > viewed
+    }
+
+    /// JSONSerialization on Apple platforms returns numbers as NSNumber/Int/Double
+    /// depending on size; this normalizes to Int64? matching the sidecar's
+    /// epoch-millisecond convention.
+    fileprivate static func int64(_ v: Any?) -> Int64? {
+        if let n = v as? Int64 { return n }
+        if let n = v as? Int { return Int64(n) }
+        if let n = v as? Double { return Int64(n) }
+        return nil
+    }
 
     init?(json: [String: Any]) {
         guard let id = json["id"] as? String,
@@ -254,6 +306,9 @@ public struct RemoteWorkspace: Identifiable, Sendable, Hashable {
         self.lifecycleState = json["lifecycleState"] as? String ?? "in_progress"
         self.projectId = json["projectId"] as? String ?? ""
         self.contextInstructions = json["contextInstructions"] as? String ?? ""
+        self.lastViewedAt = Self.int64(json["lastViewedAt"])
+        self.lastAssistantAt = Self.int64(json["lastAssistantAt"])
+        self.isStreaming = (json["isStreaming"] as? Bool) ?? false
     }
 
     init(
@@ -263,7 +318,10 @@ public struct RemoteWorkspace: Identifiable, Sendable, Hashable {
         baseBranch: String,
         lifecycleState: String,
         projectId: String,
-        contextInstructions: String
+        contextInstructions: String,
+        lastViewedAt: Int64? = nil,
+        lastAssistantAt: Int64? = nil,
+        isStreaming: Bool = false
     ) {
         self.id = id
         self.name = name
@@ -272,6 +330,9 @@ public struct RemoteWorkspace: Identifiable, Sendable, Hashable {
         self.lifecycleState = lifecycleState
         self.projectId = projectId
         self.contextInstructions = contextInstructions
+        self.lastViewedAt = lastViewedAt
+        self.lastAssistantAt = lastAssistantAt
+        self.isStreaming = isStreaming
     }
 
     func withName(_ newName: String) -> RemoteWorkspace {
@@ -282,7 +343,40 @@ public struct RemoteWorkspace: Identifiable, Sendable, Hashable {
             baseBranch: baseBranch,
             lifecycleState: lifecycleState,
             projectId: projectId,
-            contextInstructions: contextInstructions
+            contextInstructions: contextInstructions,
+            lastViewedAt: lastViewedAt,
+            lastAssistantAt: lastAssistantAt,
+            isStreaming: isStreaming
+        )
+    }
+
+    func withActivity(isStreaming: Bool, lastAssistantAt: Int64?) -> RemoteWorkspace {
+        RemoteWorkspace(
+            id: id,
+            name: name,
+            branchName: branchName,
+            baseBranch: baseBranch,
+            lifecycleState: lifecycleState,
+            projectId: projectId,
+            contextInstructions: contextInstructions,
+            lastViewedAt: lastViewedAt,
+            lastAssistantAt: lastAssistantAt ?? self.lastAssistantAt,
+            isStreaming: isStreaming
+        )
+    }
+
+    func withMarkViewed(at ts: Int64) -> RemoteWorkspace {
+        RemoteWorkspace(
+            id: id,
+            name: name,
+            branchName: branchName,
+            baseBranch: baseBranch,
+            lifecycleState: lifecycleState,
+            projectId: projectId,
+            contextInstructions: contextInstructions,
+            lastViewedAt: ts,
+            lastAssistantAt: lastAssistantAt,
+            isStreaming: isStreaming
         )
     }
 }

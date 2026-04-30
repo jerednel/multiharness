@@ -61,6 +61,7 @@ export class DataReader {
     lifecycleState: string;
     projectId: string;
     contextInstructions: string;
+    lastViewedAt: number | null;
   }> {
     if (!this.db) return [];
     const rows = this.db
@@ -72,7 +73,8 @@ export class DataReader {
           base_branch AS baseBranch,
           lifecycle_state AS lifecycleState,
           project_id AS projectId,
-          context_instructions AS contextInstructions
+          context_instructions AS contextInstructions,
+          last_viewed_at AS lastViewedAt
         FROM workspaces
         WHERE archived_at IS NULL
         ORDER BY created_at DESC;
@@ -85,6 +87,7 @@ export class DataReader {
         lifecycleState: string;
         projectId: string;
         contextInstructions: string;
+        lastViewedAt: number | null;
       }>;
     return rows;
   }

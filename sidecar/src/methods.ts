@@ -6,6 +6,7 @@ import { resolveConflictHunk } from "./conflictResolver.js";
 import { log } from "./logger.js";
 import { DataReader } from "./dataReader.js";
 import type { Relay } from "./relay.js";
+import type { WorkspaceActivityTracker } from "./workspaceActivity.js";
 import {
   hasAnthropicCreds,
   hasOpenAICodexCreds,
@@ -25,6 +26,7 @@ export function registerMethods(
   relay: Relay,
   oauthStore: OAuthStore,
   sink: EventEmit,
+  tracker: WorkspaceActivityTracker,
 ): void {
   const reader = new DataReader(dataDir);
   d.register("health.ping", () => ({ pong: true, version: VERSION }));
@@ -131,11 +133,19 @@ export function registerMethods(
   });
 
   // Read-only views into the Mac app's persisted state, served to iOS.
-  d.register("remote.workspaces", () => ({
-    workspaces: reader.listWorkspaces(),
-    projects: reader.listProjects(),
-    providers: reader.listProviders(),
-  }));
+  d.register("remote.workspaces", () => {
+    const workspaces = reader.listWorkspaces().map((w) => ({
+      ...w,
+      isStreaming: tracker.isStreaming(w.id),
+      lastAssistantAt: tracker.lastAssistantAt(w.id),
+      unseen: tracker.isUnseen(w.id, w.lastViewedAt),
+    }));
+    return {
+      workspaces,
+      projects: reader.listProjects(),
+      providers: reader.listProviders(),
+    };
+  });
 
   d.register("remote.history", async (p) => {
     const workspaceId = requireString(p, "workspaceId");
@@ -223,8 +233,25 @@ export function registerMethods(
           name,
           nameSource:
             typeof r.nameSource === "string" ? r.nameSource : "named",
-        } as unknown as Parameters<EventEmit>[1]);
+        });
       }
+    }
+    return result;
+  });
+
+  // Mark a workspace as viewed. The Mac handler writes last_viewed_at to
+  // SQLite. After the relay returns we also push a `workspace.activity`
+  // event so other connected clients (iOS, multi-instance) flip their
+  // local `unseen` flag immediately.
+  d.register("workspace.markViewed", async (params) => {
+    const result = await relay.dispatch("workspace.markViewed", params);
+    const wsId = typeof params.workspaceId === "string" ? params.workspaceId : "";
+    if (wsId) {
+      sink(wsId, {
+        type: "workspace.activity",
+        isStreaming: tracker.isStreaming(wsId),
+        lastAssistantAt: tracker.lastAssistantAt(wsId),
+      });
     }
     return result;
   });

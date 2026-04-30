@@ -64,6 +64,13 @@ public struct Migrations {
         ALTER TABLE projects   ADD COLUMN context_instructions TEXT NOT NULL DEFAULT '';
         ALTER TABLE workspaces ADD COLUMN context_instructions TEXT NOT NULL DEFAULT '';
         """,
+        // v6: per-workspace last-viewed timestamp powering the unseen dot.
+        // Backfill existing rows to "now" so users don't see a flood of dots
+        // on first launch after upgrade.
+        """
+        ALTER TABLE workspaces ADD COLUMN last_viewed_at INTEGER;
+        UPDATE workspaces SET last_viewed_at = CAST(strftime('%s','now') AS INTEGER) * 1000;
+        """,
     ]
 
     public static func apply(_ db: Database) throws {

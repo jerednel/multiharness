@@ -206,4 +206,76 @@ final class PersistenceTests: XCTestCase {
         XCTAssertEqual(try svc.listProjects().first?.contextInstructions, "")
         XCTAssertEqual(try svc.listWorkspaces(projectId: proj.id).first?.contextInstructions, "")
     }
+
+    func testNewWorkspaceGetsLastViewedAtOnInsert() throws {
+        let dir = try tempDir()
+        let svc = try PersistenceService(dataDir: dir)
+        let proj = Project(name: "P", slug: "p", repoPath: "/tmp/p")
+        try svc.upsertProject(proj)
+        let prov = ProviderRecord(name: "Local", kind: .openaiCompatible, baseUrl: "http://localhost:1234/v1")
+        try svc.upsertProvider(prov)
+        let ws = Workspace(
+            projectId: proj.id, name: "W", slug: "w",
+            branchName: "u/w", baseBranch: "main",
+            worktreePath: "/tmp/wt",
+            providerId: prov.id, modelId: "m"
+        )
+        try svc.upsertWorkspace(ws)
+        let loaded = try svc.listWorkspaces(projectId: proj.id)
+        XCTAssertEqual(loaded.count, 1)
+        let lvAt = loaded[0].lastViewedAt
+        XCTAssertNotNil(lvAt)
+        XCTAssertLessThanOrEqual(abs(lvAt!.timeIntervalSinceNow), 5)
+    }
+
+    func testMarkWorkspaceViewedUpdatesTimestamp() throws {
+        let dir = try tempDir()
+        let svc = try PersistenceService(dataDir: dir)
+        let proj = Project(name: "P", slug: "p", repoPath: "/tmp/p")
+        try svc.upsertProject(proj)
+        let prov = ProviderRecord(name: "Local", kind: .openaiCompatible, baseUrl: "http://localhost:1234/v1")
+        try svc.upsertProvider(prov)
+        let ws = Workspace(
+            projectId: proj.id, name: "W", slug: "w",
+            branchName: "u/w", baseBranch: "main",
+            worktreePath: "/tmp/wt",
+            providerId: prov.id, modelId: "m"
+        )
+        try svc.upsertWorkspace(ws)
+
+        let original = try svc.listWorkspaces(projectId: proj.id)[0].lastViewedAt!
+        Thread.sleep(forTimeInterval: 0.05)
+        try svc.markWorkspaceViewed(id: ws.id)
+        let after = try svc.listWorkspaces(projectId: proj.id)[0].lastViewedAt!
+        XCTAssertGreaterThan(after, original)
+    }
+
+    func testLastAssistantAtReadsLatestAgentEnd() throws {
+        let dir = try tempDir()
+        let svc = try PersistenceService(dataDir: dir)
+        let wsId = UUID()
+        let path = svc.messagesPath(workspaceId: wsId)
+        try FileManager.default.createDirectory(
+            at: path.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        // ts in milliseconds since 1970, matching the sidecar's JsonlWriter.
+        let lines = [
+            #"{"seq":0,"ts":1000,"event":{"type":"agent_start"}}"#,
+            #"{"seq":1,"ts":2000,"event":{"type":"message_end","message":{}}}"#,
+            #"{"seq":2,"ts":3000,"event":{"type":"agent_end","messages":[]}}"#,
+            #"{"seq":3,"ts":4000,"event":{"type":"agent_start"}}"#,
+            #"{"seq":4,"ts":5000,"event":{"type":"agent_end","messages":[]}}"#,
+        ].joined(separator: "\n") + "\n"
+        try lines.data(using: .utf8)!.write(to: path)
+        let result = try svc.lastAssistantAt(workspaceId: wsId)
+        XCTAssertEqual(result?.timeIntervalSince1970, 5.0) // 5000 ms
+    }
+
+    func testLastAssistantAtReturnsNilWhenFileMissing() throws {
+        let dir = try tempDir()
+        let svc = try PersistenceService(dataDir: dir)
+        let result = try svc.lastAssistantAt(workspaceId: UUID())
+        XCTAssertNil(result)
+    }
 }

@@ -60,6 +60,9 @@ struct RootView: View {
         .onChange(of: appStore.sidebarMode) { _, new in
             reloadForMode(new)
         }
+        .onChange(of: workspaceStore.selectedWorkspaceId) { _, newId in
+            if let newId { workspaceStore.markViewed(newId) }
+        }
     }
 
     private var navigationTitle: String {
@@ -88,6 +91,7 @@ struct RootView: View {
                 if appStore.selectedProject != nil {
                     WorkspaceSidebar(
                         workspaceStore: workspaceStore,
+                        agentRegistry: agentRegistry,
                         selection: Binding(
                             get: { workspaceStore.selectedWorkspaceId },
                             set: { workspaceStore.selectedWorkspaceId = $0 }
@@ -114,6 +118,7 @@ struct RootView: View {
                     AllProjectsSidebar(
                         appStore: appStore,
                         workspaceStore: workspaceStore,
+                        agentRegistry: agentRegistry,
                         selection: Binding(
                             get: { workspaceStore.selectedWorkspaceId },
                             set: { newID in

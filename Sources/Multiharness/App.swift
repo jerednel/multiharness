@@ -93,7 +93,7 @@ struct MultiharnessApp: App {
             self.env = env
             self.appStore = app
             self.workspaceStore = ws
-            self.agentRegistry.bindEnvironment(env: env, appStore: app)
+            self.agentRegistry.bindEnvironment(env: env, appStore: app, workspaceStore: ws)
             // Wire up the Mac-side handlers iOS will reach via the relay.
             await RemoteHandlers.register(
                 on: relayHandler,
@@ -113,11 +113,13 @@ final class AgentRegistryStore: NSObject, ControlClientDelegate {
     var stores: [UUID: AgentStore] = [:]
     weak var env: AppEnvironment?
     weak var appStore: AppStore?
+    weak var workspaceStore: WorkspaceStore?
     var relayHandler: RelayHandler?
 
-    func bindEnvironment(env: AppEnvironment, appStore: AppStore) {
+    func bindEnvironment(env: AppEnvironment, appStore: AppStore, workspaceStore: WorkspaceStore) {
         self.env = env
         self.appStore = appStore
+        self.workspaceStore = workspaceStore
     }
 
     func ensureStore(workspaceId: UUID) -> AgentStore? {
@@ -153,6 +155,14 @@ final class AgentRegistryStore: NSObject, ControlClientDelegate {
         Task { @MainActor in
             guard let id = UUID(uuidString: event.workspaceId) else { return }
             self.stores[id]?.handleEvent(event)
+            if event.type == "agent_end" {
+                self.workspaceStore?.recordAssistantEnd(workspaceId: id)
+                // Auto-mark the currently-selected workspace so the user never
+                // sees a dot for the row they're actively looking at.
+                if self.workspaceStore?.selectedWorkspaceId == id {
+                    self.workspaceStore?.markViewed(id)
+                }
+            }
         }
     }
 

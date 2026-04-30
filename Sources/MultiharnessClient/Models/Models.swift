@@ -115,6 +115,10 @@ public struct Workspace: Codable, Identifiable, Sendable, Equatable, Hashable {
     public var archivedAt: Date?
     public var nameSource: NameSource
     public var contextInstructions: String
+    /// Last time the user opened this workspace in the UI. Used together
+    /// with the latest persisted `agent_end` timestamp from messages.jsonl
+    /// to decide whether to show an "unseen" dot on the workspace row.
+    public var lastViewedAt: Date?
 
     public init(
         id: UUID = UUID(),
@@ -131,7 +135,8 @@ public struct Workspace: Codable, Identifiable, Sendable, Equatable, Hashable {
         createdAt: Date = Date(),
         archivedAt: Date? = nil,
         nameSource: NameSource = .random,
-        contextInstructions: String = ""
+        contextInstructions: String = "",
+        lastViewedAt: Date? = Date()
     ) {
         self.id = id
         self.projectId = projectId
@@ -148,6 +153,7 @@ public struct Workspace: Codable, Identifiable, Sendable, Equatable, Hashable {
         self.archivedAt = archivedAt
         self.nameSource = nameSource
         self.contextInstructions = contextInstructions
+        self.lastViewedAt = lastViewedAt
     }
 
     /// Resolves the effective build mode using the precedence chain:
