@@ -179,6 +179,7 @@ struct AllProjectsSidebar: View {
     @Bindable var workspaceStore: WorkspaceStore
     @Bindable var agentRegistry: AgentRegistryStore
     @Binding var selection: UUID?
+    let branchListService: BranchListService
     /// Called when the user taps "+" on a project header.
     var onQuickCreate: (Project) -> Void
 
@@ -192,6 +193,7 @@ struct AllProjectsSidebar: View {
                     appStore: appStore,
                     workspaceStore: workspaceStore,
                     agentRegistry: agentRegistry,
+                    branchListService: branchListService,
                     onQuickCreate: { onQuickCreate(project) },
                     onReconcile: { pendingReconcileProject = project }
                 )
@@ -217,6 +219,7 @@ private struct ProjectDisclosure: View {
     @Bindable var appStore: AppStore
     @Bindable var workspaceStore: WorkspaceStore
     let agentRegistry: AgentRegistryStore
+    let branchListService: BranchListService
     let onQuickCreate: () -> Void
     let onReconcile: () -> Void
 
@@ -230,6 +233,7 @@ private struct ProjectDisclosure: View {
         appStore: AppStore,
         workspaceStore: WorkspaceStore,
         agentRegistry: AgentRegistryStore,
+        branchListService: BranchListService,
         onQuickCreate: @escaping () -> Void,
         onReconcile: @escaping () -> Void
     ) {
@@ -237,6 +241,7 @@ private struct ProjectDisclosure: View {
         self.appStore = appStore
         self.workspaceStore = workspaceStore
         self.agentRegistry = agentRegistry
+        self.branchListService = branchListService
         self.onQuickCreate = onQuickCreate
         self.onReconcile = onReconcile
         let expandedKey = Self.expandedKey(project.id)
@@ -264,6 +269,7 @@ private struct ProjectDisclosure: View {
             ProjectSettingsSheet(
                 project: currentProject,
                 appStore: appStore,
+                branchListService: branchListService,
                 onClose: { showSettings = false }
             )
         }

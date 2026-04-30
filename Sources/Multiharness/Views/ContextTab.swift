@@ -5,6 +5,7 @@ import MultiharnessCore
 struct ContextTab: View {
     let workspace: Workspace
     @Bindable var appStore: AppStore
+    let branchListService: BranchListService
 
     @State private var workspaceText: String = ""
     @State private var savingWorkspace: SaveState = .idle
@@ -42,6 +43,7 @@ struct ContextTab: View {
                 ProjectSettingsSheet(
                     project: p,
                     appStore: appStore,
+                    branchListService: branchListService,
                     onClose: { showProjectSettings = false }
                 )
             }

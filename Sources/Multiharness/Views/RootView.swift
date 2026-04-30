@@ -132,6 +132,7 @@ struct RootView: View {
                                 }
                             }
                         ),
+                        branchListService: branchListService,
                         onQuickCreate: { runQuickCreate(project: $0) }
                     )
                 }
@@ -162,7 +163,8 @@ struct RootView: View {
                 env: env,
                 appStore: appStore,
                 workspaceStore: workspaceStore,
-                agentRegistry: agentRegistry
+                agentRegistry: agentRegistry,
+                branchListService: branchListService
             )
         } else {
             ContentUnavailableView(

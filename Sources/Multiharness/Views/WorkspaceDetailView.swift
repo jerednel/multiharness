@@ -9,6 +9,7 @@ struct WorkspaceDetailView: View {
     @Bindable var appStore: AppStore
     @Bindable var workspaceStore: WorkspaceStore
     let agentRegistry: AgentRegistryStore
+    let branchListService: BranchListService
 
     @State private var draftMessage: String = ""
     @State private var creatingSession = false
@@ -44,7 +45,7 @@ struct WorkspaceDetailView: View {
             }
             .frame(minWidth: 480)
 
-            Inspector(workspace: workspace, env: env, appStore: appStore)
+            Inspector(workspace: workspace, env: env, appStore: appStore, branchListService: branchListService)
                 .frame(minWidth: 320, idealWidth: 380, maxWidth: 600)
         }
         .task(id: workspace.id) {
@@ -394,12 +395,13 @@ private struct Inspector: View {
     let workspace: Workspace
     let env: AppEnvironment
     @Bindable var appStore: AppStore
+    let branchListService: BranchListService
 
     var body: some View {
         TabView {
             FilesTab(workspace: workspace, env: env)
                 .tabItem { Label("Files", systemImage: "doc.text") }
-            ContextTab(workspace: workspace, appStore: appStore)
+            ContextTab(workspace: workspace, appStore: appStore, branchListService: branchListService)
                 .tabItem { Label("Context", systemImage: "text.alignleft") }
         }
     }

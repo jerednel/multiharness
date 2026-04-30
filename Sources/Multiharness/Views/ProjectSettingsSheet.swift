@@ -5,11 +5,14 @@ import MultiharnessCore
 struct ProjectSettingsSheet: View {
     let project: Project
     @Bindable var appStore: AppStore
+    let branchListService: BranchListService
     var onClose: () -> Void
 
     @State private var text: String = ""
     @State private var saveState: SaveState = .idle
     @State private var debounceTask: Task<Void, Never>?
+    @State private var baseBranchSelection: String = ""
+    @State private var baseBranchSaveState: SaveState = .idle
 
     enum SaveState { case idle, saving, saved, error(String) }
 
@@ -25,7 +28,7 @@ struct ProjectSettingsSheet: View {
                 HStack {
                     Text("Context").font(.subheadline).bold()
                     Spacer()
-                    statusLabel
+                    statusLabel(for: saveState)
                 }
                 Text("Applies to every workspace in this project. Injected on every turn.")
                     .font(.caption).foregroundStyle(.secondary)
@@ -38,19 +41,43 @@ struct ProjectSettingsSheet: View {
                         scheduleSave(new)
                     }
             }
+            Divider()
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("Default base branch").font(.subheadline).bold()
+                    Spacer()
+                    statusLabel(for: baseBranchSaveState)
+                }
+                Text("Pre-selects the base branch in the New Workspace sheet.")
+                    .font(.caption).foregroundStyle(.secondary)
+                BranchPicker(
+                    selection: $baseBranchSelection,
+                    initialDefault: project.defaultBaseBranch
+                ) { refresh in
+                    try await branchListService.list(
+                        projectId: project.id,
+                        repoPath: project.repoPath,
+                        refresh: refresh
+                    )
+                }
+                .onChange(of: baseBranchSelection) { _, new in
+                    saveBaseBranch(new)
+                }
+            }
             Spacer(minLength: 0)
         }
         .padding(20)
-        .frame(minWidth: 480, minHeight: 360)
+        .frame(minWidth: 480, minHeight: 600)
         .task(id: project.id) {
             text = project.contextInstructions
             saveState = .idle
+            baseBranchSaveState = .idle
         }
     }
 
     @ViewBuilder
-    private var statusLabel: some View {
-        switch saveState {
+    private func statusLabel(for state: SaveState) -> some View {
+        switch state {
         case .idle: EmptyView()
         case .saving:
             HStack(spacing: 4) {
@@ -75,6 +102,22 @@ struct ProjectSettingsSheet: View {
                 saveState = .saved
             } catch {
                 saveState = .error(String(describing: error))
+            }
+        }
+    }
+
+    private func saveBaseBranch(_ value: String) {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != project.defaultBaseBranch else { return }
+        baseBranchSaveState = .saving
+        Task { @MainActor in
+            do {
+                try appStore.setProjectDefaultBaseBranch(
+                    projectId: project.id, value: trimmed
+                )
+                baseBranchSaveState = .saved
+            } catch {
+                baseBranchSaveState = .error(String(describing: error))
             }
         }
     }
