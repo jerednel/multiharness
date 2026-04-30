@@ -215,7 +215,7 @@ public final class ConnectionStore: NSObject, ControlClientDelegate {
         if event.type == "workspace.activity" {
             let wsId = event.workspaceId
             let isStreaming = (event.payload["isStreaming"] as? Bool) ?? false
-            let lastAssistantAt = (event.payload["lastAssistantAt"] as? NSNumber)?.int64Value
+            let lastAssistantAt = RemoteWorkspace.int64(event.payload["lastAssistantAt"])
             Task { @MainActor in
                 if let idx = self.workspaces.firstIndex(where: { $0.id == wsId }) {
                     self.workspaces[idx] = self.workspaces[idx].withActivity(
@@ -284,6 +284,16 @@ public struct RemoteWorkspace: Identifiable, Sendable, Hashable {
         return last > viewed
     }
 
+    /// JSONSerialization on Apple platforms returns numbers as NSNumber/Int/Double
+    /// depending on size; this normalizes to Int64? matching the sidecar's
+    /// epoch-millisecond convention.
+    fileprivate static func int64(_ v: Any?) -> Int64? {
+        if let n = v as? Int64 { return n }
+        if let n = v as? Int { return Int64(n) }
+        if let n = v as? Double { return Int64(n) }
+        return nil
+    }
+
     init?(json: [String: Any]) {
         guard let id = json["id"] as? String,
               let name = json["name"] as? String,
@@ -296,20 +306,8 @@ public struct RemoteWorkspace: Identifiable, Sendable, Hashable {
         self.lifecycleState = json["lifecycleState"] as? String ?? "in_progress"
         self.projectId = json["projectId"] as? String ?? ""
         self.contextInstructions = json["contextInstructions"] as? String ?? ""
-        self.lastViewedAt = (json["lastViewedAt"] as? NSNumber)?.int64Value
-        // The remote.workspaces response doesn't include lastAssistantAt
-        // directly — it's only delivered via workspace.activity events.
-        // Use the sidecar's `unseen` flag as a one-shot bootstrap: if
-        // the snapshot says unseen=true, set lastAssistantAt to "after
-        // lastViewedAt" by adding 1 ms; if false, leave it nil.
-        let snapshotUnseen = (json["unseen"] as? Bool) ?? false
-        if snapshotUnseen, let lv = self.lastViewedAt {
-            self.lastAssistantAt = lv + 1
-        } else if snapshotUnseen {
-            self.lastAssistantAt = 1
-        } else {
-            self.lastAssistantAt = nil
-        }
+        self.lastViewedAt = Self.int64(json["lastViewedAt"])
+        self.lastAssistantAt = Self.int64(json["lastAssistantAt"])
         self.isStreaming = (json["isStreaming"] as? Bool) ?? false
     }
 

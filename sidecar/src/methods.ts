@@ -137,6 +137,7 @@ export function registerMethods(
     const workspaces = reader.listWorkspaces().map((w) => ({
       ...w,
       isStreaming: tracker.isStreaming(w.id),
+      lastAssistantAt: tracker.lastAssistantAt(w.id),
       unseen: tracker.isUnseen(w.id, w.lastViewedAt),
     }));
     return {
