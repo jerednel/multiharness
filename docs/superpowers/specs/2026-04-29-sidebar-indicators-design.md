@@ -74,12 +74,14 @@ New server-pushed event so iOS doesn't need to poll:
   "params": {
     "workspaceId": "...",
     "isStreaming": false,
-    "unseen": true
+    "lastAssistantAt": 1714410000000
   }
 }
 ```
 
-Emitted whenever either flag flips for a workspace: on `agent_start` (streaming → true), on `agent_end` (streaming → false, unseen recomputed), and on `workspace.markViewed` (unseen → false).
+The payload sends `lastAssistantAt` (epoch ms, or `null`) rather than a precomputed `unseen` boolean: each client recomputes `unseen` locally by comparing against its cached `lastViewedAt`, so the sidecar doesn't have to re-query SQLite for every connected client on every transition.
+
+Emitted whenever either field changes for a workspace: on `agent_start` (`isStreaming → true`), on `agent_end` (`isStreaming → false`, `lastAssistantAt` updated), and on `workspace.markViewed` (so clients refresh derived state for the freshly-viewed workspace).
 
 New relayed RPC:
 
