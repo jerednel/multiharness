@@ -59,21 +59,25 @@ unaffected.
 
 ### 2. Backgrounded mode in `ConnectionStore`
 
-Add a private `isBackgrounded: Bool` flag and a
-`backgroundTaskID: UIBackgroundTaskIdentifier?`.
+Add a private `isBackgrounded: Bool` flag.
 
 `didEnterBackground()`:
 
 1. Set `isBackgrounded = true`.
-2. Begin a `UIApplication.shared.beginBackgroundTask(withName:
-   "multiharness-ws-close")`. Store the identifier.
+2. Cancel any pending foreground-reconnect timer.
 3. Call `client.disconnect()` synchronously. (`ControlClient.disconnect`
-   sends the WS close frame and cancels the listener; this is fast.)
+   cancels the WS task with `.goingAway`; URLSession enqueues the close
+   frame on its internal queue and returns immediately.)
 4. **Do not change `state`**. The user-visible state stays whatever it
    was (typically `.connected`). The yield sign never appears.
-5. End the background task once disconnect completes. We register the
-   standard `expirationHandler:` so the OS can reclaim the task if our
-   own end-call doesn't fire first.
+
+We do *not* wrap this in `UIApplication.beginBackgroundTask`. iOS gives
+the app a brief natural runtime window after `.background` fires, which
+is normally enough for URLSession to flush a small close frame; an
+artificial background task wouldn't help unless we also waited inside
+it (and `URLSessionWebSocketTask.cancel(with:)` exposes no completion
+signal we could wait on). Per "Risks" below, we accept close-frame loss
+as cosmetic.
 
 We override the disconnect-event suppression in
 `controlClientDidDisconnect(_:error:)`: if `isBackgrounded == true`,
@@ -124,7 +128,7 @@ Reconcile with the existing delegate callbacks:
 
 | Trigger | `isBackgrounded` | Action | UI change |
 |---|---|---|---|
-| `.background` | true | `client.disconnect()`, begin BG task | none |
+| `.background` | true | `client.disconnect()` (close frame is best-effort) | none |
 | Disconnect callback during BG | true | swallow | none |
 | `.active` | false | `client.connect()`, arm 1 s timer | none for 1 s |
 | Connected within 1 s window | false | cancel timer, `state = .connected` | none |
@@ -168,10 +172,10 @@ so this is greenfield).
 
 ## Risks
 
-- **Race between `disconnect()` and OS suspension.** We open a
-  background task to give the close frame time to flush. Worst case:
-  the close frame is dropped and the sidecar logs a stale connection
-  for a few seconds; not a correctness issue.
+- **Race between `disconnect()` and OS suspension.** iOS may suspend
+  the app before URLSession flushes the close frame. Worst case: the
+  close frame is dropped and the sidecar logs a stale connection for
+  a few seconds until its own read times out; not a correctness issue.
 - **`controlClientDidDisconnect` arriving on background queue while
   we're transitioning to `.background`.** The delegate already hops
   to `@MainActor`, so the order is well-defined. The
