@@ -9,6 +9,7 @@ struct MultiharnessApp: App {
     @State private var agentRegistry = AgentRegistryStore()
     @State private var relayHandler = RelayHandler()
     @State private var bootError: String?
+    @State var branchListService: BranchListService?
 
     var body: some Scene {
         WindowGroup("Multiharness") {
@@ -95,11 +96,14 @@ struct MultiharnessApp: App {
             self.workspaceStore = ws
             self.agentRegistry.bindEnvironment(env: env, appStore: app, workspaceStore: ws)
             // Wire up the Mac-side handlers iOS will reach via the relay.
+            let branchListService = BranchListService()
+            self.branchListService = branchListService
             await RemoteHandlers.register(
                 on: relayHandler,
                 env: env,
                 appStore: app,
-                workspaceStore: ws
+                workspaceStore: ws,
+                branchListService: branchListService
             )
         } catch {
             self.bootError = String(describing: error)

@@ -10,7 +10,8 @@ enum RemoteHandlers {
         on relay: RelayHandler,
         env: AppEnvironment,
         appStore: AppStore,
-        workspaceStore: WorkspaceStore
+        workspaceStore: WorkspaceStore,
+        branchListService: BranchListService
     ) async {
         await relay.register(method: "workspace.create") { params in
             try await Self.workspaceCreate(
@@ -49,6 +50,18 @@ enum RemoteHandlers {
             try await Self.workspaceMarkViewed(
                 params: params,
                 workspaceStore: workspaceStore
+            )
+        }
+        await relay.register(method: "project.listBranches") { params in
+            guard let pidStr = params["projectId"] as? String,
+                  let pid = UUID(uuidString: pidStr),
+                  let project = appStore.projects.first(where: { $0.id == pid }) else {
+                throw RemoteError.bad("projectId required (UUID of known project)")
+            }
+            return try await RemoteBranchHandler.handleListBranches(
+                params: params,
+                repoPath: project.repoPath,
+                service: branchListService
             )
         }
     }
