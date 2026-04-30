@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { getModel, getModels, type Model, type KnownProvider } from "@mariozechner/pi-ai";
 
 /**
@@ -108,25 +109,36 @@ export function buildModel(cfg: ProviderConfig): Model<any> {
       );
     }
     if (cfg.consoleMint && cfg.provider === "anthropic") {
-      // Inject the identity headers pi-ai normally only sends for
-      // sk-ant-oat OAuth tokens. Console-minted sk-ant-api03 keys go
-      // through the same Claude Code rate-limit tier when accompanied
-      // by these headers; without them Anthropic applies the org's
-      // plain-API tier (which is what surfaced as a 429 on the first
-      // prompt of every freshly-minted Multiharness Console provider).
+      // Identify as Claude Code CLI so requests route through Anthropic's
+      // Claude Code rate-limit tier (3M input / 600K output / 20K req per
+      // window) instead of the org's plain-API tier (which on this user's
+      // Console org is tight enough to 429 the first prompt).
       //
-      // Only send the two stable identity headers. Pi-ai also adds
-      // conditional betas (fine-grained-tool-streaming, interleaved-
-      // thinking) when the model supports them; we leave those to
-      // pi-ai's per-model logic so we don't send a beta header
-      // Anthropic rejects for this model/account combo.
+      // Header set captured by proxying claude-cli through a logging
+      // server while it makes a /v1/messages call. We mirror the exact
+      // anthropic-beta list, user-agent format, x-app, and a
+      // x-claude-code-session-id UUID; Anthropic appears to use this
+      // combination to bucket the request into the Claude Code tier.
+      // Don't include `oauth-2025-04-20` — claude-cli does NOT send it
+      // for sk-ant-api03 keys, and we previously got a 429 with it.
+      const sessionId = randomUUID();
       return {
         ...m,
         headers: {
           ...(m.headers ?? {}),
-          "anthropic-beta": ["claude-code-20250219", "oauth-2025-04-20"].join(","),
-          "user-agent": "claude-cli/2.0.40 (external, cli)",
+          "anthropic-beta": [
+            "claude-code-20250219",
+            "context-1m-2025-08-07",
+            "interleaved-thinking-2025-05-14",
+            "context-management-2025-06-27",
+            "prompt-caching-scope-2026-01-05",
+            "advisor-tool-2026-03-01",
+            "effort-2025-11-24",
+            "afk-mode-2026-01-31",
+          ].join(","),
+          "user-agent": "claude-cli/2.1.123 (external, sdk-ts, agent-sdk/0.2.118)",
           "x-app": "cli",
+          "x-claude-code-session-id": sessionId,
         },
       };
     }

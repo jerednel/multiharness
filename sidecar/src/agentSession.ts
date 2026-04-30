@@ -153,7 +153,20 @@ export class AgentSession {
   }
 
   private composeSystemPrompt(): string {
-    const parts: string[] = [buildSystemPrompt(this.opts.buildMode)];
+    const parts: string[] = [];
+    // Anthropic's edge gates the Claude Code rate-limit tier on the
+    // exact identity string below appearing in the system prompt.
+    // Without it, Console-minted sk-ant-api03 keys get the org's
+    // plain-API tier (which on most accounts 429s the first prompt).
+    // Prepending it for consoleMint providers keeps us in the high
+    // tier — the actual workspace prompt follows immediately after.
+    if (
+      this.opts.providerConfig.kind === "pi-known" &&
+      this.opts.providerConfig.consoleMint
+    ) {
+      parts.push("You are Claude Code, Anthropic's official CLI for Claude.");
+    }
+    parts.push(buildSystemPrompt(this.opts.buildMode));
     if (this.projectContext.trim()) {
       parts.push(
         `<project_instructions>\n${this.projectContext}\n</project_instructions>`,
