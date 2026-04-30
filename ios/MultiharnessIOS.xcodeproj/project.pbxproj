@@ -27,7 +27,6 @@
 		2508B2990E575F586D8E6830 /* QRScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRScannerView.swift; sourceTree = "<group>"; };
 		29073A5DE9D5EE7CE5129B04 /* PairingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingView.swift; sourceTree = "<group>"; };
 		2F96F45BEEC202FC095E9F5C /* App.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App.swift; sourceTree = "<group>"; };
-		3BDD74080E32A8F9BE2E621F /* sao-paulo */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "sao-paulo"; path = ..; sourceTree = SOURCE_ROOT; };
 		4B19617671007E21225D2A51 /* PairingStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingStore.swift; sourceTree = "<group>"; };
 		535C55D1D0C280DF95F8DA33 /* CreateSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateSheets.swift; sourceTree = "<group>"; };
 		53F7B5701FD21794DAE10EBC /* ConnectionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionStore.swift; sourceTree = "<group>"; };
@@ -36,6 +35,7 @@
 		6DF76228C3777F798E4B8408 /* WorkspacesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspacesView.swift; sourceTree = "<group>"; };
 		840A215601F9E0C733815E32 /* RemoteAgentStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteAgentStore.swift; sourceTree = "<group>"; };
 		9839A87870E46B4E1749BEFC /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		B9469EBED32345F95F9C98ED /* valencia */ = {isa = PBXFileReference; lastKnownFileType = folder; name = valencia; path = ..; sourceTree = SOURCE_ROOT; };
 		C8F8840BC008DA280D106A3E /* DiscoveryBrowser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscoveryBrowser.swift; sourceTree = "<group>"; };
 		ECBC0A86EC7AD0685A743000 /* BrowseFolderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowseFolderView.swift; sourceTree = "<group>"; };
 		F970F56F4F3B5B839A3C392C /* WorkspaceDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceDetailView.swift; sourceTree = "<group>"; };
@@ -64,7 +64,7 @@
 		AF0A3A399F6C652F0D19BA40 /* Packages */ = {
 			isa = PBXGroup;
 			children = (
-				3BDD74080E32A8F9BE2E621F /* sao-paulo */,
+				B9469EBED32345F95F9C98ED /* valencia */,
 			);
 			name = Packages;
 			sourceTree = "<group>";

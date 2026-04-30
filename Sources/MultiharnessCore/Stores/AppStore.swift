@@ -113,6 +113,19 @@ public final class AppStore {
         projects[idx] = updated
     }
 
+    @MainActor
+    public func setProjectDefaultBaseBranch(projectId: UUID, value: String) throws {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw RemoteError.bad("defaultBaseBranch cannot be empty")
+        }
+        guard let idx = projects.firstIndex(where: { $0.id == projectId }) else { return }
+        var updated = projects[idx]
+        updated.defaultBaseBranch = trimmed
+        try env.persistence.upsertProject(updated)
+        projects[idx] = updated
+    }
+
     /// Persist a new workspace-level context override and push it to the
     /// live agent session if one is running. Safe to call when no session
     /// is live — the next `agent.create` will read the fresh value from SQLite.
