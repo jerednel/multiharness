@@ -45,8 +45,14 @@ struct WorkspaceDetailView: View {
             }
             .frame(minWidth: 480)
 
-            Inspector(workspace: workspace, env: env, appStore: appStore, branchListService: branchListService)
-                .frame(minWidth: 320, idealWidth: 380, maxWidth: 600)
+            Inspector(
+                workspace: workspace,
+                env: env,
+                appStore: appStore,
+                workspaceStore: workspaceStore,
+                branchListService: branchListService
+            )
+            .frame(minWidth: 320, idealWidth: 380, maxWidth: 600)
         }
         .task(id: workspace.id) {
             await ensureSession()
@@ -501,14 +507,20 @@ private struct Inspector: View {
     let workspace: Workspace
     let env: AppEnvironment
     @Bindable var appStore: AppStore
+    @Bindable var workspaceStore: WorkspaceStore
     let branchListService: BranchListService
 
     var body: some View {
         TabView {
             FilesTab(workspace: workspace, env: env)
                 .tabItem { Label("Files", systemImage: "doc.text") }
-            ContextTab(workspace: workspace, appStore: appStore, branchListService: branchListService)
-                .tabItem { Label("Context", systemImage: "text.alignleft") }
+            ContextTab(
+                workspace: workspace,
+                appStore: appStore,
+                workspaceStore: workspaceStore,
+                branchListService: branchListService
+            )
+            .tabItem { Label("Context", systemImage: "text.alignleft") }
         }
     }
 }

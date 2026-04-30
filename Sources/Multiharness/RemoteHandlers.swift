@@ -38,7 +38,7 @@ enum RemoteHandlers {
         }
         await relay.register(method: "workspace.setContext") { params in
             try await Self.workspaceSetContext(
-                params: params, env: env, appStore: appStore
+                params: params, env: env, appStore: appStore, workspaceStore: workspaceStore
             )
         }
         await relay.register(method: "project.setContext") { params in
@@ -79,14 +79,19 @@ enum RemoteHandlers {
     private static func workspaceSetContext(
         params: [String: Any],
         env: AppEnvironment,
-        appStore: AppStore
+        appStore: AppStore,
+        workspaceStore: WorkspaceStore
     ) async throws -> Any? {
         guard let idStr = params["workspaceId"] as? String,
               let id = UUID(uuidString: idStr) else {
             throw RemoteError.bad("workspaceId required (UUID string)")
         }
         let text = (params["contextInstructions"] as? String) ?? ""
-        try await appStore.setWorkspaceContext(workspaceId: id, text: text)
+        try await appStore.setWorkspaceContext(
+            workspaceStore: workspaceStore,
+            workspaceId: id,
+            text: text
+        )
         return ["ok": true]
     }
 

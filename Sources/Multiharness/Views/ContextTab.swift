@@ -5,9 +5,11 @@ import MultiharnessCore
 struct ContextTab: View {
     let workspace: Workspace
     @Bindable var appStore: AppStore
+    @Bindable var workspaceStore: WorkspaceStore
     let branchListService: BranchListService
 
     @State private var workspaceText: String = ""
+    @State private var loadedForId: UUID?
     @State private var savingWorkspace: SaveState = .idle
     @State private var workspaceDebounceTask: Task<Void, Never>?
     @State private var showProjectSettings = false
@@ -35,8 +37,16 @@ struct ContextTab: View {
             }
         }
         .task(id: workspace.id) {
-            workspaceText = workspace.contextInstructions
-            savingWorkspace = .idle
+            // .task fires on every view appearance, not just when id changes.
+            // macOS TabView re-mounts inactive tabs on switch back, so this
+            // closure runs every time the user returns to the Context tab.
+            // Only re-seed workspaceText when we're actually looking at a
+            // different workspace — otherwise we'd clobber unsaved edits.
+            if loadedForId != workspace.id {
+                workspaceText = workspace.contextInstructions
+                loadedForId = workspace.id
+                savingWorkspace = .idle
+            }
         }
         .sheet(isPresented: $showProjectSettings) {
             if let p = project {
@@ -143,7 +153,11 @@ struct ContextTab: View {
             try? await Task.sleep(nanoseconds: 500_000_000)
             if Task.isCancelled { return }
             do {
-                try await appStore.setWorkspaceContext(workspaceId: workspace.id, text: text)
+                try await appStore.setWorkspaceContext(
+                    workspaceStore: workspaceStore,
+                    workspaceId: workspace.id,
+                    text: text
+                )
                 savingWorkspace = .saved
             } catch {
                 savingWorkspace = .error(String(describing: error))
