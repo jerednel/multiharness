@@ -9,12 +9,19 @@ struct MultiharnessApp: App {
     @State private var agentRegistry = AgentRegistryStore()
     @State private var relayHandler = RelayHandler()
     @State private var bootError: String?
+    @State private var branchListService: BranchListService?
 
     var body: some Scene {
         WindowGroup("Multiharness") {
             Group {
-                if let appStore, let workspaceStore, let env {
-                    RootView(env: env, appStore: appStore, workspaceStore: workspaceStore, agentRegistry: agentRegistry)
+                if let appStore, let workspaceStore, let env, let branchListService {
+                    RootView(
+                        env: env,
+                        appStore: appStore,
+                        workspaceStore: workspaceStore,
+                        agentRegistry: agentRegistry,
+                        branchListService: branchListService
+                    )
                 } else if let bootError {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Multiharness failed to start").font(.title2)
@@ -95,11 +102,14 @@ struct MultiharnessApp: App {
             self.workspaceStore = ws
             self.agentRegistry.bindEnvironment(env: env, appStore: app, workspaceStore: ws)
             // Wire up the Mac-side handlers iOS will reach via the relay.
+            let branchListService = BranchListService()
+            self.branchListService = branchListService
             await RemoteHandlers.register(
                 on: relayHandler,
                 env: env,
                 appStore: app,
-                workspaceStore: ws
+                workspaceStore: ws,
+                branchListService: branchListService
             )
         } catch {
             self.bootError = String(describing: error)

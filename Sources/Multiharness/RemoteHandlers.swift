@@ -10,7 +10,8 @@ enum RemoteHandlers {
         on relay: RelayHandler,
         env: AppEnvironment,
         appStore: AppStore,
-        workspaceStore: WorkspaceStore
+        workspaceStore: WorkspaceStore,
+        branchListService: BranchListService
     ) async {
         await relay.register(method: "workspace.create") { params in
             try await Self.workspaceCreate(
@@ -37,7 +38,7 @@ enum RemoteHandlers {
         }
         await relay.register(method: "workspace.setContext") { params in
             try await Self.workspaceSetContext(
-                params: params, env: env, appStore: appStore
+                params: params, env: env, appStore: appStore, workspaceStore: workspaceStore
             )
         }
         await relay.register(method: "project.setContext") { params in
@@ -57,6 +58,25 @@ enum RemoteHandlers {
                 env: env, appStore: appStore, workspaceStore: workspaceStore
             )
         }
+        await relay.register(method: "project.listBranches") { params in
+            guard let pidStr = params["projectId"] as? String,
+                  let pid = UUID(uuidString: pidStr),
+                  let project = appStore.projects.first(where: { $0.id == pid }) else {
+                throw RemoteError.bad("projectId required (UUID of known project)")
+            }
+            return try await RemoteBranchHandler.handleListBranches(
+                params: params,
+                repoPath: project.repoPath,
+                service: branchListService
+            )
+        }
+        await relay.register(method: "project.update") { params in
+            try await RemoteBranchHandler.handleProjectUpdate(
+                params: params,
+                appStore: appStore,
+                branchListService: branchListService
+            )
+        }
     }
 
     // MARK: - workspace.setContext
@@ -65,14 +85,19 @@ enum RemoteHandlers {
     private static func workspaceSetContext(
         params: [String: Any],
         env: AppEnvironment,
-        appStore: AppStore
+        appStore: AppStore,
+        workspaceStore: WorkspaceStore
     ) async throws -> Any? {
         guard let idStr = params["workspaceId"] as? String,
               let id = UUID(uuidString: idStr) else {
             throw RemoteError.bad("workspaceId required (UUID string)")
         }
         let text = (params["contextInstructions"] as? String) ?? ""
-        try await appStore.setWorkspaceContext(workspaceId: id, text: text)
+        try await appStore.setWorkspaceContext(
+            workspaceStore: workspaceStore,
+            workspaceId: id,
+            text: text
+        )
         return ["ok": true]
     }
 
@@ -469,11 +494,3 @@ enum RemoteHandlers {
     }
 }
 
-enum RemoteError: Error, CustomStringConvertible {
-    case bad(String)
-    var description: String {
-        switch self {
-        case .bad(let m): return m
-        }
-    }
-}

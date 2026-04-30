@@ -113,15 +113,34 @@ public final class AppStore {
         projects[idx] = updated
     }
 
-    /// Persist a new workspace-level context override and push it to the
-    /// live agent session if one is running. Safe to call when no session
-    /// is live — the next `agent.create` will read the fresh value from SQLite.
     @MainActor
-    public func setWorkspaceContext(workspaceId: UUID, text: String) async throws {
-        var loaded = try env.persistence.listWorkspaces(projectId: nil)
-        guard let idx = loaded.firstIndex(where: { $0.id == workspaceId }) else { return }
-        loaded[idx].contextInstructions = text
-        try env.persistence.upsertWorkspace(loaded[idx])
+    public func setProjectDefaultBaseBranch(projectId: UUID, value: String) throws {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw RemoteError.bad("defaultBaseBranch cannot be empty")
+        }
+        guard let idx = projects.firstIndex(where: { $0.id == projectId }) else { return }
+        var updated = projects[idx]
+        updated.defaultBaseBranch = trimmed
+        try env.persistence.upsertProject(updated)
+        projects[idx] = updated
+    }
+
+    /// Persist a new workspace-level context override, mirror it into the
+    /// in-memory `WorkspaceStore`, and push it to the live agent session if
+    /// one is running. Safe to call when no session is live — the next
+    /// `agent.create` will read the fresh value from SQLite.
+    @MainActor
+    public func setWorkspaceContext(
+        workspaceStore: WorkspaceStore,
+        workspaceId: UUID,
+        text: String
+    ) async throws {
+        guard let idx = workspaceStore.workspaces.firstIndex(where: { $0.id == workspaceId }) else { return }
+        var updated = workspaceStore.workspaces[idx]
+        updated.contextInstructions = text
+        try env.persistence.upsertWorkspace(updated)
+        workspaceStore.workspaces[idx] = updated
         if let client = env.control {
             _ = try? await client.call(
                 method: "agent.applyWorkspaceContext",

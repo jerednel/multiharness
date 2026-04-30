@@ -31,7 +31,9 @@ struct NewWorkspaceSheet: View {
                             Text(p.name).tag(p.id)
                         }
                     }
-                    TextField("Base branch (e.g. main)", text: $baseBranch)
+                    if !projectId.isEmpty {
+                        branchPickerRow
+                    }
                 }
                 Section("Build target") {
                     Picker("Build target", selection: $buildMode) {
@@ -144,11 +146,28 @@ struct NewWorkspaceSheet: View {
             Task { await loadModels() }
         }
         .onChange(of: projectId) { _, _ in
+            baseBranch = ""
             buildMode = effectiveProjectDefault()
             makeProjectDefault = false
         }
         .onChange(of: buildMode) { _, newValue in
             if newValue == effectiveProjectDefault() { makeProjectDefault = false }
+        }
+    }
+
+    @ViewBuilder
+    private var branchPickerRow: some View {
+        let proj = connection.projects.first(where: { $0.id == projectId })
+        LabeledContent("Base branch") {
+            BranchPicker(
+                selection: $baseBranch,
+                initialDefault: proj?.defaultBaseBranch
+            ) { refresh in
+                try await connection.listBranches(
+                    projectId: projectId, refresh: refresh
+                )
+            }
+            .id(projectId)  // force re-init when project changes
         }
     }
 

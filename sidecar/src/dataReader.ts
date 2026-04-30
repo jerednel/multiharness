@@ -28,17 +28,19 @@ export class DataReader {
   listProjects(): Array<{
     id: string;
     name: string;
+    defaultBaseBranch: string;
     defaultBuildMode: string | null;
     contextInstructions: string;
   }> {
     if (!this.db) return [];
     const rows = this.db
       .query(
-        "SELECT id, name, default_build_mode AS defaultBuildMode, context_instructions AS contextInstructions FROM projects ORDER BY created_at ASC;",
+        "SELECT id, name, default_base_branch AS defaultBaseBranch, default_build_mode AS defaultBuildMode, context_instructions AS contextInstructions FROM projects ORDER BY created_at ASC;",
       )
       .all() as Array<{
         id: string;
         name: string;
+        defaultBaseBranch: string;
         defaultBuildMode: string | null;
         contextInstructions: string;
       }>;

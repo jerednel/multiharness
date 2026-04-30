@@ -7,6 +7,7 @@ struct RootView: View {
     @Bindable var appStore: AppStore
     @Bindable var workspaceStore: WorkspaceStore
     let agentRegistry: AgentRegistryStore
+    let branchListService: BranchListService
 
     @State private var sidebarSelection: SidebarSelection = .workspaces
     @State private var showingNewWorkspace = false
@@ -29,6 +30,7 @@ struct RootView: View {
             NewWorkspaceSheet(
                 appStore: appStore,
                 workspaceStore: workspaceStore,
+                branchListService: branchListService,
                 isPresented: $showingNewWorkspace
             )
         }
@@ -130,6 +132,7 @@ struct RootView: View {
                                 }
                             }
                         ),
+                        branchListService: branchListService,
                         onQuickCreate: { runQuickCreate(project: $0) }
                     )
                 }
@@ -160,7 +163,8 @@ struct RootView: View {
                 env: env,
                 appStore: appStore,
                 workspaceStore: workspaceStore,
-                agentRegistry: agentRegistry
+                agentRegistry: agentRegistry,
+                branchListService: branchListService
             )
         } else {
             ContentUnavailableView(

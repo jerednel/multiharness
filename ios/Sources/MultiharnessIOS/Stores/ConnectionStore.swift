@@ -221,6 +221,33 @@ public final class ConnectionStore: NSObject, ControlClientDelegate {
         }
     }
 
+    public func listBranches(
+        projectId: String,
+        refresh: Bool = false
+    ) async throws -> BranchListing {
+        var params: [String: Any] = ["projectId": projectId]
+        if refresh { params["refresh"] = true }
+        let result = try await client.call(
+            method: "project.listBranches", params: params
+        ) as? [String: Any] ?? [:]
+
+        let originRaw = result["origin"]
+        let origin: [String]? = (originRaw is NSNull) ? nil : (originRaw as? [String])
+        let local = (result["local"] as? [String]) ?? []
+        let available = (result["originAvailable"] as? Bool) ?? false
+        let reasonRaw = result["originUnavailableReason"] as? String
+        let reason = reasonRaw.flatMap(BranchListing.OriginUnavailableReason.init(rawValue:))
+        let fetchedAt = (result["fetchedAt"] as? Int64)
+            ?? Int64((result["fetchedAt"] as? Double) ?? 0)
+        return BranchListing(
+            origin: origin,
+            local: local,
+            originAvailable: available,
+            originUnavailableReason: reason,
+            fetchedAt: fetchedAt
+        )
+    }
+
     /// Returns the new project's ID so the caller can preselect it in a
     /// follow-up "New workspace" flow.
     @discardableResult
@@ -239,6 +266,20 @@ public final class ConnectionStore: NSObject, ControlClientDelegate {
         let newId = result?["id"] as? String
         await refreshWorkspaces()
         return newId
+    }
+
+    public func updateProject(
+        projectId: String,
+        defaultBaseBranch: String
+    ) async throws {
+        _ = try await client.call(
+            method: "project.update",
+            params: [
+                "projectId": projectId,
+                "defaultBaseBranch": defaultBaseBranch,
+            ]
+        )
+        await refreshWorkspaces()
     }
 
     // MARK: ControlClientDelegate
@@ -416,6 +457,7 @@ public struct RemoteWorkspace: Identifiable, Sendable, Hashable {
 public struct RemoteProject: Identifiable, Sendable, Hashable {
     public let id: String
     public let name: String
+    public let defaultBaseBranch: String
     public let defaultBuildMode: BuildMode?
     public let contextInstructions: String
     init?(json: [String: Any]) {
@@ -424,6 +466,7 @@ public struct RemoteProject: Identifiable, Sendable, Hashable {
         else { return nil }
         self.id = id
         self.name = name
+        self.defaultBaseBranch = json["defaultBaseBranch"] as? String ?? "main"
         self.defaultBuildMode = (json["defaultBuildMode"] as? String).flatMap(BuildMode.init(rawValue:))
         self.contextInstructions = json["contextInstructions"] as? String ?? ""
     }

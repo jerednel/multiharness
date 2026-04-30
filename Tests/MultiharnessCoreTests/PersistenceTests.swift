@@ -278,4 +278,24 @@ final class PersistenceTests: XCTestCase {
         let result = try svc.lastAssistantAt(workspaceId: UUID())
         XCTAssertNil(result)
     }
+
+    func testSetProjectDefaultBaseBranchRoundtrip() throws {
+        let dir = try tempDir()
+        let svc = try PersistenceService(dataDir: dir)
+        let p = Project(
+            name: "Test",
+            slug: "test",
+            repoPath: "/tmp/test-repo",
+            defaultBaseBranch: "main"
+        )
+        try svc.upsertProject(p)
+
+        var updated = p
+        updated.defaultBaseBranch = "origin/main"
+        try svc.upsertProject(updated)
+
+        let loaded = try svc.listProjects()
+        XCTAssertEqual(loaded.count, 1)
+        XCTAssertEqual(loaded[0].defaultBaseBranch, "origin/main")
+    }
 }
