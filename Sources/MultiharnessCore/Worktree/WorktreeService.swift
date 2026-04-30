@@ -83,7 +83,7 @@ public struct WorktreeService: Sendable {
         while p.isRunning {
             if Date() >= deadline {
                 p.terminate()
-                _ = p.waitUntilExit()
+                p.waitUntilExit()
                 throw WorktreeError.gitFailed(
                     args: ["fetch", "origin"],
                     exitCode: -1,
