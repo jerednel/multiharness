@@ -13,6 +13,7 @@ struct ProjectSettingsSheet: View {
     @State private var debounceTask: Task<Void, Never>?
     @State private var baseBranchSelection: String = ""
     @State private var baseBranchSaveState: SaveState = .idle
+    @State private var savedBaseBranch: String = ""
 
     enum SaveState { case idle, saving, saved, error(String) }
 
@@ -48,8 +49,14 @@ struct ProjectSettingsSheet: View {
                     Spacer()
                     statusLabel(for: baseBranchSaveState)
                 }
-                Text("New workspaces in this project start from this branch — used by Quick Create and pre-selected in the New Workspace sheet.")
+                Text("New workspaces in this project start from this branch — used by Quick Create and pre-selected in the New Workspace sheet. Selection auto-saves.")
                     .font(.caption).foregroundStyle(.secondary)
+                HStack(spacing: 4) {
+                    Text("Currently saved:").font(.caption).foregroundStyle(.secondary)
+                    Text(savedBaseBranch.isEmpty ? "—" : savedBaseBranch)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.primary)
+                }
                 BranchPicker(
                     selection: $baseBranchSelection,
                     initialDefault: project.defaultBaseBranch
@@ -72,6 +79,7 @@ struct ProjectSettingsSheet: View {
             text = project.contextInstructions
             saveState = .idle
             baseBranchSaveState = .idle
+            savedBaseBranch = project.defaultBaseBranch
         }
     }
 
@@ -108,16 +116,20 @@ struct ProjectSettingsSheet: View {
 
     private func saveBaseBranch(_ value: String) {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, trimmed != project.defaultBaseBranch else { return }
+        guard !trimmed.isEmpty, trimmed != savedBaseBranch else { return }
         baseBranchSaveState = .saving
         Task { @MainActor in
             do {
                 try appStore.setProjectDefaultBaseBranch(
                     projectId: project.id, value: trimmed
                 )
+                savedBaseBranch = trimmed
                 baseBranchSaveState = .saved
             } catch {
-                baseBranchSaveState = .error(String(describing: error))
+                baseBranchSaveState = .error(
+                    (error as? LocalizedError)?.errorDescription
+                        ?? error.localizedDescription
+                )
             }
         }
     }
