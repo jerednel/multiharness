@@ -526,6 +526,38 @@ public final class AppStore {
             #endif
         }
     }
+
+    // MARK: - Global default provider+model
+
+    /// Reads the global fallback (provider, model) pair used by quick-create
+    /// when the project's previous workspace, project defaults, and provider
+    /// default have all whiffed. Returns nil if either key is absent or the
+    /// stored provider id is malformed.
+    public func getGlobalDefault() -> (providerId: UUID, modelId: String)? {
+        do {
+            guard
+                let providerStr = try env.persistence.getSetting("default_provider_id"),
+                let providerId = UUID(uuidString: providerStr),
+                let modelId = try env.persistence.getSetting("default_model_id"),
+                !modelId.isEmpty
+            else { return nil }
+            return (providerId, modelId)
+        } catch {
+            return nil
+        }
+    }
+
+    /// Persist or clear the global default. Pass nil for either to clear both
+    /// — we only treat the pair as meaningful, never half-set.
+    public func setGlobalDefault(providerId: UUID?, modelId: String?) throws {
+        if let pid = providerId, let mid = modelId, !mid.isEmpty {
+            try env.persistence.setSetting("default_provider_id", value: pid.uuidString)
+            try env.persistence.setSetting("default_model_id", value: mid)
+        } else {
+            try env.persistence.setSetting("default_provider_id", value: "")
+            try env.persistence.setSetting("default_model_id", value: "")
+        }
+    }
 }
 
 // MARK: - AgentSessionError
