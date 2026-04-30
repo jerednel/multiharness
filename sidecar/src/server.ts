@@ -65,7 +65,8 @@ export async function startServer(opts: ServerOptions): Promise<ServerHandle> {
   const sink = (workspaceId: string, ev: { type: string }) => {
     // Fan out the original event to all clients first so order-of-events
     // observed by clients matches what AgentSession produced.
-    const frame = formatEvent(ev.type, { workspaceId, ...(ev as Record<string, unknown>) });
+    const { type, ...rest } = ev as { type: string } & Record<string, unknown>;
+    const frame = formatEvent(type, { workspaceId, ...rest });
     broadcast(frame);
 
     // Mirror agent start/end into the tracker, then push a workspace.activity

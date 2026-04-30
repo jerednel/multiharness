@@ -232,7 +232,7 @@ export function registerMethods(
           name,
           nameSource:
             typeof r.nameSource === "string" ? r.nameSource : "named",
-        } as unknown as Parameters<EventEmit>[1]);
+        });
       }
     }
     return result;
@@ -250,7 +250,7 @@ export function registerMethods(
         type: "workspace.activity",
         isStreaming: tracker.isStreaming(wsId),
         lastAssistantAt: tracker.lastAssistantAt(wsId),
-      } as unknown as Parameters<EventEmit>[1]);
+      });
     }
     return result;
   });
