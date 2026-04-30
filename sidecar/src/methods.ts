@@ -222,6 +222,7 @@ export function registerMethods(
   // SQLite, git, NSOpenPanel, etc.) and the Mac's response comes back here.
   for (const m of [
     "workspace.create",
+    "workspace.quickCreate",
     "workspace.setContext",
     "project.scan",
     "project.create",
