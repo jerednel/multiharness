@@ -167,6 +167,15 @@ struct WorkspacesView: View {
                                                 Text(ws.branchName).font(.caption2).foregroundStyle(.secondary)
                                             }
                                             Spacer()
+                                            if ws.isStreaming {
+                                                ProgressView()
+                                                    .controlSize(.small)
+                                            } else if ws.unseen {
+                                                Circle()
+                                                    .fill(Color.blue)
+                                                    .frame(width: 8, height: 8)
+                                                    .accessibilityLabel("Unseen response")
+                                            }
                                             LifecyclePill(state: ws.lifecycleState)
                                         }
                                     }
