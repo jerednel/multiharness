@@ -37,6 +37,10 @@ const PERSIST_EVENTS = new Set<AgentEvent["type"]>([
   "agent_end",
   "turn_end",
   "message_end",
+  // tool_execution_start carries args (incl. the per-call description label).
+  // Persist both start and end so history rehydration can recover the same
+  // step labels users saw live.
+  "tool_execution_start",
   "tool_execution_end",
 ]);
 

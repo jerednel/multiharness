@@ -7,6 +7,12 @@ const Params = Type.Object({
   path: Type.String(),
   old_string: Type.String(),
   new_string: Type.String(),
+  description: Type.Optional(
+    Type.String({
+      description:
+        "Short imperative phrase describing the change, e.g. 'Fix off-by-one in pager'. Shown to the user as the step label. 5–8 words.",
+    }),
+  ),
 });
 
 export function editFileTool(worktreePath: string): AgentTool<typeof Params> {
@@ -16,7 +22,7 @@ export function editFileTool(worktreePath: string): AgentTool<typeof Params> {
     description:
       "Replace exactly one occurrence of old_string with new_string in the file. Fails if old_string is missing or appears more than once.",
     parameters: Params,
-    execute: async (_id, { path, old_string, new_string }) => {
+    execute: async (_id, { path, old_string, new_string, description: _description }) => {
       const full = resolveInside(worktreePath, path);
       const original = await readFile(full, "utf8");
       const idx = original.indexOf(old_string);

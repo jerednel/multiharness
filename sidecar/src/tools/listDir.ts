@@ -5,6 +5,12 @@ import { resolveInside } from "../pathGuard.js";
 
 const Params = Type.Object({
   path: Type.String({ description: "Directory path relative to the worktree." }),
+  description: Type.Optional(
+    Type.String({
+      description:
+        "Short imperative phrase describing the action, e.g. 'List source directory'. Shown to the user as the step label. 5–8 words.",
+    }),
+  ),
 });
 
 export function listDirTool(worktreePath: string): AgentTool<typeof Params> {
@@ -13,7 +19,7 @@ export function listDirTool(worktreePath: string): AgentTool<typeof Params> {
     label: "List directory",
     description: "List entries (files and directories) in a directory inside the worktree.",
     parameters: Params,
-    execute: async (_id, { path }) => {
+    execute: async (_id, { path, description: _description }) => {
       const full = resolveInside(worktreePath, path);
       const items = await readdir(full, { withFileTypes: true });
       const entries = items.map((d) => ({
