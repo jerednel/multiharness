@@ -126,23 +126,25 @@ public final class ConnectionStore: NSObject, ControlClientDelegate {
     /// suggestion.
     public func quickCreateWorkspace(projectId: String) async -> QuickCreateOutcome {
         do {
-            let result = try await client.call(
+            guard let result = try await client.call(
                 method: "workspace.quickCreate",
                 params: ["projectId": projectId]
-            ) as? [String: Any]
-            let status = result?["status"] as? String
+            ) as? [String: Any] else {
+                return .failed("workspace.quickCreate: malformed response envelope")
+            }
+            let status = result["status"] as? String
             switch status {
             case "created":
                 await refreshWorkspaces()
                 return .created
             case "needs_input":
-                guard let suggestedDict = result?["suggested"] as? [String: Any],
+                guard let suggestedDict = result["suggested"] as? [String: Any],
                       let suggestion = WorkspaceSuggestion(json: suggestedDict) else {
-                    return .failed("malformed needs_input response")
+                    return .failed("workspace.quickCreate: malformed needs_input payload")
                 }
                 return .needsInput(suggestion)
             default:
-                return .failed("unexpected status: \(status ?? "nil")")
+                return .failed("workspace.quickCreate: unexpected status '\(status ?? "nil")'")
             }
         } catch {
             return .failed(String(describing: error))
