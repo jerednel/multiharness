@@ -544,7 +544,7 @@ private struct DefaultsTab: View {
                     .buttonStyle(.borderedProminent)
                     .disabled(draftProviderId == nil || draftModelId.isEmpty)
                 Button("Clear", role: .destructive) { clear() }
-                    .disabled(appStore.getGlobalDefault() == nil)
+                    .disabled(draftProviderId == nil && draftModelId.isEmpty)
                 Spacer()
             }
             if let err = saveError {
@@ -553,6 +553,11 @@ private struct DefaultsTab: View {
             Spacer()
         }
         .onAppear {
+            // Switching tabs destroys+recreates the inactive branch, so
+            // .onAppear refires every visit. Only seed when the user hasn't
+            // already touched the drafts — otherwise we'd silently clobber
+            // unsaved selections on a tab round-trip.
+            guard draftProviderId == nil && draftModelId.isEmpty else { return }
             if let cur = appStore.getGlobalDefault() {
                 draftProviderId = cur.providerId
                 draftModelId = cur.modelId
