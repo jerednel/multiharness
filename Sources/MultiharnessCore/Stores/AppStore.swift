@@ -373,6 +373,9 @@ public final class AppStore {
                 "modelId": modelId,
             ]
             if let key = apiKey(for: provider) { cfg["apiKey"] = key }
+            if provider.name == Self.anthropicConsoleProviderName {
+                cfg["consoleMint"] = true
+            }
             return cfg
         case .openaiCompatible:
             var cfg: [String: Any] = [

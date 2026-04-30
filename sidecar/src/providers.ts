@@ -40,6 +40,17 @@ export type ProviderConfig =
       provider: KnownProvider;
       modelId: string;
       apiKey?: string;
+      /**
+       * Set when the apiKey is an Anthropic Console-minted key obtained
+       * via our OAuth flow. Routes the request through the Claude Code
+       * rate-limit tier by injecting the same anthropic-beta, x-app, and
+       * user-agent headers that pi-ai uses for OAuth access tokens.
+       * Without this, pi-ai treats `sk-ant-api03-…` keys as plain API
+       * keys and Anthropic applies the org's standard rate limit, which
+       * for many Console accounts is dramatically lower than Claude
+       * Code's tier.
+       */
+      consoleMint?: boolean;
     }
   | {
       kind: "anthropic";
@@ -95,6 +106,28 @@ export function buildModel(cfg: ProviderConfig): Model<any> {
       throw new Error(
         `pi-ai has no model "${cfg.modelId}" registered for provider "${cfg.provider}"`,
       );
+    }
+    if (cfg.consoleMint && cfg.provider === "anthropic") {
+      // Inject the identity headers pi-ai normally only sends for
+      // sk-ant-oat OAuth tokens. Console-minted sk-ant-api03 keys go
+      // through the same Claude Code rate-limit tier when accompanied
+      // by these headers; without them Anthropic applies the org's
+      // plain-API tier (which is what surfaced as a 429 on the first
+      // prompt of every freshly-minted Multiharness Console provider).
+      return {
+        ...m,
+        headers: {
+          ...(m.headers ?? {}),
+          "anthropic-beta": [
+            "claude-code-20250219",
+            "oauth-2025-04-20",
+            "fine-grained-tool-streaming-2025-05-19",
+            "interleaved-thinking-2025-05-14",
+          ].join(","),
+          "user-agent": "claude-cli/2.0.40 (external, cli)",
+          "x-app": "cli",
+        },
+      };
     }
     return m;
   }
