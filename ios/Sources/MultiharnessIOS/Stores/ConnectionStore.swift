@@ -1,6 +1,5 @@
 import Foundation
 import Observation
-import UIKit
 import MultiharnessClient
 
 /// One open WebSocket session against a paired Mac. Holds the live
@@ -37,10 +36,6 @@ public final class ConnectionStore: NSObject, ControlClientDelegate {
     /// reconnect hasn't completed within 1 s.
     private var pendingReconnectTimer: Task<Void, Never>?
 
-    /// Background task identifier opened in `didEnterBackground()` to
-    /// give the WS close frame a chance to flush before iOS suspends us.
-    private var bgTaskID: UIBackgroundTaskIdentifier = .invalid
-
     public init(host: String, port: Int, token: String) {
         self.host = host
         self.port = port
@@ -55,6 +50,9 @@ public final class ConnectionStore: NSObject, ControlClientDelegate {
     }
 
     public func disconnect() {
+        pendingReconnectTimer?.cancel()
+        pendingReconnectTimer = nil
+        isBackgrounded = false
         client.disconnect()
         state = .disconnected
     }
@@ -69,29 +67,17 @@ public final class ConnectionStore: NSObject, ControlClientDelegate {
         pendingReconnectTimer?.cancel()
         pendingReconnectTimer = nil
 
-        // Begin a brief background task so the close frame can flush
-        // before iOS suspends us. The expiration handler is the OS's
-        // way of saying "time's up" — we just clean up the identifier.
-        bgTaskID = UIApplication.shared.beginBackgroundTask(
-            withName: "multiharness-ws-close"
-        ) { [weak self] in
-            guard let self else { return }
-            if self.bgTaskID != .invalid {
-                UIApplication.shared.endBackgroundTask(self.bgTaskID)
-                self.bgTaskID = .invalid
-            }
-        }
-
+        // Closes the socket so we don't return to a half-dead one. The
+        // close frame is best-effort — iOS gives the app a brief natural
+        // runtime window after `.background`, which usually suffices for
+        // URLSession to flush, but we don't try to extend it: the spec
+        // accepts close-frame loss as cosmetic (sidecar will time out
+        // the stale connection on its own).
         client.disconnect()
         // Note: deliberately NOT setting `state = .disconnected`. The
         // user-visible state stays whatever it was (typically
         // `.connected`); the resulting `controlClientDidDisconnect`
         // callback is suppressed while `isBackgrounded == true`.
-
-        if bgTaskID != .invalid {
-            UIApplication.shared.endBackgroundTask(bgTaskID)
-            bgTaskID = .invalid
-        }
     }
 
     /// Called from `App.body.onChange(of: scenePhase)` when the scene
@@ -108,18 +94,19 @@ public final class ConnectionStore: NSObject, ControlClientDelegate {
         client.connect()
 
         pendingReconnectTimer?.cancel()
-        pendingReconnectTimer = Task { [weak self] in
+        pendingReconnectTimer = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 1_000_000_000)
-            guard !Task.isCancelled else { return }
-            await MainActor.run {
-                guard let self else { return }
-                // If `controlClientDidConnect(_:)` already fired, state
-                // is `.connected` and we leave it alone. Otherwise the
-                // user has been staring at a stale "connected" view
-                // for 1 s — show the spinner from here on.
-                if self.state != .connected {
-                    self.state = .connecting
-                }
+            guard !Task.isCancelled, let self else { return }
+            // Preserve any state set during the 1 s window:
+            //   - .connected  → we beat the timer; do nothing.
+            //   - .error      → a real failure already surfaced; don't
+            //                   overwrite it back to .connecting.
+            // Only flip when we're still in a "no news" state.
+            switch self.state {
+            case .connected, .error:
+                return
+            case .disconnected, .connecting:
+                self.state = .connecting
             }
         }
     }
