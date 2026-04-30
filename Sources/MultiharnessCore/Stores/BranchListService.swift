@@ -1,4 +1,3 @@
-// Sources/MultiharnessCore/Stores/BranchListService.swift
 import Foundation
 import MultiharnessClient
 
@@ -26,7 +25,17 @@ public actor BranchListService {
         if !refresh, let cached = cache[projectId] {
             return cached
         }
-        let listing = try buildListing(repoPath: repoPath)
+        let worktree = self.worktree
+        let timeout = self.fetchTimeoutSeconds
+        // Run blocking git work off the actor's thread so concurrent
+        // callers don't serialize behind a slow fetch.
+        let listing = try await Task.detached(priority: .utility) {
+            try Self.buildListing(
+                worktree: worktree,
+                repoPath: repoPath,
+                fetchTimeoutSeconds: timeout
+            )
+        }.value
         cache[projectId] = listing
         return listing
     }
@@ -35,19 +44,24 @@ public actor BranchListService {
         cache.removeValue(forKey: projectId)
     }
 
-    private func buildListing(repoPath: String) throws -> BranchListing {
-        let hasOrigin = (try? worktree.hasOriginRemote(repoPath: repoPath)) ?? false
+    private static func buildListing(
+        worktree: WorktreeService,
+        repoPath: String,
+        fetchTimeoutSeconds: TimeInterval
+    ) throws -> BranchListing {
+        let hasOrigin = try worktree.hasOriginRemote(repoPath: repoPath)
         var originAvailable = false
-        var reason: BranchListing.OriginUnavailableReason? = nil
-        var originBranches: [String]? = nil
+        var reason: BranchListing.OriginUnavailableReason?
+        var originBranches: [String]?
 
         if hasOrigin {
+            // fetchOrigin or listOriginBranches may throw on flaky
+            // networks, force-pushed refs, etc. — both map to .fetchFailed.
             do {
                 try worktree.fetchOrigin(
                     repoPath: repoPath, timeoutSeconds: fetchTimeoutSeconds
                 )
-                let branches = try worktree.listOriginBranches(repoPath: repoPath)
-                originBranches = branches
+                originBranches = try worktree.listOriginBranches(repoPath: repoPath)
                 originAvailable = true
             } catch {
                 reason = .fetchFailed
@@ -56,7 +70,7 @@ public actor BranchListService {
             reason = .noRemote
         }
 
-        let localBranches = (try? worktree.listBranches(repoPath: repoPath)) ?? []
+        let localBranches = try worktree.listBranches(repoPath: repoPath)
         let now = Int64(Date().timeIntervalSince1970 * 1000)
         return BranchListing(
             origin: originBranches,

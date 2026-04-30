@@ -70,4 +70,16 @@ final class BranchListServiceTests: XCTestCase {
         XCTAssertFalse(listing.originAvailable)
         XCTAssertEqual(listing.originUnavailableReason, .fetchFailed)
     }
+
+    func testInvalidateClearsCache() async throws {
+        let pid = UUID()
+        let service = BranchListService(worktree: svc)
+        _ = try await service.list(projectId: pid, repoPath: repoDir.path, refresh: false)
+        _ = try svc.runGit(at: repoDir.path, args: ["branch", "topic"])
+        await service.invalidate(projectId: pid)
+        let fresh = try await service.list(
+            projectId: pid, repoPath: repoDir.path, refresh: false
+        )
+        XCTAssertTrue(fresh.local.contains("topic"))
+    }
 }
