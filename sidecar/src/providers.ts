@@ -114,16 +114,17 @@ export function buildModel(cfg: ProviderConfig): Model<any> {
       // by these headers; without them Anthropic applies the org's
       // plain-API tier (which is what surfaced as a 429 on the first
       // prompt of every freshly-minted Multiharness Console provider).
+      //
+      // Only send the two stable identity headers. Pi-ai also adds
+      // conditional betas (fine-grained-tool-streaming, interleaved-
+      // thinking) when the model supports them; we leave those to
+      // pi-ai's per-model logic so we don't send a beta header
+      // Anthropic rejects for this model/account combo.
       return {
         ...m,
         headers: {
           ...(m.headers ?? {}),
-          "anthropic-beta": [
-            "claude-code-20250219",
-            "oauth-2025-04-20",
-            "fine-grained-tool-streaming-2025-05-19",
-            "interleaved-thinking-2025-05-14",
-          ].join(","),
+          "anthropic-beta": ["claude-code-20250219", "oauth-2025-04-20"].join(","),
           "user-agent": "claude-cli/2.0.40 (external, cli)",
           "x-app": "cli",
         },
