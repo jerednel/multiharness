@@ -196,10 +196,13 @@ public final class WorkspaceStore {
 
     public enum QuickCreateError: Error, LocalizedError {
         case noProviderAvailable
+        case noModelAvailable
         public var errorDescription: String? {
             switch self {
             case .noProviderAvailable:
                 return "No provider configured. Add one in Settings."
+            case .noModelAvailable:
+                return "No model could be determined. Set one in Settings → Defaults or on the project."
             }
         }
     }
@@ -287,13 +290,11 @@ public final class WorkspaceStore {
         let resolution = resolveQuickCreateInputs(
             project: project, providers: providers, globalDefault: globalDefault
         )
-        guard resolution.missing.isEmpty,
-              let pid = resolution.providerId,
-              let provider = providers.first(where: { $0.id == pid }),
-              let modelId = resolution.modelId, !modelId.isEmpty
-        else {
-            throw QuickCreateError.noProviderAvailable
-        }
+        guard let pid = resolution.providerId,
+              let provider = providers.first(where: { $0.id == pid })
+        else { throw QuickCreateError.noProviderAvailable }
+        guard let modelId = resolution.modelId, !modelId.isEmpty
+        else { throw QuickCreateError.noModelAvailable }
         return try create(
             project: project,
             name: resolution.name,
