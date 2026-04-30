@@ -11,6 +11,7 @@ struct WorkspacesView: View {
     @State private var showingNewProject = false
     @State private var expandedProjectIds: Set<String> = []
     @State private var preselectedProjectId: String? = nil
+    @State private var pendingSuggestion: WorkspaceSuggestion? = nil
     /// Set when the user just added a project; on the project sheet's
     /// dismissal we open the New Workspace sheet as a follow-up.
     @State private var pendingAutoNewWorkspace = false
@@ -69,11 +70,15 @@ struct WorkspacesView: View {
             }
         }
         .refreshable { await connection.refreshWorkspaces() }
-        .sheet(isPresented: $showingNewWorkspace) {
+        .sheet(isPresented: $showingNewWorkspace, onDismiss: {
+            // Always clear once the sheet closes so the next open is clean.
+            pendingSuggestion = nil
+        }) {
             NewWorkspaceSheet(
                 connection: connection,
                 isPresented: $showingNewWorkspace,
-                preselectedProjectId: preselectedProjectId
+                preselectedProjectId: preselectedProjectId,
+                suggestion: pendingSuggestion
             )
         }
         .sheet(
@@ -194,6 +199,15 @@ struct WorkspacesView: View {
                                     .foregroundStyle(.blue)
                                 Text(group.project.name).font(.headline)
                                 Spacer()
+                                Button {
+                                    Task { await runQuickCreate(projectId: group.project.id) }
+                                } label: {
+                                    Image(systemName: "plus.circle")
+                                        .font(.body)
+                                }
+                                .buttonStyle(.borderless)
+                                .disabled(connection.providers.isEmpty)
+                                .accessibilityLabel("New workspace in \(group.project.name)")
                                 Text("\(group.workspaces.count)")
                                     .font(.caption).foregroundStyle(.secondary)
                                     .padding(.horizontal, 6).padding(.vertical, 1)
@@ -226,6 +240,25 @@ struct WorkspacesView: View {
                 else { expandedProjectIds.remove(projectId) }
             }
         )
+    }
+
+    @MainActor
+    private func runQuickCreate(projectId: String) async {
+        let outcome = await connection.quickCreateWorkspace(projectId: projectId)
+        switch outcome {
+        case .created:
+            // Workspace appears via refreshWorkspaces() inside the call.
+            break
+        case .needsInput(let suggestion):
+            preselectedProjectId = projectId
+            pendingSuggestion = suggestion
+            showingNewWorkspace = true
+        case .failed(let msg):
+            // Surface via the connection's error state — same path the
+            // ControlClientDelegate uses for disconnects, so the user
+            // sees it on the standard error overlay.
+            connection.state = .error(msg)
+        }
     }
 
     /// Groups workspaces under each project. Projects with no workspaces are
