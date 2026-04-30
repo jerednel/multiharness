@@ -55,4 +55,44 @@ final class RemoteHandlersBranchTests: XCTestCase {
             // expected
         }
     }
+
+    func testProjectUpdateRequiresProjectId() async {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mh-rh-update-no-pid-\(UUID().uuidString)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let env = try! AppEnvironment(dataDir: dir)
+        let appStore = AppStore(env: env)
+        let service = BranchListService(worktree: svc)
+        do {
+            _ = try await RemoteBranchHandler.handleProjectUpdate(
+                params: ["defaultBaseBranch": "origin/main"],
+                appStore: appStore,
+                branchListService: service
+            )
+            XCTFail("expected error")
+        } catch {
+            // expected
+        }
+    }
+
+    func testProjectUpdateRequiresDefaultBaseBranchNonEmpty() async {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mh-rh-update-empty-\(UUID().uuidString)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let env = try! AppEnvironment(dataDir: dir)
+        let appStore = AppStore(env: env)
+        let service = BranchListService(worktree: svc)
+        do {
+            _ = try await RemoteBranchHandler.handleProjectUpdate(
+                params: ["projectId": UUID().uuidString, "defaultBaseBranch": "   "],
+                appStore: appStore,
+                branchListService: service
+            )
+            XCTFail("expected error")
+        } catch {
+            // expected
+        }
+    }
 }

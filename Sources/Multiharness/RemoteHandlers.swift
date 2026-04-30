@@ -64,6 +64,13 @@ enum RemoteHandlers {
                 service: branchListService
             )
         }
+        await relay.register(method: "project.update") { params in
+            try await RemoteBranchHandler.handleProjectUpdate(
+                params: params,
+                appStore: appStore,
+                branchListService: branchListService
+            )
+        }
     }
 
     // MARK: - workspace.setContext

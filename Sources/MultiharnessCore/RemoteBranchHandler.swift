@@ -36,4 +36,31 @@ public enum RemoteBranchHandler {
         }
         return dict
     }
+
+    // MARK: - project.update
+
+    @MainActor
+    public static func handleProjectUpdate(
+        params: [String: Any],
+        appStore: AppStore,
+        branchListService: BranchListService
+    ) async throws -> Any? {
+        guard let pidStr = params["projectId"] as? String,
+              let pid = UUID(uuidString: pidStr) else {
+            throw RemoteError.bad("projectId required (UUID string)")
+        }
+        guard let raw = params["defaultBaseBranch"] as? String else {
+            throw RemoteError.bad("defaultBaseBranch required")
+        }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw RemoteError.bad("defaultBaseBranch required and non-empty")
+        }
+        try appStore.setProjectDefaultBaseBranch(projectId: pid, value: trimmed)
+        await branchListService.invalidate(projectId: pid)
+        return [
+            "projectId": pidStr,
+            "defaultBaseBranch": trimmed,
+        ]
+    }
 }
