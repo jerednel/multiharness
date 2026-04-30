@@ -319,7 +319,7 @@ private struct ProjectDisclosure: View {
                     .font(.caption)
             }
             .buttonStyle(.borderless)
-            .help("Quick-create workspace")
+            .help("Quick-create workspace from \(project.defaultBaseBranch)")
         }
     }
 

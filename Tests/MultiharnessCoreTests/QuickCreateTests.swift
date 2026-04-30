@@ -124,6 +124,36 @@ final class QuickCreateTests: XCTestCase {
         XCTAssertEqual(res.missing, ["model"])
     }
 
+    func testResolveBaseBranchPrefersProjectDefaultOverInheritedWorkspace() throws {
+        let (env, store, proj, prov) = try makeFixture()
+        // Simulate a prior workspace in this project whose baseBranch is
+        // stale relative to the project default. Selecting it activates
+        // the inherit path in resolveQuickCreateInputs.
+        let prior = Workspace(
+            projectId: proj.id,
+            name: "prior",
+            slug: "prior",
+            branchName: "u/prior",
+            baseBranch: "old-branch",
+            worktreePath: "/tmp/prior",
+            providerId: prov.id,
+            modelId: "qwen2.5-7b"
+        )
+        try env.persistence.upsertWorkspace(prior)
+        store.load(projectId: proj.id)
+        store.selectedWorkspaceId = prior.id
+
+        var updatedProject = proj
+        updatedProject.defaultBaseBranch = "origin/nonprod"
+
+        let res = store.resolveQuickCreateInputs(
+            project: updatedProject, providers: [prov], globalDefault: nil
+        )
+        // Project default ("origin/nonprod") must win over prior workspace's
+        // baseBranch ("old-branch"). User intent: "this project starts here."
+        XCTAssertEqual(res.baseBranch, "origin/nonprod")
+    }
+
     func testQuickCreateThrowsWhenResolutionMissing() throws {
         let dir = try tempDir()
         let env = try AppEnvironment(dataDir: dir)

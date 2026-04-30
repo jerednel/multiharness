@@ -275,7 +275,7 @@ private struct ProjectPickerHeader: View {
                 }
                 .buttonStyle(.borderless)
                 .disabled(appStore.providers.isEmpty)
-                .help("Quick-create workspace")
+                .help("Quick-create workspace from \(proj.defaultBaseBranch)")
             }
         }
     }
