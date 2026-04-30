@@ -9,7 +9,7 @@ struct MultiharnessApp: App {
     @State private var agentRegistry = AgentRegistryStore()
     @State private var relayHandler = RelayHandler()
     @State private var bootError: String?
-    @State var branchListService: BranchListService?
+    @State private var branchListService: BranchListService?
 
     var body: some Scene {
         WindowGroup("Multiharness") {

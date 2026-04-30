@@ -394,11 +394,3 @@ enum RemoteHandlers {
     }
 }
 
-enum RemoteError: Error, CustomStringConvertible {
-    case bad(String)
-    var description: String {
-        switch self {
-        case .bad(let m): return m
-        }
-    }
-}

@@ -11,6 +11,7 @@ public enum RemoteBranchHandler {
 
     /// Resolve params, delegate to `BranchListService`, and return a
     /// serialisable `[String: Any]` payload suitable for relay responses.
+    @MainActor
     public static func handleListBranches(
         params: [String: Any],
         repoPath: String,
@@ -18,7 +19,7 @@ public enum RemoteBranchHandler {
     ) async throws -> Any? {
         guard let pidStr = params["projectId"] as? String,
               let pid = UUID(uuidString: pidStr) else {
-            throw RemoteBranchError.bad("projectId required (UUID string)")
+            throw RemoteError.bad("projectId required (UUID string)")
         }
         let refresh = (params["refresh"] as? Bool) ?? false
         let listing = try await service.list(
@@ -34,14 +35,5 @@ public enum RemoteBranchHandler {
             dict["originUnavailableReason"] = r.rawValue
         }
         return dict
-    }
-}
-
-public enum RemoteBranchError: Error, CustomStringConvertible {
-    case bad(String)
-    public var description: String {
-        switch self {
-        case .bad(let m): return m
-        }
     }
 }
