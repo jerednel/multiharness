@@ -157,13 +157,24 @@ public struct BranchPicker: View {
 
     @MainActor
     private func load(refresh: Bool) async {
+        let isFirstLoad = (listing == nil)
         loading = true
         loadError = nil
         defer { loading = false }
         do {
             let result = try await fetcher(refresh)
             listing = result
-            applyInitialSelection()
+            if isFirstLoad {
+                applyInitialSelection()
+            } else {
+                // Don't clobber the user's manual selection on refresh.
+                // Only fall back to the first available if their pick is
+                // gone (e.g. branch was deleted upstream).
+                let pool = side == .origin ? (result.origin ?? []) : result.local
+                if !pool.contains(selection), let first = pool.first {
+                    selection = first
+                }
+            }
         } catch {
             loadError = "Couldn't list branches: \(error)"
         }

@@ -57,7 +57,11 @@ public enum RemoteBranchHandler {
             throw RemoteError.bad("defaultBaseBranch required and non-empty")
         }
         try appStore.setProjectDefaultBaseBranch(projectId: pid, value: trimmed)
-        await branchListService.invalidate(projectId: pid)
+        // No cache invalidation — branch listings don't depend on
+        // defaultBaseBranch; the picker reads initialDefault from the
+        // project record. The branchListService parameter is retained
+        // in case future fields land that *do* depend on it.
+        _ = branchListService
         return [
             "projectId": pidStr,
             "defaultBaseBranch": trimmed,
