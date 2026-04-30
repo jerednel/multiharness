@@ -554,6 +554,9 @@ public final class AppStore {
             try env.persistence.setSetting("default_provider_id", value: pid.uuidString)
             try env.persistence.setSetting("default_model_id", value: mid)
         } else {
+            // Settings has no DELETE; writing "" signals "absent" —
+            // getGlobalDefault treats a non-UUID provider string and an
+            // empty model string as nil.
             try env.persistence.setSetting("default_provider_id", value: "")
             try env.persistence.setSetting("default_model_id", value: "")
         }
