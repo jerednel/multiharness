@@ -205,7 +205,8 @@ struct RootView: View {
                 appStore.selectedProjectId = project.id
             }
         } catch {
-            quickCreateError = String(describing: error)
+            quickCreateError = (error as? LocalizedError)?.errorDescription
+                ?? error.localizedDescription
         }
     }
 

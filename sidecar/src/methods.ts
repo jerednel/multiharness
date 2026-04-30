@@ -227,6 +227,8 @@ export function registerMethods(
     "project.scan",
     "project.create",
     "project.setContext",
+    "project.listBranches",
+    "project.update",
     "models.listForProvider",
     "fs.list",
   ]) {
