@@ -425,6 +425,7 @@ public struct RemoteWorkspace: Identifiable, Sendable, Hashable {
 public struct RemoteProject: Identifiable, Sendable, Hashable {
     public let id: String
     public let name: String
+    public let defaultBaseBranch: String
     public let defaultBuildMode: BuildMode?
     public let contextInstructions: String
     init?(json: [String: Any]) {
@@ -433,6 +434,7 @@ public struct RemoteProject: Identifiable, Sendable, Hashable {
         else { return nil }
         self.id = id
         self.name = name
+        self.defaultBaseBranch = json["defaultBaseBranch"] as? String ?? "main"
         self.defaultBuildMode = (json["defaultBuildMode"] as? String).flatMap(BuildMode.init(rawValue:))
         self.contextInstructions = json["contextInstructions"] as? String ?? ""
     }
