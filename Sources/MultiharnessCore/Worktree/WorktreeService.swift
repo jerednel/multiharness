@@ -234,7 +234,7 @@ public struct WorktreeService: Sendable {
                 args: args, exitCode: p.terminationStatus, stderr: stderr
             )
         }
-        return stdout + stderr
+        return stdout
     }
 }
 
