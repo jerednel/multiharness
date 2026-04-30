@@ -1,6 +1,8 @@
-// Sources/MultiharnessClient/Models/BranchListing.swift
 import Foundation
 
+/// Response payload for the `project.listBranches` RPC. Describes the
+/// origin and local branches available in a project's git repository at
+/// the time of the last fetch.
 public struct BranchListing: Codable, Equatable, Sendable {
     public enum OriginUnavailableReason: String, Codable, Equatable, Sendable {
         case noRemote = "no_remote"
@@ -10,7 +12,9 @@ public struct BranchListing: Codable, Equatable, Sendable {
     public var origin: [String]?
     public var local: [String]
     public var originAvailable: Bool
+    /// Nil when `originAvailable` is true.
     public var originUnavailableReason: OriginUnavailableReason?
+    /// Unix timestamp in milliseconds (ms since epoch).
     public var fetchedAt: Int64
 
     public init(
