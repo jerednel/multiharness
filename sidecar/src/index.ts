@@ -35,12 +35,30 @@ process.on("unhandledRejection", (reason) => {
 });
 
 // Log signal-driven exits. SIGKILL bypasses this, but anything else
-// (SIGTERM, SIGINT, SIGABRT, SIGPIPE) leaves a breadcrumb.
-for (const sig of ["SIGTERM", "SIGINT", "SIGABRT", "SIGPIPE", "SIGSEGV"] as const) {
+// (SIGTERM, SIGINT, SIGABRT, SIGSEGV) leaves a breadcrumb.
+for (const sig of ["SIGTERM", "SIGINT", "SIGABRT", "SIGSEGV"] as const) {
   process.on(sig, () => {
     log.error(`received ${sig}`, { sig });
   });
 }
+
+// SIGPIPE means our stdout/stderr pipe closed (parent died without
+// cleanup, output got piped through `head -N` that exited, etc.). The
+// kernel default is to terminate the process; installing any handler
+// suppresses that. Previously we logged a breadcrumb and kept running,
+// but the next log write also EPIPEs and re-fires SIGPIPE — infinite
+// loop at 100% CPU, port stays bound, the sidecar can't reach READY
+// again. Restore the terminate-on-SIGPIPE behavior; the breadcrumb
+// is best-effort because the very pipe we'd write it to is the one
+// that closed.
+process.on("SIGPIPE", () => {
+  try {
+    log.error("received SIGPIPE — output pipe closed, exiting");
+  } catch {
+    // ignore — the pipe is the thing that broke
+  }
+  process.exit(0);
+});
 
 // Heartbeat every 2 seconds at warn level — we want this visible without
 // elevating MULTIHARNESS_LOG_LEVEL. If the sidecar dies suddenly we'll see
