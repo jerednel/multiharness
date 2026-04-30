@@ -10,6 +10,7 @@ import {
   type OAuthCredentials,
 } from "@mariozechner/pi-ai/oauth";
 import { log } from "./logger.js";
+import { loginAnthropicConsole } from "./anthropicConsoleAuth.js";
 
 /**
  * Persisted OAuth credentials for the supported providers. Lives at
@@ -149,24 +150,22 @@ const CONSOLE_API_KEY_MINT_URL =
   "https://api.anthropic.com/api/oauth/claude_cli/create_api_key";
 
 /**
- * Run the Anthropic OAuth dance, then mint a Console API key from the
- * resulting access token. The OAuth tokens are deliberately discarded —
- * the only artifact we keep is the minted API key, which the caller is
- * expected to stash in the Mac's Keychain.
+ * Run the Anthropic Console OAuth dance, then mint a Console API key
+ * from the resulting access token. The OAuth tokens are deliberately
+ * discarded — the only artifact we keep is the minted API key, which
+ * the caller is expected to stash in the Mac's Keychain.
+ *
+ * Distinct from {@link startAnthropicLogin} (Pro/Max). The two flows
+ * use the same client_id and scopes but different authorize hosts:
+ * Pro/Max → claude.ai (requires Claude Code seat on the consumer
+ * account); Console → platform.claude.com (authenticates against the
+ * user's Anthropic Console org instead). See {@link loginAnthropicConsole}.
  */
 export async function startAnthropicConsoleLogin(
   onAuth: (url: string) => void,
 ): Promise<{ apiKey: string }> {
-  const creds = await loginAnthropic({
-    onAuth: (info: { url: string }) => {
-      log.info("anthropic console oauth url", { url: info.url });
-      onAuth(info.url);
-    },
-    onPrompt: async () => {
-      throw new Error("interactive prompt not supported in sidecar OAuth flow");
-    },
-    onProgress: (msg: string) => log.info("anthropic console oauth progress", { msg }),
-  });
+  const creds = await loginAnthropicConsole(onAuth);
+  log.info("anthropic console oauth credentials exchanged");
   const apiKey = await mintAnthropicApiKey(creds.access);
   return { apiKey };
 }
