@@ -33,9 +33,9 @@
 		624C83AA83D7BBD38CB2D799 /* MultiharnessIOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = MultiharnessIOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		6AB5B7A5C62EABC14D79C4F0 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		6DF76228C3777F798E4B8408 /* WorkspacesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspacesView.swift; sourceTree = "<group>"; };
+		7CA150EA03612ACE63334836 /* florence */ = {isa = PBXFileReference; lastKnownFileType = folder; name = florence; path = ..; sourceTree = SOURCE_ROOT; };
 		840A215601F9E0C733815E32 /* RemoteAgentStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteAgentStore.swift; sourceTree = "<group>"; };
 		9839A87870E46B4E1749BEFC /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
-		B9469EBED32345F95F9C98ED /* valencia */ = {isa = PBXFileReference; lastKnownFileType = folder; name = valencia; path = ..; sourceTree = SOURCE_ROOT; };
 		C8F8840BC008DA280D106A3E /* DiscoveryBrowser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscoveryBrowser.swift; sourceTree = "<group>"; };
 		ECBC0A86EC7AD0685A743000 /* BrowseFolderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowseFolderView.swift; sourceTree = "<group>"; };
 		F970F56F4F3B5B839A3C392C /* WorkspaceDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceDetailView.swift; sourceTree = "<group>"; };
@@ -64,7 +64,7 @@
 		AF0A3A399F6C652F0D19BA40 /* Packages */ = {
 			isa = PBXGroup;
 			children = (
-				B9469EBED32345F95F9C98ED /* valencia */,
+				7CA150EA03612ACE63334836 /* florence */,
 			);
 			name = Packages;
 			sourceTree = "<group>";

@@ -25,6 +25,31 @@ public final class ConnectionStore: NSObject, ControlClientDelegate {
 
     private let client: ControlClient
 
+    // MARK: App-lifecycle reconnect state
+
+    /// True between `didEnterBackground()` and `didEnterForeground()`.
+    /// While true, we swallow disconnect callbacks so the UI doesn't
+    /// flip to `.error`.
+    private var isBackgrounded: Bool = false
+
+    /// True between `didEnterForeground()` and either reconnect
+    /// success or the 1 s timer firing — whichever comes first.
+    /// Disconnect callbacks during this window are deferred; state
+    /// changes are gated by it. Required so the slow-reconnect timer
+    /// can distinguish "preserved-`.connected` from before background"
+    /// from "freshly-`.connected` from a successful reconnect."
+    private var awaitingForegroundReconnect: Bool = false
+
+    /// If a `controlClientDidDisconnect` arrives while
+    /// `awaitingForegroundReconnect == true`, we stash its
+    /// description here. The timer body surfaces it as `.error(...)`
+    /// when the 1 s window expires.
+    private var deferredForegroundError: String?
+
+    /// Timer that flips `state` to `.connecting` if a foreground
+    /// reconnect hasn't completed within 1 s.
+    private var pendingReconnectTimer: Task<Void, Never>?
+
     public init(host: String, port: Int, token: String) {
         self.host = host
         self.port = port
@@ -39,8 +64,70 @@ public final class ConnectionStore: NSObject, ControlClientDelegate {
     }
 
     public func disconnect() {
+        pendingReconnectTimer?.cancel()
+        pendingReconnectTimer = nil
+        isBackgrounded = false
+        awaitingForegroundReconnect = false
+        deferredForegroundError = nil
         client.disconnect()
         state = .disconnected
+    }
+
+    /// Called from `App.body.onChange(of: scenePhase)` when the scene
+    /// transitions to `.background`. Closes the socket without
+    /// changing the user-visible `state`.
+    public func didEnterBackground() {
+        guard !isBackgrounded else { return }
+        isBackgrounded = true
+
+        pendingReconnectTimer?.cancel()
+        pendingReconnectTimer = nil
+
+        // Closes the socket so we don't return to a half-dead one. The
+        // close frame is best-effort — iOS gives the app a brief natural
+        // runtime window after `.background`, which usually suffices for
+        // URLSession to flush, but we don't try to extend it: the spec
+        // accepts close-frame loss as cosmetic (sidecar will time out
+        // the stale connection on its own).
+        client.disconnect()
+        // Note: deliberately NOT setting `state = .disconnected`. The
+        // user-visible state stays whatever it was (typically
+        // `.connected`); the resulting `controlClientDidDisconnect`
+        // callback is suppressed while `isBackgrounded == true`.
+    }
+
+    /// Called from `App.body.onChange(of: scenePhase)` when the scene
+    /// transitions to `.active`. Starts a fresh socket without
+    /// flipping the UI to `.connecting` for the first 1 s.
+    public func didEnterForeground() {
+        guard isBackgrounded else { return }
+        isBackgrounded = false
+        awaitingForegroundReconnect = true
+        deferredForegroundError = nil
+
+        // Because we always closed in `didEnterBackground()`, we
+        // always need a fresh socket here. Do NOT change `state` — the
+        // UI continues to render whatever it had (typically
+        // `.connected`).
+        client.connect()
+
+        pendingReconnectTimer?.cancel()
+        pendingReconnectTimer = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            guard !Task.isCancelled, let self else { return }
+            // If `controlClientDidConnect(_:)` already fired, both
+            // flags are cleared and we'd no-op below — but we may
+            // still race with it; the explicit guard makes intent
+            // obvious.
+            guard self.awaitingForegroundReconnect else { return }
+            self.awaitingForegroundReconnect = false
+            if let err = self.deferredForegroundError {
+                self.deferredForegroundError = nil
+                self.state = .error(err)
+            } else if self.state != .connected {
+                self.state = .connecting
+            }
+        }
     }
 
     public func refreshWorkspaces() async {
@@ -317,6 +404,10 @@ public final class ConnectionStore: NSObject, ControlClientDelegate {
 
     nonisolated public func controlClientDidConnect(_ client: ControlClient) {
         Task { @MainActor in
+            self.awaitingForegroundReconnect = false
+            self.deferredForegroundError = nil
+            self.pendingReconnectTimer?.cancel()
+            self.pendingReconnectTimer = nil
             self.state = .connected
             await self.refreshWorkspaces()
         }
@@ -324,6 +415,21 @@ public final class ConnectionStore: NSObject, ControlClientDelegate {
 
     nonisolated public func controlClientDidDisconnect(_ client: ControlClient, error: Error?) {
         Task { @MainActor in
+            // While the app is backgrounded, the WS close (initiated
+            // by `didEnterBackground()`) fires this callback. Swallow
+            // it — `state` should not flip to `.error`.
+            if self.isBackgrounded { return }
+            // Inside the 1 s foreground-reconnect window, a stale
+            // callback from the background-killed socket (or a
+            // genuine fast-failure of the new connect) should not
+            // flash a yield sign. Stash the message; the timer body
+            // surfaces it at the 1 s mark.
+            if self.awaitingForegroundReconnect {
+                self.deferredForegroundError = error.map { String(describing: $0) } ?? "disconnected"
+                return
+            }
+            self.pendingReconnectTimer?.cancel()
+            self.pendingReconnectTimer = nil
             self.state = .error(error.map { String(describing: $0) } ?? "disconnected")
         }
     }
