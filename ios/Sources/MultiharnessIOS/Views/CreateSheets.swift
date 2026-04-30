@@ -5,6 +5,7 @@ struct NewWorkspaceSheet: View {
     @Bindable var connection: ConnectionStore
     @Binding var isPresented: Bool
     var preselectedProjectId: String? = nil
+    var suggestion: WorkspaceSuggestion? = nil
 
     @State private var name: String = ""
     @State private var baseBranch: String = ""
@@ -109,10 +110,28 @@ struct NewWorkspaceSheet: View {
             }
         }
         .onAppear {
+            // Seed projectId from the explicit pre-selection or the first
+            // available project. Suggestion-derived fields override the
+            // existing defaults below.
             projectId = preselectedProjectId ?? connection.projects.first?.id ?? ""
-            providerId = connection.providers.first?.id ?? ""
-            buildMode = effectiveProjectDefault()
-            Task { await loadModels() }
+            if let s = suggestion {
+                name = s.name
+                if let b = s.baseBranch { baseBranch = b }
+                if let pid = s.providerId { providerId = pid }
+                if let mid = s.modelId, !mid.isEmpty {
+                    modelId = mid
+                    manualMode = true   // skip auto-load; we already have one
+                }
+                if let bm = s.buildMode { buildMode = bm }
+            } else {
+                providerId = connection.providers.first?.id ?? ""
+                buildMode = effectiveProjectDefault()
+            }
+            // Always kick off model loading unless we already have a model
+            // from the suggestion (which set manualMode above).
+            if !manualMode {
+                Task { await loadModels() }
+            }
         }
         .onChange(of: providerId) { _, _ in
             modelId = ""
