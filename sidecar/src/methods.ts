@@ -237,6 +237,23 @@ export function registerMethods(
     }
     return result;
   });
+
+  // Mark a workspace as viewed. The Mac handler writes last_viewed_at to
+  // SQLite. After the relay returns we also push a `workspace.activity`
+  // event so other connected clients (iOS, multi-instance) flip their
+  // local `unseen` flag immediately.
+  d.register("workspace.markViewed", async (params) => {
+    const result = await relay.dispatch("workspace.markViewed", params);
+    const wsId = typeof params.workspaceId === "string" ? params.workspaceId : "";
+    if (wsId) {
+      sink(wsId, {
+        type: "workspace.activity",
+        isStreaming: tracker.isStreaming(wsId),
+        lastAssistantAt: tracker.lastAssistantAt(wsId),
+      } as unknown as Parameters<EventEmit>[1]);
+    }
+    return result;
+  });
 }
 
 function requireString(p: Record<string, unknown>, name: string): string {
