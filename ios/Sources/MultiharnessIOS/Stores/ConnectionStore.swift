@@ -189,6 +189,33 @@ public final class ConnectionStore: NSObject, ControlClientDelegate {
         }
     }
 
+    public func listBranches(
+        projectId: String,
+        refresh: Bool = false
+    ) async throws -> BranchListing {
+        var params: [String: Any] = ["projectId": projectId]
+        if refresh { params["refresh"] = true }
+        let result = try await client.call(
+            method: "project.listBranches", params: params
+        ) as? [String: Any] ?? [:]
+
+        let originRaw = result["origin"]
+        let origin: [String]? = (originRaw is NSNull) ? nil : (originRaw as? [String])
+        let local = (result["local"] as? [String]) ?? []
+        let available = (result["originAvailable"] as? Bool) ?? false
+        let reasonRaw = result["originUnavailableReason"] as? String
+        let reason = reasonRaw.flatMap(BranchListing.OriginUnavailableReason.init(rawValue:))
+        let fetchedAt = (result["fetchedAt"] as? Int64)
+            ?? Int64((result["fetchedAt"] as? Double) ?? 0)
+        return BranchListing(
+            origin: origin,
+            local: local,
+            originAvailable: available,
+            originUnavailableReason: reason,
+            fetchedAt: fetchedAt
+        )
+    }
+
     /// Returns the new project's ID so the caller can preselect it in a
     /// follow-up "New workspace" flow.
     @discardableResult
