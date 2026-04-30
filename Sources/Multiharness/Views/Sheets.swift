@@ -279,7 +279,7 @@ struct SettingsSheet: View {
     @Binding var isPresented: Bool
     @State private var tab: SettingsTab = .providers
 
-    enum SettingsTab: Hashable { case providers, remote, permissions, sidebar }
+    enum SettingsTab: Hashable { case providers, remote, permissions, sidebar, defaults }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -288,6 +288,7 @@ struct SettingsSheet: View {
                 tabButton("Remote access", .remote)
                 tabButton("Permissions", .permissions)
                 tabButton("Sidebar", .sidebar)
+                tabButton("Defaults", .defaults)
                 Spacer()
             }
             Divider()
@@ -300,6 +301,8 @@ struct SettingsSheet: View {
                 PermissionsTab(env: env, appStore: appStore)
             case .sidebar:
                 SidebarTab(appStore: appStore)
+            case .defaults:
+                DefaultsTab(appStore: appStore)
             }
             Spacer()
             HStack {
@@ -510,6 +513,85 @@ private struct SidebarTab: View {
                 }
             }
             .pickerStyle(.radioGroup)
+        }
+    }
+}
+
+private struct DefaultsTab: View {
+    @Bindable var appStore: AppStore
+
+    @State private var draftProviderId: UUID? = nil
+    @State private var draftModelId: String = ""
+    @State private var saveError: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Defaults").font(.title3).bold()
+            Text("Used when creating a workspace if the project has no default and there's no prior workspace to inherit from. iPhone quick-create uses this too.")
+                .font(.caption).foregroundStyle(.secondary)
+
+            Picker("Default provider", selection: $draftProviderId) {
+                Text("None").tag(UUID?.none)
+                ForEach(appStore.providers, id: \.id) { p in
+                    Text(p.name).tag(UUID?.some(p.id))
+                }
+            }
+
+            if let pid = draftProviderId,
+               let provider = appStore.providers.first(where: { $0.id == pid }) {
+                ModelPicker(
+                    appStore: appStore,
+                    provider: provider,
+                    modelId: $draftModelId
+                )
+            } else {
+                Text("Pick a provider to choose a default model.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
+            HStack {
+                Button("Save") { save() }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(draftProviderId == nil || draftModelId.isEmpty)
+                Button("Clear", role: .destructive) { clear() }
+                    .disabled(draftProviderId == nil && draftModelId.isEmpty)
+                Spacer()
+            }
+            if let err = saveError {
+                Text(err).font(.caption).foregroundStyle(.red)
+            }
+            Spacer()
+        }
+        .onAppear {
+            // Switching tabs destroys+recreates the inactive branch, so
+            // .onAppear refires every visit. Only seed when the user hasn't
+            // already touched the drafts — otherwise we'd silently clobber
+            // unsaved selections on a tab round-trip.
+            guard draftProviderId == nil && draftModelId.isEmpty else { return }
+            if let cur = appStore.getGlobalDefault() {
+                draftProviderId = cur.providerId
+                draftModelId = cur.modelId
+            }
+        }
+    }
+
+    private func save() {
+        do {
+            try appStore.setGlobalDefault(providerId: draftProviderId, modelId: draftModelId)
+            saveError = nil
+        } catch {
+            saveError = String(describing: error)
+        }
+    }
+
+    private func clear() {
+        do {
+            try appStore.setGlobalDefault(providerId: nil, modelId: nil)
+            draftProviderId = nil
+            draftModelId = ""
+            saveError = nil
+        } catch {
+            saveError = String(describing: error)
         }
     }
 }

@@ -196,58 +196,113 @@ public final class WorkspaceStore {
 
     public enum QuickCreateError: Error, LocalizedError {
         case noProviderAvailable
+        case noModelAvailable
         public var errorDescription: String? {
             switch self {
             case .noProviderAvailable:
                 return "No provider configured. Add one in Settings."
+            case .noModelAvailable:
+                return "No model could be determined. Set one in Settings → Defaults or on the project."
             }
         }
     }
 
+    /// Output of the inheritance chain used by quick-create. The struct can
+    /// describe a fully-resolved tuple, a partial one ("we got a provider
+    /// but no model"), or nothing useful at all. `missing` is the list of
+    /// fields the chain couldn't fill — empty means quick-create may proceed.
+    public struct QuickCreateResolution: Sendable {
+        public let providerId: UUID?
+        public let modelId: String?
+        public let baseBranch: String
+        public let buildMode: BuildMode?
+        public let name: String
+
+        public var missing: [String] {
+            var m: [String] = []
+            if providerId == nil { m.append("provider") }
+            if modelId == nil || modelId?.isEmpty == true { m.append("model") }
+            return m
+        }
+    }
+
+    /// Pure resolver — no side effects, no creation. Both `quickCreate` and
+    /// the iOS relay handler call this and act on the result.
+    public func resolveQuickCreateInputs(
+        project: Project,
+        providers: [ProviderRecord],
+        globalDefault: (providerId: UUID, modelId: String)?
+    ) -> QuickCreateResolution {
+        let inherit = selected().flatMap { $0.projectId == project.id ? $0 : nil }
+
+        // Provider chain: inherit → project default → global default →
+        // first available. Each step only counts when the candidate id
+        // still maps to a real entry in `providers`.
+        let provider: ProviderRecord? = {
+            let candidates: [UUID?] = [
+                inherit?.providerId,
+                project.defaultProviderId,
+                globalDefault?.providerId,
+            ]
+            for c in candidates {
+                if let pid = c, let p = providers.first(where: { $0.id == pid }) {
+                    return p
+                }
+            }
+            return providers.first
+        }()
+
+        // Model chain: inherit → project default → provider default →
+        // global default. Only the last two depend on the resolved
+        // provider; the first two are project-scoped.
+        let modelId: String? = {
+            if let m = inherit?.modelId, !m.isEmpty { return m }
+            if let m = project.defaultModelId, !m.isEmpty { return m }
+            if let p = provider, let m = p.defaultModelId, !m.isEmpty { return m }
+            if let m = globalDefault?.modelId, !m.isEmpty { return m }
+            return nil
+        }()
+
+        let baseBranch = inherit?.baseBranch ?? project.defaultBaseBranch
+        let existingSlugs = Set(
+            workspaces.filter { $0.projectId == project.id }.map { $0.slug }
+        )
+        return QuickCreateResolution(
+            providerId: provider?.id,
+            modelId: modelId,
+            baseBranch: baseBranch,
+            buildMode: project.defaultBuildMode,
+            name: RandomName.generateUnique(avoiding: existingSlugs)
+        )
+    }
+
     /// One-click workspace creation. Inherits provider/model/baseBranch
     /// from the currently selected workspace (when it belongs to `project`)
-    /// or falls back to project defaults. Generates a unique
-    /// adjective-noun name.
+    /// or falls back through project default → global default → provider
+    /// default → first available. Generates a unique adjective-noun name.
     @discardableResult
     public func quickCreate(
         project: Project,
         providers: [ProviderRecord],
-        gitUserName: String
+        gitUserName: String,
+        globalDefault: (providerId: UUID, modelId: String)? = nil
     ) throws -> Workspace {
-        let inherit = selected().flatMap { $0.projectId == project.id ? $0 : nil }
-        let providerId = inherit?.providerId ?? project.defaultProviderId
-        let modelId = inherit?.modelId ?? project.defaultModelId
-        let baseBranch = inherit?.baseBranch ?? project.defaultBaseBranch
-
-        let provider: ProviderRecord
-        if let pid = providerId, let p = providers.first(where: { $0.id == pid }) {
-            provider = p
-        } else if let first = providers.first {
-            provider = first
-        } else {
-            throw QuickCreateError.noProviderAvailable
-        }
-
-        let resolvedModelId = modelId
-            ?? provider.defaultModelId
-            ?? ""
-        guard !resolvedModelId.isEmpty else {
-            throw QuickCreateError.noProviderAvailable
-        }
-
-        let existingSlugs = Set(
-            workspaces
-                .filter { $0.projectId == project.id }
-                .map { $0.slug }
+        let resolution = resolveQuickCreateInputs(
+            project: project, providers: providers, globalDefault: globalDefault
         )
-        let name = RandomName.generateUnique(avoiding: existingSlugs)
+        guard let pid = resolution.providerId,
+              let provider = providers.first(where: { $0.id == pid })
+        else { throw QuickCreateError.noProviderAvailable }
+        guard let modelId = resolution.modelId, !modelId.isEmpty
+        else { throw QuickCreateError.noModelAvailable }
         return try create(
             project: project,
-            name: name,
-            baseBranch: baseBranch,
+            name: resolution.name,
+            baseBranch: resolution.baseBranch,
             provider: provider,
-            modelId: resolvedModelId,
+            modelId: modelId,
             gitUserName: gitUserName,
+            buildMode: resolution.buildMode,
             nameSource: .random
         )
     }

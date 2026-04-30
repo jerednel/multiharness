@@ -52,6 +52,12 @@ enum RemoteHandlers {
                 workspaceStore: workspaceStore
             )
         }
+        await relay.register(method: "workspace.quickCreate") { params in
+            try await Self.workspaceQuickCreate(
+                params: params,
+                env: env, appStore: appStore, workspaceStore: workspaceStore
+            )
+        }
         await relay.register(method: "project.listBranches") { params in
             guard let pidStr = params["projectId"] as? String,
                   let pid = UUID(uuidString: pidStr),
@@ -272,6 +278,88 @@ enum RemoteHandlers {
             "modelId": workspace.modelId,
             "buildMode": resolvedMode.rawValue,
         ]
+    }
+
+    // MARK: - workspace.quickCreate
+
+    @MainActor
+    private static func workspaceQuickCreate(
+        params: [String: Any],
+        env: AppEnvironment,
+        appStore: AppStore,
+        workspaceStore: WorkspaceStore
+    ) async throws -> Any? {
+        guard let projectIdStr = params["projectId"] as? String,
+              let projectId = UUID(uuidString: projectIdStr) else {
+            throw RemoteError.bad("projectId required (UUID string)")
+        }
+        guard let project = appStore.projects.first(where: { $0.id == projectId }) else {
+            throw RemoteError.bad("project not found")
+        }
+
+        let resolution = workspaceStore.resolveQuickCreateInputs(
+            project: project,
+            providers: appStore.providers,
+            globalDefault: appStore.getGlobalDefault()
+        )
+
+        if !resolution.missing.isEmpty {
+            // Partial resolution. iOS uses `suggested` to pre-fill the
+            // recovery sheet; missing tells it which fields to focus on.
+            var suggested: [String: Any] = [
+                "name": resolution.name,
+                "baseBranch": resolution.baseBranch,
+            ]
+            if let pid = resolution.providerId { suggested["providerId"] = pid.uuidString }
+            if let mid = resolution.modelId { suggested["modelId"] = mid }
+            if let bm = resolution.buildMode { suggested["buildMode"] = bm.rawValue }
+            return [
+                "status": "needs_input",
+                "missing": resolution.missing,
+                "suggested": suggested,
+            ] as [String: Any]
+        }
+
+        // Resolution complete — proceed.
+        guard let pid = resolution.providerId,
+              let provider = appStore.providers.first(where: { $0.id == pid }),
+              let modelId = resolution.modelId, !modelId.isEmpty else {
+            // Defensive: missing is empty but the unwraps fail — shouldn't
+            // happen given the resolver's invariants, but don't proceed
+            // with garbage.
+            throw RemoteError.bad("resolution incomplete")
+        }
+        let userName = NSUserName()
+        let workspace = try workspaceStore.create(
+            project: project,
+            name: resolution.name,
+            baseBranch: resolution.baseBranch,
+            provider: provider,
+            modelId: modelId,
+            gitUserName: userName,
+            buildMode: resolution.buildMode,
+            nameSource: .random
+        )
+        await appStore.bootstrapAllSessions(workspaces: [workspace])
+
+        let resolvedMode = workspace.effectiveBuildMode(
+            in: appStore.projects.first(where: { $0.id == project.id }) ?? project
+        )
+
+        return [
+            "status": "created",
+            "workspace": [
+                "id": workspace.id.uuidString,
+                "name": workspace.name,
+                "branchName": workspace.branchName,
+                "worktreePath": workspace.worktreePath,
+                "lifecycleState": workspace.lifecycleState.rawValue,
+                "modelId": workspace.modelId,
+                "buildMode": resolvedMode.rawValue,
+                "projectId": workspace.projectId.uuidString,
+                "baseBranch": workspace.baseBranch,
+            ] as [String: Any],
+        ] as [String: Any]
     }
 
     // MARK: - project.scan
