@@ -117,12 +117,12 @@ struct NewWorkspaceSheet: View {
             if let s = suggestion {
                 name = s.name
                 if let b = s.baseBranch { baseBranch = b }
-                if let pid = s.providerId { providerId = pid }
+                providerId = s.providerId ?? connection.providers.first?.id ?? ""
                 if let mid = s.modelId, !mid.isEmpty {
                     modelId = mid
                     manualMode = true   // skip auto-load; we already have one
                 }
-                if let bm = s.buildMode { buildMode = bm }
+                buildMode = s.buildMode ?? effectiveProjectDefault()
             } else {
                 providerId = connection.providers.first?.id ?? ""
                 buildMode = effectiveProjectDefault()
@@ -134,6 +134,10 @@ struct NewWorkspaceSheet: View {
             }
         }
         .onChange(of: providerId) { _, _ in
+            // Skip the reset when the user is in manual mode — typically
+            // because a quick-create suggestion just seeded a specific
+            // model id that we'd otherwise wipe back to "".
+            guard !manualMode else { return }
             modelId = ""
             loadedModels = []
             modelLoadError = nil
