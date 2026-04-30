@@ -48,7 +48,7 @@ struct ProjectSettingsSheet: View {
                     Spacer()
                     statusLabel(for: baseBranchSaveState)
                 }
-                Text("Pre-selects the base branch in the New Workspace sheet.")
+                Text("New workspaces in this project start from this branch — used by Quick Create and pre-selected in the New Workspace sheet.")
                     .font(.caption).foregroundStyle(.secondary)
                 BranchPicker(
                     selection: $baseBranchSelection,

@@ -263,7 +263,13 @@ public final class WorkspaceStore {
             return nil
         }()
 
-        let baseBranch = inherit?.baseBranch ?? project.defaultBaseBranch
+        // Base branch: project default wins over inherit. Once a user sets
+        // a project base branch, every new workspace should start from it,
+        // regardless of which workspace was last selected. (The full New
+        // Workspace sheet still lets them pick any branch manually.)
+        let baseBranch = project.defaultBaseBranch.isEmpty
+            ? (inherit?.baseBranch ?? project.defaultBaseBranch)
+            : project.defaultBaseBranch
         let existingSlugs = Set(
             workspaces.filter { $0.projectId == project.id }.map { $0.slug }
         )
