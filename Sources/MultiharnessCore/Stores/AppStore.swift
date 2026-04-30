@@ -133,6 +133,40 @@ public final class AppStore {
         }
     }
 
+    /// Change a workspace's provider and/or model. Persists the new
+    /// values, kills the current sidecar session (the agent's model is
+    /// baked in at construction), and recreates the session with the
+    /// new config. The persisted JSONL history is untouched — past
+    /// turns still render in the UI — but the new session starts with a
+    /// fresh inference buffer.
+    @MainActor
+    public func changeWorkspaceProviderAndModel(
+        workspaceStore: WorkspaceStore,
+        workspace: Workspace,
+        providerId: UUID,
+        modelId: String
+    ) async throws {
+        if workspace.providerId == providerId && workspace.modelId == modelId {
+            return
+        }
+        guard let idx = workspaceStore.workspaces.firstIndex(where: { $0.id == workspace.id }) else {
+            return
+        }
+        var updated = workspaceStore.workspaces[idx]
+        updated.providerId = providerId
+        updated.modelId = modelId
+        try env.persistence.upsertWorkspace(updated)
+        workspaceStore.workspaces[idx] = updated
+
+        if let client = env.control {
+            _ = try? await client.call(
+                method: "agent.dispose",
+                params: ["workspaceId": workspace.id.uuidString]
+            )
+        }
+        try await createAgentSession(for: updated)
+    }
+
     /// Persist a new project-level context override and push it to every
     /// live agent session inside that project.
     @MainActor
