@@ -32,6 +32,20 @@ public final class ConnectionStore: NSObject, ControlClientDelegate {
     /// flip to `.error`.
     private var isBackgrounded: Bool = false
 
+    /// True between `didEnterForeground()` and either reconnect
+    /// success or the 1 s timer firing — whichever comes first.
+    /// Disconnect callbacks during this window are deferred; state
+    /// changes are gated by it. Required so the slow-reconnect timer
+    /// can distinguish "preserved-`.connected` from before background"
+    /// from "freshly-`.connected` from a successful reconnect."
+    private var awaitingForegroundReconnect: Bool = false
+
+    /// If a `controlClientDidDisconnect` arrives while
+    /// `awaitingForegroundReconnect == true`, we stash its
+    /// description here. The timer body surfaces it as `.error(...)`
+    /// when the 1 s window expires.
+    private var deferredForegroundError: String?
+
     /// Timer that flips `state` to `.connecting` if a foreground
     /// reconnect hasn't completed within 1 s.
     private var pendingReconnectTimer: Task<Void, Never>?
@@ -53,6 +67,8 @@ public final class ConnectionStore: NSObject, ControlClientDelegate {
         pendingReconnectTimer?.cancel()
         pendingReconnectTimer = nil
         isBackgrounded = false
+        awaitingForegroundReconnect = false
+        deferredForegroundError = nil
         client.disconnect()
         state = .disconnected
     }
@@ -86,6 +102,8 @@ public final class ConnectionStore: NSObject, ControlClientDelegate {
     public func didEnterForeground() {
         guard isBackgrounded else { return }
         isBackgrounded = false
+        awaitingForegroundReconnect = true
+        deferredForegroundError = nil
 
         // Because we always closed in `didEnterBackground()`, we
         // always need a fresh socket here. Do NOT change `state` — the
@@ -97,15 +115,16 @@ public final class ConnectionStore: NSObject, ControlClientDelegate {
         pendingReconnectTimer = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 1_000_000_000)
             guard !Task.isCancelled, let self else { return }
-            // Preserve any state set during the 1 s window:
-            //   - .connected  → we beat the timer; do nothing.
-            //   - .error      → a real failure already surfaced; don't
-            //                   overwrite it back to .connecting.
-            // Only flip when we're still in a "no news" state.
-            switch self.state {
-            case .connected, .error:
-                return
-            case .disconnected, .connecting:
+            // If `controlClientDidConnect(_:)` already fired, both
+            // flags are cleared and we'd no-op below — but we may
+            // still race with it; the explicit guard makes intent
+            // obvious.
+            guard self.awaitingForegroundReconnect else { return }
+            self.awaitingForegroundReconnect = false
+            if let err = self.deferredForegroundError {
+                self.deferredForegroundError = nil
+                self.state = .error(err)
+            } else if self.state != .connected {
                 self.state = .connecting
             }
         }
@@ -385,6 +404,8 @@ public final class ConnectionStore: NSObject, ControlClientDelegate {
 
     nonisolated public func controlClientDidConnect(_ client: ControlClient) {
         Task { @MainActor in
+            self.awaitingForegroundReconnect = false
+            self.deferredForegroundError = nil
             self.pendingReconnectTimer?.cancel()
             self.pendingReconnectTimer = nil
             self.state = .connected
@@ -398,6 +419,15 @@ public final class ConnectionStore: NSObject, ControlClientDelegate {
             // by `didEnterBackground()`) fires this callback. Swallow
             // it — `state` should not flip to `.error`.
             if self.isBackgrounded { return }
+            // Inside the 1 s foreground-reconnect window, a stale
+            // callback from the background-killed socket (or a
+            // genuine fast-failure of the new connect) should not
+            // flash a yield sign. Stash the message; the timer body
+            // surfaces it at the 1 s mark.
+            if self.awaitingForegroundReconnect {
+                self.deferredForegroundError = error.map { String(describing: $0) } ?? "disconnected"
+                return
+            }
             self.pendingReconnectTimer?.cancel()
             self.pendingReconnectTimer = nil
             self.state = .error(error.map { String(describing: $0) } ?? "disconnected")
