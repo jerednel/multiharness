@@ -12,6 +12,8 @@ struct WorkspacesView: View {
     @State private var expandedProjectIds: Set<String> = []
     @State private var preselectedProjectId: String? = nil
     @State private var pendingSuggestion: WorkspaceSuggestion? = nil
+    @State private var quickCreateError: String? = nil
+    @State private var quickCreateInFlight: Set<String> = []
     /// Set when the user just added a project; on the project sheet's
     /// dismissal we open the New Workspace sheet as a follow-up.
     @State private var pendingAutoNewWorkspace = false
@@ -114,6 +116,15 @@ struct WorkspacesView: View {
                 )
             )
         }
+        .alert(
+            "Couldn't create workspace",
+            isPresented: Binding(
+                get: { quickCreateError != nil },
+                set: { if !$0 { quickCreateError = nil } }
+            ),
+            actions: { Button("OK") { quickCreateError = nil } },
+            message: { Text(quickCreateError ?? "") }
+        )
     }
 
     private var connectingView: some View {
@@ -205,8 +216,11 @@ struct WorkspacesView: View {
                                     Image(systemName: "plus.circle")
                                         .font(.body)
                                 }
-                                .buttonStyle(.borderless)
-                                .disabled(connection.providers.isEmpty)
+                                .buttonStyle(.plain)
+                                .disabled(
+                                    connection.providers.isEmpty
+                                    || quickCreateInFlight.contains(group.project.id)
+                                )
                                 .accessibilityLabel("New workspace in \(group.project.name)")
                                 Text("\(group.workspaces.count)")
                                     .font(.caption).foregroundStyle(.secondary)
@@ -244,6 +258,9 @@ struct WorkspacesView: View {
 
     @MainActor
     private func runQuickCreate(projectId: String) async {
+        guard !quickCreateInFlight.contains(projectId) else { return }
+        quickCreateInFlight.insert(projectId)
+        defer { quickCreateInFlight.remove(projectId) }
         let outcome = await connection.quickCreateWorkspace(projectId: projectId)
         switch outcome {
         case .created:
@@ -254,10 +271,7 @@ struct WorkspacesView: View {
             pendingSuggestion = suggestion
             showingNewWorkspace = true
         case .failed(let msg):
-            // Surface via the connection's error state — same path the
-            // ControlClientDelegate uses for disconnects, so the user
-            // sees it on the standard error overlay.
-            connection.state = .error(msg)
+            quickCreateError = msg
         }
     }
 
