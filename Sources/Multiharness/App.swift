@@ -14,8 +14,14 @@ struct MultiharnessApp: App {
     var body: some Scene {
         WindowGroup("Multiharness") {
             Group {
-                if let appStore, let workspaceStore, let env {
-                    RootView(env: env, appStore: appStore, workspaceStore: workspaceStore, agentRegistry: agentRegistry)
+                if let appStore, let workspaceStore, let env, let branchListService {
+                    RootView(
+                        env: env,
+                        appStore: appStore,
+                        workspaceStore: workspaceStore,
+                        agentRegistry: agentRegistry,
+                        branchListService: branchListService
+                    )
                 } else if let bootError {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Multiharness failed to start").font(.title2)

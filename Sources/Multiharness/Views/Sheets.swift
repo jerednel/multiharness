@@ -1,5 +1,6 @@
 import SwiftUI
 import MultiharnessCore
+import MultiharnessClient
 import AppKit
 import CoreImage
 import CoreImage.CIFilterBuiltins
@@ -76,6 +77,7 @@ struct NewProjectSheet: View {
 struct NewWorkspaceSheet: View {
     @Bindable var appStore: AppStore
     @Bindable var workspaceStore: WorkspaceStore
+    let branchListService: BranchListService
     @Binding var isPresented: Bool
 
     @State private var name: String = ""
@@ -94,7 +96,18 @@ struct NewWorkspaceSheet: View {
                 Form {
                     LabeledContent("Project") { Text(proj.name) }
                     TextField("Workspace name", text: $name)
-                    TextField("Base branch", text: $baseBranch, prompt: Text(proj.defaultBaseBranch))
+                    LabeledContent("Base branch") {
+                        BranchPicker(
+                            selection: $baseBranch,
+                            initialDefault: proj.defaultBaseBranch
+                        ) { refresh in
+                            try await branchListService.list(
+                                projectId: proj.id,
+                                repoPath: proj.repoPath,
+                                refresh: refresh
+                            )
+                        }
+                    }
                     Picker("Provider", selection: $providerId) {
                         ForEach(appStore.providers) { p in
                             Text(p.name).tag(Optional(p.id))
@@ -136,9 +149,6 @@ struct NewWorkspaceSheet: View {
         }
         .padding(24).frame(width: 600, height: 680)
         .onAppear {
-            if let proj = appStore.selectedProject, baseBranch.isEmpty {
-                baseBranch = proj.defaultBaseBranch
-            }
             if providerId == nil { providerId = appStore.providers.first?.id }
             if let proj = appStore.selectedProject {
                 buildMode = effectiveProjectDefault(proj)
