@@ -119,6 +119,36 @@ public final class ConnectionStore: NSObject, ControlClientDelegate {
         await refreshWorkspaces()
     }
 
+    /// One-tap workspace creation. Asks the Mac to resolve inheritance via
+    /// `workspace.quickCreate`. On `created` the workspace appears via the
+    /// existing `workspace_updated`/refresh path. On `needs_input` the caller
+    /// (WorkspacesView) opens NewWorkspaceSheet pre-filled with the
+    /// suggestion.
+    public func quickCreateWorkspace(projectId: String) async -> QuickCreateOutcome {
+        do {
+            let result = try await client.call(
+                method: "workspace.quickCreate",
+                params: ["projectId": projectId]
+            ) as? [String: Any]
+            let status = result?["status"] as? String
+            switch status {
+            case "created":
+                await refreshWorkspaces()
+                return .created
+            case "needs_input":
+                guard let suggestedDict = result?["suggested"] as? [String: Any],
+                      let suggestion = WorkspaceSuggestion(json: suggestedDict) else {
+                    return .failed("malformed needs_input response")
+                }
+                return .needsInput(suggestion)
+            default:
+                return .failed("unexpected status: \(status ?? "nil")")
+            }
+        } catch {
+            return .failed(String(describing: error))
+        }
+    }
+
     /// Display-name-only rename. Routed through the sidecar's
     /// `workspace.rename` (relayed to the Mac, which persists). The
     /// sidecar broadcasts a `workspace_updated` event after the relay
@@ -420,4 +450,27 @@ public struct FolderListing: Sendable {
     public let path: String
     public let parent: String?
     public let entries: [FolderEntry]
+}
+
+public struct WorkspaceSuggestion: Sendable, Equatable {
+    public let name: String
+    public let baseBranch: String?
+    public let providerId: String?
+    public let modelId: String?
+    public let buildMode: BuildMode?
+
+    init?(json: [String: Any]) {
+        guard let name = json["name"] as? String, !name.isEmpty else { return nil }
+        self.name = name
+        self.baseBranch = json["baseBranch"] as? String
+        self.providerId = json["providerId"] as? String
+        self.modelId = json["modelId"] as? String
+        self.buildMode = (json["buildMode"] as? String).flatMap(BuildMode.init(rawValue:))
+    }
+}
+
+public enum QuickCreateOutcome: Sendable, Equatable {
+    case created
+    case needsInput(WorkspaceSuggestion)
+    case failed(String)
 }
