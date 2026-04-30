@@ -194,7 +194,8 @@ struct RootView: View {
             _ = try workspaceStore.quickCreate(
                 project: project,
                 providers: appStore.providers,
-                gitUserName: NSUserName()
+                gitUserName: NSUserName(),
+                globalDefault: appStore.getGlobalDefault()
             )
             if appStore.sidebarMode == .allProjects {
                 appStore.selectedProjectId = project.id
