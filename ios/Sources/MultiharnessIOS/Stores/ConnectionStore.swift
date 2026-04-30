@@ -236,6 +236,20 @@ public final class ConnectionStore: NSObject, ControlClientDelegate {
         return newId
     }
 
+    public func updateProject(
+        projectId: String,
+        defaultBaseBranch: String
+    ) async throws {
+        _ = try await client.call(
+            method: "project.update",
+            params: [
+                "projectId": projectId,
+                "defaultBaseBranch": defaultBaseBranch,
+            ]
+        )
+        await refreshWorkspaces()
+    }
+
     // MARK: ControlClientDelegate
 
     nonisolated public func controlClient(_ client: ControlClient, didReceiveEvent event: AgentEventEnvelope) {
