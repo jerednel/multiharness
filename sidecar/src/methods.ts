@@ -11,6 +11,7 @@ import {
   hasAnthropicCreds,
   hasOpenAICodexCreds,
   startAnthropicLogin,
+  startAnthropicConsoleLogin,
   startOpenAICodexLogin,
   type OAuthStore,
 } from "./oauthStore.js";
@@ -178,6 +179,21 @@ export function registerMethods(
       const reason = e instanceof Error ? e.message : String(e);
       log.error("anthropic oauth login failed", { reason });
       sink("", { type: "anthropic_auth_complete", ok: false, error: reason });
+      throw e;
+    }
+  });
+
+  d.register("auth.anthropic.console.start", async () => {
+    try {
+      const { apiKey } = await startAnthropicConsoleLogin((url) => {
+        sink("", { type: "anthropic_console_auth_url", url });
+      });
+      sink("", { type: "anthropic_console_auth_complete", ok: true });
+      return { apiKey };
+    } catch (e) {
+      const reason = e instanceof Error ? e.message : String(e);
+      log.error("anthropic console oauth login failed", { reason });
+      sink("", { type: "anthropic_console_auth_complete", ok: false, error: reason });
       throw e;
     }
   });

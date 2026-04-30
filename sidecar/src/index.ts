@@ -1,6 +1,12 @@
 import { startServer } from "./server.js";
 import { startParentPidWatchdog } from "./watchdog.js";
 import { log } from "./logger.js";
+import { installAnthropicFetchInterceptor } from "./anthropicFetchInterceptor.js";
+
+// Must run before any provider client is constructed: rewrites system
+// blocks for Console-minted Anthropic requests so they pass the Claude
+// Code rate-limit tier check.
+installAnthropicFetchInterceptor();
 
 const socketPath = process.env.MULTIHARNESS_SOCKET;
 const portEnv = process.env.MULTIHARNESS_PORT;

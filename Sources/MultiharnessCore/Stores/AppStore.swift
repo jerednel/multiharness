@@ -18,6 +18,7 @@ public final class AppStore {
         }
     }
     public static let sidebarModeDefaultsKey = "MultiharnessSidebarMode"
+    public static let anthropicConsoleProviderName = "Claude (API Usage Billing)"
     public var sidecarStatus: SidecarManager.Status = .stopped
     public var lastError: String?
     /// Increments every time the sidecar (re)binds. Views observe this to
@@ -33,6 +34,9 @@ public final class AppStore {
     /// True while a ChatGPT (OpenAI Codex) OAuth login is in flight.
     public var openaiLoginInProgress: Bool = false
     public var openaiLoginError: String?
+    /// True while an Anthropic Console (API Usage Billing) login is in flight.
+    public var anthropicConsoleLoginInProgress: Bool = false
+    public var anthropicConsoleLoginError: String?
 
     private let env: AppEnvironment
     public var appEnv: AppEnvironment { env }
@@ -127,6 +131,40 @@ public final class AppStore {
                 ]
             )
         }
+    }
+
+    /// Change a workspace's provider and/or model. Persists the new
+    /// values, kills the current sidecar session (the agent's model is
+    /// baked in at construction), and recreates the session with the
+    /// new config. The persisted JSONL history is untouched — past
+    /// turns still render in the UI — but the new session starts with a
+    /// fresh inference buffer.
+    @MainActor
+    public func changeWorkspaceProviderAndModel(
+        workspaceStore: WorkspaceStore,
+        workspace: Workspace,
+        providerId: UUID,
+        modelId: String
+    ) async throws {
+        if workspace.providerId == providerId && workspace.modelId == modelId {
+            return
+        }
+        guard let idx = workspaceStore.workspaces.firstIndex(where: { $0.id == workspace.id }) else {
+            return
+        }
+        var updated = workspaceStore.workspaces[idx]
+        updated.providerId = providerId
+        updated.modelId = modelId
+        try env.persistence.upsertWorkspace(updated)
+        workspaceStore.workspaces[idx] = updated
+
+        if let client = env.control {
+            _ = try? await client.call(
+                method: "agent.dispose",
+                params: ["workspaceId": workspace.id.uuidString]
+            )
+        }
+        try await createAgentSession(for: updated)
     }
 
     /// Persist a new project-level context override and push it to every
@@ -335,6 +373,9 @@ public final class AppStore {
                 "modelId": modelId,
             ]
             if let key = apiKey(for: provider) { cfg["apiKey"] = key }
+            if provider.name == Self.anthropicConsoleProviderName {
+                cfg["consoleMint"] = true
+            }
             return cfg
         case .openaiCompatible:
             var cfg: [String: Any] = [
@@ -427,6 +468,50 @@ public final class AppStore {
             }
         } catch {
             openaiLoginError = String(describing: error)
+        }
+    }
+
+    /// Kick off the Anthropic Console OAuth flow. Unlike Pro/Max, the
+    /// sidecar mints a real Console API key (sk-ant-api03-…) and returns
+    /// it; we stash the key in Keychain and register a normal pi-known
+    /// anthropic provider. Subsequent calls bill as API usage on the
+    /// user's Console org.
+    public func signInWithAnthropicConsole() async {
+        guard let client = env.control else {
+            anthropicConsoleLoginError = "control client not connected"
+            return
+        }
+        anthropicConsoleLoginInProgress = true
+        anthropicConsoleLoginError = nil
+        defer { anthropicConsoleLoginInProgress = false }
+        do {
+            let result = try await client.call(
+                method: "auth.anthropic.console.start",
+                params: [:]
+            )
+            guard
+                let dict = result as? [String: Any],
+                let apiKey = dict["apiKey"] as? String,
+                apiKey.hasPrefix("sk-ant-api")
+            else {
+                anthropicConsoleLoginError = "sidecar returned an unexpected payload: \(String(describing: result))"
+                return
+            }
+            let countBefore = providers.count
+            addProvider(
+                name: Self.anthropicConsoleProviderName,
+                kind: .piKnown,
+                piProvider: "anthropic",
+                baseUrl: nil,
+                defaultModelId: nil,
+                apiKey: apiKey
+            )
+            if providers.count == countBefore {
+                anthropicConsoleLoginError =
+                    "minted API key, but failed to save provider locally: \(lastError ?? "unknown error"). Revoke the orphaned key in console.anthropic.com and retry."
+            }
+        } catch {
+            anthropicConsoleLoginError = String(describing: error)
         }
     }
 

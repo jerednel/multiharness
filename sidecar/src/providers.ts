@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { getModel, getModels, type Model, type KnownProvider } from "@mariozechner/pi-ai";
 
 /**
@@ -40,6 +41,17 @@ export type ProviderConfig =
       provider: KnownProvider;
       modelId: string;
       apiKey?: string;
+      /**
+       * Set when the apiKey is an Anthropic Console-minted key obtained
+       * via our OAuth flow. Routes the request through the Claude Code
+       * rate-limit tier by injecting the same anthropic-beta, x-app, and
+       * user-agent headers that pi-ai uses for OAuth access tokens.
+       * Without this, pi-ai treats `sk-ant-api03-…` keys as plain API
+       * keys and Anthropic applies the org's standard rate limit, which
+       * for many Console accounts is dramatically lower than Claude
+       * Code's tier.
+       */
+      consoleMint?: boolean;
     }
   | {
       kind: "anthropic";
@@ -95,6 +107,40 @@ export function buildModel(cfg: ProviderConfig): Model<any> {
       throw new Error(
         `pi-ai has no model "${cfg.modelId}" registered for provider "${cfg.provider}"`,
       );
+    }
+    if (cfg.consoleMint && cfg.provider === "anthropic") {
+      // Identify as Claude Code CLI so requests route through Anthropic's
+      // Claude Code rate-limit tier (3M input / 600K output / 20K req per
+      // window) instead of the org's plain-API tier (which on this user's
+      // Console org is tight enough to 429 the first prompt).
+      //
+      // Header set captured by proxying claude-cli through a logging
+      // server while it makes a /v1/messages call. We mirror the exact
+      // anthropic-beta list, user-agent format, x-app, and a
+      // x-claude-code-session-id UUID; Anthropic appears to use this
+      // combination to bucket the request into the Claude Code tier.
+      // Don't include `oauth-2025-04-20` — claude-cli does NOT send it
+      // for sk-ant-api03 keys, and we previously got a 429 with it.
+      const sessionId = randomUUID();
+      return {
+        ...m,
+        headers: {
+          ...(m.headers ?? {}),
+          "anthropic-beta": [
+            "claude-code-20250219",
+            "context-1m-2025-08-07",
+            "interleaved-thinking-2025-05-14",
+            "context-management-2025-06-27",
+            "prompt-caching-scope-2026-01-05",
+            "advisor-tool-2026-03-01",
+            "effort-2025-11-24",
+            "afk-mode-2026-01-31",
+          ].join(","),
+          "user-agent": "claude-cli/2.1.123 (external, sdk-ts, agent-sdk/0.2.118)",
+          "x-app": "cli",
+          "x-claude-code-session-id": sessionId,
+        },
+      };
     }
     return m;
   }

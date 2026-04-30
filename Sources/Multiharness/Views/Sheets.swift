@@ -375,6 +375,31 @@ private struct ProvidersTab: View {
                     }
                     Spacer()
                 }
+                HStack(spacing: 8) {
+                    Button {
+                        Task { await appStore.signInWithAnthropicConsole() }
+                    } label: {
+                        HStack(spacing: 6) {
+                            if appStore.anthropicConsoleLoginInProgress {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Image(systemName: "creditcard")
+                            }
+                            Text(hasConsoleProvider(appStore)
+                                 ? "Re-authenticate Claude Console"
+                                 : "Sign in with Claude (API Usage Billing)")
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.blue)
+                    .disabled(appStore.anthropicConsoleLoginInProgress)
+                    if let err = appStore.anthropicConsoleLoginError {
+                        Text(err).font(.caption).foregroundStyle(.red).lineLimit(2)
+                    } else if hasConsoleProvider(appStore) {
+                        Text("Signed in").font(.caption).foregroundStyle(.green)
+                    }
+                    Spacer()
+                }
             }
             ScrollView {
                 VStack(spacing: 4) {
@@ -420,6 +445,14 @@ private struct ProvidersTab: View {
         }
     }
 
+    private func hasConsoleProvider(_ store: AppStore) -> Bool {
+        store.providers.contains { p in
+            p.kind == .piKnown
+            && p.piProvider == "anthropic"
+            && p.name == AppStore.anthropicConsoleProviderName
+        }
+    }
+
     private func applyPreset(_ id: String) {
         guard let preset = ProviderPreset.builtins.first(where: { $0.id == id }) else { return }
         manualName = preset.displayName
@@ -428,6 +461,11 @@ private struct ProvidersTab: View {
     }
 
     private func addProvider() {
+        if manualName == AppStore.anthropicConsoleProviderName {
+            appStore.lastError =
+                "Provider name \"\(AppStore.anthropicConsoleProviderName)\" is reserved — use the Sign in button instead."
+            return
+        }
         let pi: String?
         if manualKind == .piKnown {
             pi = ProviderPreset.builtins.first(where: { $0.id == selectedPresetId })?.piProvider

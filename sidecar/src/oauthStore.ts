@@ -10,6 +10,7 @@ import {
   type OAuthCredentials,
 } from "@mariozechner/pi-ai/oauth";
 import { log } from "./logger.js";
+import { loginAnthropicConsole } from "./anthropicConsoleAuth.js";
 
 /**
  * Persisted OAuth credentials for the supported providers. Lives at
@@ -141,4 +142,65 @@ export async function getOpenAICodexAccessToken(store: OAuthStore): Promise<stri
 export async function hasOpenAICodexCreds(store: OAuthStore): Promise<boolean> {
   const creds = await store.load("openai-codex");
   return Boolean(creds && creds.refresh);
+}
+
+// ── Anthropic Console (API Usage Billing) ─────────────────────────────────
+
+const CONSOLE_API_KEY_MINT_URL =
+  "https://api.anthropic.com/api/oauth/claude_cli/create_api_key";
+
+/**
+ * Run the Anthropic Console OAuth dance, then mint a Console API key
+ * from the resulting access token. The OAuth tokens are deliberately
+ * discarded — the only artifact we keep is the minted API key, which
+ * the caller is expected to stash in the Mac's Keychain.
+ *
+ * Distinct from {@link startAnthropicLogin} (Pro/Max). The two flows
+ * use the same client_id and scopes but different authorize hosts:
+ * Pro/Max → claude.ai (requires Claude Code seat on the consumer
+ * account); Console → platform.claude.com (authenticates against the
+ * user's Anthropic Console org instead). See {@link loginAnthropicConsole}.
+ */
+export async function startAnthropicConsoleLogin(
+  onAuth: (url: string) => void,
+): Promise<{ apiKey: string }> {
+  const creds = await loginAnthropicConsole(onAuth);
+  log.info("anthropic console oauth credentials exchanged");
+  const apiKey = await mintAnthropicApiKey(creds.access);
+  return { apiKey };
+}
+
+/**
+ * Exchange an Anthropic OAuth access token for a real Console API key
+ * (`sk-ant-api03-…`). The minted key is owned by the user's Console org
+ * and bills as ordinary API usage from that point on.
+ *
+ * Exported separately from {@link startAnthropicConsoleLogin} so it can
+ * be unit-tested without invoking the real OAuth dance.
+ */
+export async function mintAnthropicApiKey(accessToken: string): Promise<string> {
+  const res = await fetch(CONSOLE_API_KEY_MINT_URL, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+      "Accept": "application/json",
+    },
+    body: JSON.stringify({}),
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(
+      `Anthropic Console API key mint failed. status=${res.status}; body=${body}`,
+    );
+  }
+  const data = (await res.json()) as { raw_key?: string; key?: string };
+  const key = data.raw_key ?? data.key;
+  if (!key || !key.startsWith("sk-ant-api")) {
+    throw new Error(
+      `Anthropic Console API key mint returned unexpected payload: ${JSON.stringify(data)}`,
+    );
+  }
+  return key;
 }

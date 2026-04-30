@@ -31,6 +31,7 @@ struct WorkspaceDetailView: View {
                         workspace: workspace,
                         store: store,
                         appStore: appStore,
+                        workspaceStore: workspaceStore,
                         sessionReady: sessionReady && isSidecarHealthy,
                         sessionError: sessionError
                     )
@@ -304,9 +305,11 @@ private struct Composer: View {
     let workspace: Workspace
     @Bindable var store: AgentStore
     @Bindable var appStore: AppStore
+    @Bindable var workspaceStore: WorkspaceStore
     let sessionReady: Bool
     let sessionError: String?
     @State private var draft = ""
+    @State private var switcherShown = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -315,8 +318,27 @@ private struct Composer: View {
                     .font(.caption).foregroundStyle(.red)
             }
             HStack(spacing: 8) {
-                Image(systemName: "bolt.horizontal.circle").foregroundStyle(.secondary)
-                Text(modelLabel).font(.caption).foregroundStyle(.secondary)
+                Button {
+                    switcherShown = true
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "bolt.horizontal.circle")
+                        Text(modelLabel)
+                        Image(systemName: "chevron.down").font(.caption2)
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .disabled(store.isStreaming)
+                .popover(isPresented: $switcherShown, arrowEdge: .top) {
+                    ModelSwitcher(
+                        appStore: appStore,
+                        workspaceStore: workspaceStore,
+                        workspace: workspace,
+                        isPresented: $switcherShown
+                    )
+                }
                 Spacer()
                 if store.isStreaming {
                     Text("Streaming…").font(.caption).foregroundStyle(.secondary)
@@ -468,6 +490,105 @@ private struct FilesTab: View {
             fileText = data.count > 100_000 ? "(file too large to preview)" : data
         } else {
             fileText = "(unable to read \(path))"
+        }
+    }
+}
+
+private struct ModelSwitcher: View {
+    @Bindable var appStore: AppStore
+    @Bindable var workspaceStore: WorkspaceStore
+    let workspace: Workspace
+    @Binding var isPresented: Bool
+
+    @State private var selectedProviderId: UUID
+    @State private var selectedModelId: String
+    @State private var applying = false
+    @State private var applyError: String?
+
+    init(
+        appStore: AppStore,
+        workspaceStore: WorkspaceStore,
+        workspace: Workspace,
+        isPresented: Binding<Bool>
+    ) {
+        self.appStore = appStore
+        self.workspaceStore = workspaceStore
+        self.workspace = workspace
+        self._isPresented = isPresented
+        self._selectedProviderId = State(initialValue: workspace.providerId)
+        self._selectedModelId = State(initialValue: workspace.modelId)
+    }
+
+    private var selectedProvider: ProviderRecord? {
+        appStore.providers.first(where: { $0.id == selectedProviderId })
+    }
+
+    private var changed: Bool {
+        selectedProviderId != workspace.providerId || selectedModelId != workspace.modelId
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Switch model").font(.headline)
+            Picker("Provider", selection: $selectedProviderId) {
+                ForEach(appStore.providers) { p in
+                    Text(p.name).tag(p.id)
+                }
+            }
+            .onChange(of: selectedProviderId) { _, newId in
+                if newId != workspace.providerId {
+                    selectedModelId = ""
+                } else {
+                    selectedModelId = workspace.modelId
+                }
+            }
+            ModelPicker(
+                appStore: appStore,
+                provider: selectedProvider,
+                modelId: $selectedModelId
+            )
+            if let err = applyError {
+                Text(err).font(.caption).foregroundStyle(.red).lineLimit(3)
+            }
+            HStack {
+                Spacer()
+                Button("Cancel") { isPresented = false }
+                    .disabled(applying)
+                Button {
+                    Task { await apply() }
+                } label: {
+                    if applying {
+                        HStack(spacing: 6) {
+                            ProgressView().controlSize(.small)
+                            Text("Applying…")
+                        }
+                    } else {
+                        Text("Apply")
+                    }
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(applying || !changed || selectedModelId.isEmpty)
+            }
+        }
+        .padding(16)
+        .frame(width: 460, height: 460)
+    }
+
+    @MainActor
+    private func apply() async {
+        applying = true
+        applyError = nil
+        defer { applying = false }
+        do {
+            try await appStore.changeWorkspaceProviderAndModel(
+                workspaceStore: workspaceStore,
+                workspace: workspace,
+                providerId: selectedProviderId,
+                modelId: selectedModelId
+            )
+            isPresented = false
+        } catch {
+            applyError = String(describing: error)
         }
     }
 }

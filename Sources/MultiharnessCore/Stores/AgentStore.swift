@@ -146,6 +146,21 @@ public final class AgentStore {
             if let lastIdx = turns.indices.last {
                 turns[lastIdx].streaming = false
             }
+            // pi-agent-core captures provider errors (rate limits, auth
+            // failures, etc.) into a message_end with empty content and
+            // stopReason="error". Without surfacing them, the user sees
+            // no response and a stuck spinner. Render the errorMessage
+            // as a ⚠️ assistant turn so the failure is visible.
+            if let msg = event.payload["message"] as? [String: Any],
+               (msg["stopReason"] as? String) == "error" {
+                let errText = (msg["errorMessage"] as? String) ?? "agent error"
+                lastError = errText
+                turns.append(ConversationTurn(
+                    role: .assistant,
+                    text: "⚠️ " + errText,
+                    streaming: false
+                ))
+            }
         case "agent_error":
             let msg = (event.payload["message"] as? String) ?? "agent error"
             lastError = msg
