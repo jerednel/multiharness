@@ -18,6 +18,13 @@ public final class AppStore {
         }
     }
     public static let sidebarModeDefaultsKey = "MultiharnessSidebarMode"
+    public var playCompletionSound: Bool = true {
+        didSet {
+            guard oldValue != playCompletionSound else { return }
+            UserDefaults.standard.set(playCompletionSound, forKey: Self.playCompletionSoundDefaultsKey)
+        }
+    }
+    public static let playCompletionSoundDefaultsKey = "MultiharnessPlayCompletionSound"
     public static let anthropicConsoleProviderName = "Claude (API Usage Billing)"
     public var sidecarStatus: SidecarManager.Status = .stopped
     public var lastError: String?
@@ -211,6 +218,10 @@ public final class AppStore {
         if let raw = UserDefaults.standard.string(forKey: Self.sidebarModeDefaultsKey),
            let mode = SidebarMode(rawValue: raw) {
             self.sidebarMode = mode
+        }
+        // Default true when never written; false only if the user explicitly toggled off.
+        if UserDefaults.standard.object(forKey: Self.playCompletionSoundDefaultsKey) != nil {
+            self.playCompletionSound = UserDefaults.standard.bool(forKey: Self.playCompletionSoundDefaultsKey)
         }
         // Sync current status — sidecar.start() may have already fired before
         // this store was constructed, in which case the callback below would
