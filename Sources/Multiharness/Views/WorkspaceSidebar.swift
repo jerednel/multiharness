@@ -157,6 +157,8 @@ struct WorkspaceRow: View {
             }
         }
         .padding(.vertical, 2)
+        .contentShape(Rectangle())
+        .hoverableRow(strong: true)
     }
 
     static func color(for state: LifecycleState) -> Color {

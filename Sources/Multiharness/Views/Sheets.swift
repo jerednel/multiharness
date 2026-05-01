@@ -254,8 +254,9 @@ struct ProviderRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                Image(systemName: "chevron.right")
                     .font(.caption).foregroundStyle(.secondary)
+                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(provider.name).font(.body)
                     HStack(spacing: 8) {
@@ -282,6 +283,7 @@ struct ProviderRow: View {
             }
             .padding(.horizontal, 8).padding(.vertical, 6)
             .contentShape(Rectangle())
+            .hoverableRow()
             .onTapGesture { onToggle() }
 
             if isExpanded {
@@ -303,6 +305,7 @@ struct ProviderRow: View {
                 .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
                 .padding(.horizontal, 8)
                 .padding(.bottom, 4)
+                .transition(.disclosureContent)
             }
         }
         .background(.background)
@@ -315,6 +318,7 @@ struct SettingsSheet: View {
     @Bindable var appStore: AppStore
     @Binding var isPresented: Bool
     @State private var tab: SettingsTab = .providers
+    @Namespace private var tabBarNamespace
 
     enum SettingsTab: Hashable { case providers, remote, permissions, sidebar, defaults }
 
@@ -329,18 +333,22 @@ struct SettingsSheet: View {
                 Spacer()
             }
             Divider()
-            switch tab {
-            case .providers:
-                ProvidersTab(appStore: appStore)
-            case .remote:
-                RemoteAccessTab(env: env)
-            case .permissions:
-                PermissionsTab(env: env, appStore: appStore)
-            case .sidebar:
-                SidebarTab(appStore: appStore)
-            case .defaults:
-                DefaultsTab(appStore: appStore)
+            Group {
+                switch tab {
+                case .providers:
+                    ProvidersTab(appStore: appStore)
+                case .remote:
+                    RemoteAccessTab(env: env)
+                case .permissions:
+                    PermissionsTab(env: env, appStore: appStore)
+                case .sidebar:
+                    SidebarTab(appStore: appStore)
+                case .defaults:
+                    DefaultsTab(appStore: appStore)
+                }
             }
+            .id(tab)
+            .transition(.tabSwap)
             Spacer()
             HStack {
                 Spacer()
@@ -352,13 +360,21 @@ struct SettingsSheet: View {
 
     @ViewBuilder
     private func tabButton(_ label: String, _ value: SettingsTab) -> some View {
-        Button { tab = value } label: {
+        Button {
+            withAnimation(Motion.standard) { tab = value }
+        } label: {
             Text(label).font(.body)
                 .padding(.horizontal, 12).padding(.vertical, 6)
-                .background(tab == value ? Color.accentColor.opacity(0.18) : .clear,
-                            in: RoundedRectangle(cornerRadius: 6))
+                .background {
+                    if tab == value {
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(Color.accentColor.opacity(0.18))
+                            .matchedGeometryEffect(id: "tab-pill", in: tabBarNamespace)
+                    }
+                }
+                .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.multiharness)
     }
 }
 
@@ -459,7 +475,9 @@ private struct ProvidersTab: View {
                             provider: p,
                             isExpanded: expandedProviderId == p.id,
                             onToggle: {
-                                expandedProviderId = (expandedProviderId == p.id) ? nil : p.id
+                                withAnimation(Motion.disclosure) {
+                                    expandedProviderId = (expandedProviderId == p.id) ? nil : p.id
+                                }
                             }
                         )
                     }
