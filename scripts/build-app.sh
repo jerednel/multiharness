@@ -24,6 +24,15 @@ cp "$BIN_DIR/$BUNDLE_NAME" "$CONTENTS/MacOS/$BUNDLE_NAME"
 cp sidecar/dist/multiharness-sidecar "$CONTENTS/Resources/multiharness-sidecar"
 chmod +x "$CONTENTS/MacOS/$BUNDLE_NAME" "$CONTENTS/Resources/multiharness-sidecar"
 
+# Flatten SPM-generated resource bundle into Contents/Resources/ so the binary
+# can find bundled assets via Bundle.main.url(forResource:withExtension:).
+# SPM's generated `Bundle.module` accessor expects the .bundle to live next to
+# the binary's bundle URL, which doesn't fit the .app layout — flattening
+# keeps lookup paths predictable.
+if [ -d "$BIN_DIR/${BUNDLE_NAME}_${BUNDLE_NAME}.bundle" ]; then
+  cp -R "$BIN_DIR/${BUNDLE_NAME}_${BUNDLE_NAME}.bundle/." "$CONTENTS/Resources/"
+fi
+
 if [ -f assets/AppIcon.icns ]; then
   cp assets/AppIcon.icns "$CONTENTS/Resources/AppIcon.icns"
 fi
