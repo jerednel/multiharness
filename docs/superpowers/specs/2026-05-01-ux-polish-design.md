@@ -94,7 +94,7 @@ Three named transitions wired up via `AnyTransition` extensions:
 | Surface | File | Treatment |
 |---|---|---|
 | All `.plain` / `.borderless` buttons (sweep) | `Sheets.swift`, `WorkspaceDetailView.swift`, `WorkspaceSidebar.swift`, `RootView.swift`, `ProjectSettingsSheet.swift`, `ReconcileSheet.swift` | `.buttonStyle(.multiharness)` or `.multiharnessIcon` |
-| Settings 5-tab header | `Sheets.swift:286–318` | Icon button style on each tab; tab content wrapped in `.transition(.tabSwap)` keyed on selected tab. Add a thin (2pt) accent-colored underline beneath the active tab, animated via `matchedGeometryEffect` so it glides between tabs on selection change. (The current header has no underline; this is new.) |
+| Settings 5-tab header | `Sheets.swift:286–318` | Tab content wrapped in `.transition(.tabSwap)` keyed on selected tab. The existing accent-tinted background pill (`Color.accentColor.opacity(0.18)`) becomes the `matchedGeometryEffect` element, gliding between tab buttons on selection change. Tabs themselves stay `.plain`-styled (the pill *is* the affordance); they get hover fill via the toolkit on non-selected tabs only. |
 | Inspector Files/Context tabs | `WorkspaceDetailView.swift:514` | `.transition(.tabSwap)` on tab content |
 | Sidebar workspace rows | `WorkspaceSidebar.swift` | `.hoverableRow(strong: true)` on each row's HStack |
 | ResponseGroup expand/collapse + tool-call disclosures | `WorkspaceDetailView.swift:277` | Toggle wrapped in `withAnimation(Motion.disclosure)`; chevron rotates 90° in the same animation; expanded content uses `.transition(.disclosureContent)` |
