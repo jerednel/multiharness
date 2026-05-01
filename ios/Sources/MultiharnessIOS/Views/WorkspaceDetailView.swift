@@ -174,12 +174,15 @@ private struct ResponseGroupRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Button {
-                manuallyToggled = true
-                manualExpanded.toggle()
+                withAnimation(Motion.disclosure) {
+                    manuallyToggled = true
+                    manualExpanded.toggle()
+                }
             } label: {
                 HStack(spacing: 6) {
-                    Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                    Image(systemName: "chevron.right")
                         .font(.caption2).foregroundStyle(.secondary).frame(width: 10)
+                        .rotationEffect(.degrees(expanded ? 90 : 0))
                     Image(systemName: "sparkles").font(.caption).foregroundStyle(.purple)
                     Text(summary).font(.caption).foregroundStyle(.secondary)
                     if isStreaming {
@@ -189,7 +192,7 @@ private struct ResponseGroupRow: View {
                 }
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.multiharness)
 
             if expanded {
                 VStack(alignment: .leading, spacing: 6) {
@@ -197,6 +200,7 @@ private struct ResponseGroupRow: View {
                         TurnRow(turn: turn).id(turn.id)
                     }
                 }
+                .transition(.disclosureContent)
             }
 
             if let final = liftedFinal {
@@ -223,10 +227,13 @@ private struct TurnRow: View {
 
     private var toolRow: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Button { expanded.toggle() } label: {
+            Button {
+                withAnimation(Motion.disclosure) { expanded.toggle() }
+            } label: {
                 HStack(spacing: 6) {
-                    Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                    Image(systemName: "chevron.right")
                         .font(.caption2).foregroundStyle(.secondary).frame(width: 10)
+                        .rotationEffect(.degrees(expanded ? 90 : 0))
                     Image(systemName: "wrench.and.screwdriver")
                         .foregroundStyle(.orange).font(.caption)
                     Text(turn.toolStepLabel).font(.caption).bold()
@@ -247,13 +254,14 @@ private struct TurnRow: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.multiharness)
             if expanded {
                 Text(turn.text.isEmpty ? "(no output)" : turn.text)
                     .font(.system(.caption, design: .monospaced))
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(8)
                     .textSelection(.enabled)
+                    .transition(.disclosureContent)
             }
         }
         .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
