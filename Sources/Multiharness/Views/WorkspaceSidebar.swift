@@ -100,6 +100,7 @@ struct RenameWorkspaceSheet: View {
         }
         .padding(24)
         .frame(width: 420)
+        .sheetEntry()
     }
 
     private var trimmed: String {

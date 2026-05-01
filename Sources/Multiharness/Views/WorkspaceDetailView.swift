@@ -738,6 +738,7 @@ private struct ModelSwitcher: View {
         }
         .padding(16)
         .frame(width: 460, height: 460)
+        .sheetEntry()
     }
 
     @MainActor

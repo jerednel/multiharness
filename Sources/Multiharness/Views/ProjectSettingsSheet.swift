@@ -81,6 +81,7 @@ struct ProjectSettingsSheet: View {
             baseBranchSaveState = .idle
             savedBaseBranch = project.defaultBaseBranch
         }
+        .sheetEntry()
     }
 
     @ViewBuilder

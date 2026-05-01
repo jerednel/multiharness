@@ -34,6 +34,7 @@ struct ReconcileSheet: View {
         .onDisappear {
             coordinator?.abort()
         }
+        .sheetEntry()
     }
 
     @ViewBuilder

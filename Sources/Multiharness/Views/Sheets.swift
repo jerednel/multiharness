@@ -76,6 +76,7 @@ struct NewProjectSheet: View {
             }
         }
         .padding(24).frame(width: 520)
+        .sheetEntry()
     }
 
     private func commit() {
@@ -197,6 +198,7 @@ struct NewWorkspaceSheet: View {
                 makeProjectDefault = false
             }
         }
+        .sheetEntry()
     }
 
     private func effectiveProjectDefault(_ proj: Project) -> BuildMode {
@@ -356,6 +358,7 @@ struct SettingsSheet: View {
             }
         }
         .padding(20).frame(width: 640, height: 640)
+        .sheetEntry()
     }
 
     @ViewBuilder
