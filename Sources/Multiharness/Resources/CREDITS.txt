@@ -1,0 +1,17 @@
+agent-ding.wav
+==============
+
+A two-tone descending airplane-style chime ("bing-bong", A5 → E5) generated
+programmatically by scripts/generate-ding.py. The script renders pure sine
+waves with bell-like exponential decay envelopes to 16-bit PCM.
+
+License: none required. Pure synthesized sine waves do not carry a copyright;
+the audio data is a deterministic function of the script. The script itself
+is part of this repository and licensed under the same terms as the rest of
+Multiharness.
+
+To regenerate (e.g. after tweaking tones, duration, or envelope), run:
+
+    python3 scripts/generate-ding.py
+
+It writes to Sources/Multiharness/Resources/agent-ding.wav.
