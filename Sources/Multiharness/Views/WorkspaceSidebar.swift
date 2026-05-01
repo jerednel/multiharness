@@ -311,14 +311,14 @@ private struct ProjectDisclosure: View {
                 Image(systemName: "arrow.triangle.merge")
                     .font(.caption)
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.multiharnessIcon)
             .disabled(!hasEligibleWorkspaces)
             .help("Reconcile workspaces")
             Button(action: onQuickCreate) {
                 Image(systemName: "plus")
                     .font(.caption)
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.multiharnessIcon)
             .help("Quick-create workspace from \(project.defaultBaseBranch)")
         }
     }

@@ -258,14 +258,14 @@ private struct ProjectPickerHeader: View {
                 .padding(.horizontal, 8).padding(.vertical, 6)
                 .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.multiharness)
             if let proj = appStore.selectedProject {
                 Button {
                     showingReconcile = true
                 } label: {
                     Image(systemName: "arrow.triangle.merge").font(.body)
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.multiharnessIcon)
                 .disabled(!eligibleWorkspacesExist(in: proj))
                 .help("Reconcile workspaces")
                 Button {
@@ -273,7 +273,7 @@ private struct ProjectPickerHeader: View {
                 } label: {
                     Image(systemName: "plus").font(.body)
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.multiharnessIcon)
                 .disabled(appStore.providers.isEmpty)
                 .help("Quick-create workspace from \(proj.defaultBaseBranch)")
             }
@@ -302,7 +302,7 @@ private struct AllProjectsHeader: View {
             } label: {
                 Image(systemName: "folder.badge.plus")
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.multiharnessIcon)
             .help("Add project")
         }
     }

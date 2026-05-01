@@ -290,7 +290,7 @@ private struct ResponseGroupView: View {
                 }
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.multiharness)
 
             if expanded {
                 VStack(alignment: .leading, spacing: 8) {
@@ -351,7 +351,7 @@ private struct TurnCard: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.multiharness)
             if expanded {
                 Text(turn.text.isEmpty ? "(no output)" : turn.text)
                     .font(.system(.caption, design: .monospaced))
@@ -442,7 +442,7 @@ private struct Composer: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.multiharness)
                 .disabled(store.isStreaming)
                 .popover(isPresented: $switcherShown, arrowEdge: .top) {
                     ModelSwitcher(
@@ -543,7 +543,7 @@ private struct FilesTab: View {
                 } label: {
                     Image(systemName: "arrow.clockwise")
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.multiharnessIcon)
             }
             .padding(.horizontal, 12).padding(.vertical, 10)
             Divider()
