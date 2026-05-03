@@ -32,6 +32,18 @@ public struct WorktreeService: Sendable {
         )
         // Best-effort fetch; ignore errors (offline, no remote).
         _ = try? runGit(at: repoPath, args: ["fetch", "origin"])
+        // Empty repos (no commits) can't serve as the source of a worktree.
+        // Seed one if the base branch has no commit yet.
+        if (try? runGit(at: repoPath, args: ["rev-parse", "--quiet", "--verify", "HEAD"])) == nil {
+            _ = try? runGit(at: repoPath, args: ["config", "user.name", "Multiharness"])
+            _ = try? runGit(at: repoPath, args: ["config", "user.email", "multiharness@local"])
+            _ = try runGit(at: repoPath, args: ["commit", "--allow-empty", "-m", "Initial commit"])
+            let currentBranch = try? runGit(at: repoPath, args: ["rev-parse", "--abbrev-ref", "HEAD"])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if currentBranch != baseBranch {
+                _ = try runGit(at: repoPath, args: ["branch", "-m", baseBranch])
+            }
+        }
         _ = try runGit(at: repoPath, args: [
             "worktree", "add", "-b", branchName, worktreePath.path, baseBranch,
         ])
@@ -238,7 +250,7 @@ public struct WorktreeService: Sendable {
     }
 }
 
-public enum WorktreeError: Error, CustomStringConvertible {
+public enum WorktreeError: Error, CustomStringConvertible, LocalizedError {
     case gitFailed(args: [String], exitCode: Int32, stderr: String)
     public var description: String {
         switch self {
@@ -246,4 +258,5 @@ public enum WorktreeError: Error, CustomStringConvertible {
             return "git \(args.joined(separator: " ")) exited \(code): \(err)"
         }
     }
+    public var errorDescription: String? { description }
 }

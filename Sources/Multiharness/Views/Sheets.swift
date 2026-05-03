@@ -13,39 +13,64 @@ struct NewProjectSheet: View {
     @State private var repoURL: URL?
     @State private var baseBranch: String = "main"
     @State private var error: String?
+    @State private var creatingEmpty = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("New project").font(.title2).bold()
-            Form {
-                TextField("Name", text: $name)
-                HStack {
-                    Text(repoURL?.path ?? "(none)")
-                        .truncationMode(.head)
-                        .lineLimit(1)
-                        .foregroundStyle(repoURL == nil ? .secondary : .primary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    Button("Browse…") {
-                        let panel = NSOpenPanel()
-                        panel.canChooseFiles = false
-                        panel.canChooseDirectories = true
-                        panel.allowsMultipleSelection = false
-                        panel.prompt = "Select repo"
-                        if panel.runModal() == .OK, let url = panel.url {
-                            repoURL = url
-                            if name.isEmpty { name = url.lastPathComponent }
+
+            GroupBox("Add existing repository") {
+                Form {
+                    TextField("Name", text: $name)
+                    HStack {
+                        Text(repoURL?.path ?? "(none)")
+                            .truncationMode(.head)
+                            .lineLimit(1)
+                            .foregroundStyle(repoURL == nil ? .secondary : .primary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Button("Browse…") {
+                            let panel = NSOpenPanel()
+                            panel.canChooseFiles = false
+                            panel.canChooseDirectories = true
+                            panel.allowsMultipleSelection = false
+                            panel.prompt = "Select repo"
+                            if panel.runModal() == .OK, let url = panel.url {
+                                repoURL = url
+                                if name.isEmpty { name = url.lastPathComponent }
+                            }
                         }
                     }
+                    TextField("Default base branch", text: $baseBranch)
                 }
-                TextField("Default base branch", text: $baseBranch)
             }
+
+            GroupBox("Create empty project") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Creates a folder and initialises a git repo inside:")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Text(appStore.projectsRoot)
+                        .font(.caption).foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    HStack {
+                        Spacer()
+                        Button("Create empty") {
+                            creatingEmpty = true
+                            createEmpty()
+                            creatingEmpty = false
+                        }
+                        .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || creatingEmpty)
+                    }
+                }
+            }
+
             if let err = error {
                 Text(err).font(.caption).foregroundStyle(.red)
             }
             HStack {
                 Spacer()
                 Button("Cancel") { isPresented = false }
-                Button("Create") { commit() }
+                Button("Add existing") { commit() }
                     .keyboardShortcut(.defaultAction)
                     .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || repoURL == nil)
             }
@@ -71,6 +96,18 @@ struct NewProjectSheet: View {
         }
         appStore.addProject(name: name, repoURL: url, defaultBaseBranch: baseBranch)
         isPresented = false
+    }
+
+    private func createEmpty() {
+        do {
+            try appStore.createEmptyProject(
+                name: name.trimmingCharacters(in: .whitespaces),
+                defaultBaseBranch: baseBranch
+            )
+            isPresented = false
+        } catch {
+            self.error = String(describing: error)
+        }
     }
 }
 
@@ -523,6 +560,7 @@ private struct DefaultsTab: View {
     @State private var draftProviderId: UUID? = nil
     @State private var draftModelId: String = ""
     @State private var saveError: String?
+    @State private var projectsRootDraft: String = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -549,6 +587,35 @@ private struct DefaultsTab: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
 
+            Divider()
+            Text("Projects root").font(.title3).bold()
+            Text("New empty projects are created inside this folder.")
+                .font(.caption).foregroundStyle(.secondary)
+            HStack(spacing: 8) {
+                TextField("Path", text: $projectsRootDraft)
+                    .textFieldStyle(.roundedBorder)
+                Button("Browse…") {
+                    let panel = NSOpenPanel()
+                    panel.canChooseFiles = false
+                    panel.canChooseDirectories = true
+                    panel.prompt = "Select projects root"
+                    if panel.runModal() == .OK, let url = panel.url {
+                        projectsRootDraft = url.path
+                    }
+                }
+            }
+            HStack {
+                Button("Save root") {
+                    do {
+                        try appStore.setProjectsRoot(projectsRootDraft)
+                    } catch {
+                        saveError = String(describing: error)
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                Spacer()
+            }
+
             HStack {
                 Button("Save") { save() }
                     .buttonStyle(.borderedProminent)
@@ -563,6 +630,7 @@ private struct DefaultsTab: View {
             Spacer()
         }
         .onAppear {
+            projectsRootDraft = appStore.projectsRoot
             // Switching tabs destroys+recreates the inactive branch, so
             // .onAppear refires every visit. Only seed when the user hasn't
             // already touched the drafts — otherwise we'd silently clobber

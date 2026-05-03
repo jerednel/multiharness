@@ -580,6 +580,67 @@ public final class AppStore {
             try env.persistence.setSetting("default_model_id", value: "")
         }
     }
+
+    // MARK: - Projects root
+
+    private static let projectsRootSettingKey = "projects_root"
+
+    private static var defaultProjectsRoot: String {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Desktop/Multiharness").path
+    }
+
+    public var projectsRoot: String {
+        (try? env.persistence.getSetting(Self.projectsRootSettingKey))
+            ?? Self.defaultProjectsRoot
+    }
+
+    public func setProjectsRoot(_ path: String) throws {
+        try env.persistence.setSetting(Self.projectsRootSettingKey, value: path)
+    }
+
+    /// Create a brand-new project by making a folder and initialising a git
+    /// repo in it. Returns the new project.
+    @discardableResult
+    public func createEmptyProject(
+        name: String,
+        defaultBaseBranch: String
+    ) throws -> Project {
+        let root = (projectsRoot as NSString).standardizingPath
+        let slug = slugify(name)
+        let folder = (root as NSString).appendingPathComponent(slug)
+        let fm = FileManager.default
+        try fm.createDirectory(atPath: folder, withIntermediateDirectories: true)
+        let branch = defaultBaseBranch.isEmpty ? "main" : defaultBaseBranch
+        try shell("git", "-C", folder, "init")
+        try shell("git", "-C", folder, "config", "user.name", "Multiharness")
+        try shell("git", "-C", folder, "config", "user.email", "multiharness@local")
+        try shell("git", "-C", folder, "checkout", "--orphan", branch)
+        try shell("git", "-C", folder, "commit", "--allow-empty", "-m", "Initial commit")
+        let p = Project(
+            name: name,
+            slug: slug,
+            repoPath: folder,
+            defaultBaseBranch: defaultBaseBranch.isEmpty ? "main" : defaultBaseBranch,
+            repoBookmark: nil
+        )
+        try env.persistence.upsertProject(p)
+        projects.append(p)
+        if selectedProjectId == nil { selectedProjectId = p.id }
+        return p
+    }
+
+    @discardableResult
+    private func shell(_ tool: String, _ args: String...) throws -> Bool {
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        proc.arguments = [tool] + args
+        proc.standardOutput = FileHandle.nullDevice
+        proc.standardError = FileHandle.nullDevice
+        try proc.run()
+        proc.waitUntilExit()
+        return proc.terminationStatus == 0
+    }
 }
 
 // MARK: - AgentSessionError

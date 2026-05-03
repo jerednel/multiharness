@@ -355,6 +355,20 @@ public final class ConnectionStore: NSObject, ControlClientDelegate {
         return newId
     }
 
+    @discardableResult
+    public func createEmptyProject(
+        name: String,
+        defaultBaseBranch: String?
+    ) async throws -> String? {
+        var params: [String: Any] = ["name": name]
+        if let b = defaultBaseBranch, !b.isEmpty { params["defaultBaseBranch"] = b }
+        let result = try await client.call(method: "project.createEmpty", params: params)
+            as? [String: Any]
+        let newId = result?["id"] as? String
+        await refreshWorkspaces()
+        return newId
+    }
+
     public func updateProject(
         projectId: String,
         defaultBaseBranch: String

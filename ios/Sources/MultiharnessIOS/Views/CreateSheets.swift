@@ -237,6 +237,19 @@ struct NewProjectSheet: View {
     var body: some View {
         NavigationStack(path: $browsePath) {
             Form {
+                Section {
+                    TextField("Project name", text: $name)
+                }
+
+                Section("Create empty project") {
+                    Text("A new folder with an initialised git repo will be created on the Mac.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Button("Create empty") {
+                        Task { await createEmpty() }
+                    }
+                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || working)
+                }
+
                 Section("Browse") {
                     NavigationLink(value: BrowseDestination.root) {
                         VStack(alignment: .leading, spacing: 4) {
@@ -336,6 +349,23 @@ struct NewProjectSheet: View {
         defer { loadingScan = false }
         do {
             candidates = try await connection.scanRepos()
+        } catch {
+            self.error = String(describing: error)
+        }
+    }
+
+    @MainActor
+    private func createEmpty() async {
+        working = true
+        error = nil
+        defer { working = false }
+        do {
+            let newId = try await connection.createEmptyProject(
+                name: name.trimmingCharacters(in: .whitespaces),
+                defaultBaseBranch: baseBranch
+            )
+            if let newId { onCreated?(newId) }
+            isPresented = false
         } catch {
             self.error = String(describing: error)
         }

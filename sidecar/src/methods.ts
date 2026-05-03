@@ -226,6 +226,7 @@ export function registerMethods(
     "workspace.setContext",
     "project.scan",
     "project.create",
+    "project.createEmpty",
     "project.setContext",
     "project.listBranches",
     "project.update",

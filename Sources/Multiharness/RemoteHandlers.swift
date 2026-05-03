@@ -30,6 +30,9 @@ enum RemoteHandlers {
         await relay.register(method: "project.create") { params in
             try await Self.projectCreate(params: params, env: env, appStore: appStore)
         }
+        await relay.register(method: "project.createEmpty") { params in
+            try await Self.projectCreateEmpty(params: params, env: env, appStore: appStore)
+        }
         await relay.register(method: "models.listForProvider") { params in
             try await Self.modelsListForProvider(params: params, env: env, appStore: appStore)
         }
@@ -490,6 +493,32 @@ enum RemoteHandlers {
             "slug": added.slug,
             "repoPath": added.repoPath,
             "defaultBaseBranch": added.defaultBaseBranch,
+        ]
+    }
+
+    // MARK: - project.createEmpty
+
+    @MainActor
+    private static func projectCreateEmpty(
+        params: [String: Any],
+        env: AppEnvironment,
+        appStore: AppStore
+    ) async throws -> Any? {
+        guard let name = (params["name"] as? String)?.trimmingCharacters(in: .whitespaces),
+              !name.isEmpty else {
+            throw RemoteError.bad("name required")
+        }
+        let baseBranch = (params["defaultBaseBranch"] as? String) ?? "main"
+        let project = try appStore.createEmptyProject(
+            name: name,
+            defaultBaseBranch: baseBranch
+        )
+        return [
+            "id": project.id.uuidString,
+            "name": project.name,
+            "slug": project.slug,
+            "repoPath": project.repoPath,
+            "defaultBaseBranch": project.defaultBaseBranch,
         ]
     }
 }
