@@ -321,6 +321,7 @@ struct SettingsSheet: View {
     @Binding var isPresented: Bool
     @State private var tab: SettingsTab = .providers
     @Namespace private var tabBarNamespace
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     enum SettingsTab: Hashable { case providers, remote, permissions, sidebar, defaults }
 
@@ -364,7 +365,7 @@ struct SettingsSheet: View {
     @ViewBuilder
     private func tabButton(_ label: String, _ value: SettingsTab) -> some View {
         Button {
-            withAnimation(Motion.standard) { tab = value }
+            withAnimation(Motion.standard.adaptive(reduceMotion)) { tab = value }
         } label: {
             Text(label).font(.body)
                 .padding(.horizontal, 12).padding(.vertical, 6)
@@ -389,6 +390,7 @@ private struct ProvidersTab: View {
     @State private var manualKind: ProviderKind = .openaiCompatible
     @State private var apiKey: String = ""
     @State private var expandedProviderId: UUID?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -478,7 +480,7 @@ private struct ProvidersTab: View {
                             provider: p,
                             isExpanded: expandedProviderId == p.id,
                             onToggle: {
-                                withAnimation(Motion.disclosure) {
+                                withAnimation(Motion.disclosure.adaptive(reduceMotion)) {
                                     expandedProviderId = (expandedProviderId == p.id) ? nil : p.id
                                 }
                             }

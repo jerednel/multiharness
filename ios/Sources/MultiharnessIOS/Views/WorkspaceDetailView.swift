@@ -129,6 +129,7 @@ private struct ResponseGroupRow: View {
 
     @State private var manuallyToggled = false
     @State private var manualExpanded = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var isStreaming: Bool {
         children.contains(where: { $0.streaming })
@@ -174,7 +175,7 @@ private struct ResponseGroupRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Button {
-                withAnimation(Motion.disclosure) {
+                withAnimation(Motion.disclosure.adaptive(reduceMotion)) {
                     manuallyToggled = true
                     manualExpanded.toggle()
                 }
@@ -216,6 +217,7 @@ private struct ResponseGroupRow: View {
 private struct TurnRow: View {
     let turn: ConversationTurn
     @State private var expanded = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         if turn.role == .tool {
@@ -228,7 +230,7 @@ private struct TurnRow: View {
     private var toolRow: some View {
         VStack(alignment: .leading, spacing: 0) {
             Button {
-                withAnimation(Motion.disclosure) { expanded.toggle() }
+                withAnimation(Motion.disclosure.adaptive(reduceMotion)) { expanded.toggle() }
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "chevron.right")

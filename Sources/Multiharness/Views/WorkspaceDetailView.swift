@@ -227,6 +227,7 @@ private struct ResponseGroupView: View {
 
     @State private var manuallyToggled = false
     @State private var manualExpanded = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var isStreaming: Bool {
         children.contains(where: { $0.streaming })
@@ -275,7 +276,7 @@ private struct ResponseGroupView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Button {
-                withAnimation(Motion.disclosure) {
+                withAnimation(Motion.disclosure.adaptive(reduceMotion)) {
                     manuallyToggled = true
                     manualExpanded.toggle()
                 }
@@ -319,6 +320,7 @@ private struct ResponseGroupView: View {
 private struct TurnCard: View {
     let turn: ConversationTurn
     @State private var expanded = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         if turn.role == .tool {
@@ -331,7 +333,7 @@ private struct TurnCard: View {
     private var toolCard: some View {
         VStack(alignment: .leading, spacing: 0) {
             Button {
-                withAnimation(Motion.disclosure) { expanded.toggle() }
+                withAnimation(Motion.disclosure.adaptive(reduceMotion)) { expanded.toggle() }
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "chevron.right")
@@ -519,6 +521,7 @@ private struct Inspector: View {
     private enum InspectorTab: Hashable { case files, context }
     @State private var inspectorTab: InspectorTab = .files
     @Namespace private var inspectorTabNamespace
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: 0) {
@@ -550,7 +553,7 @@ private struct Inspector: View {
     @ViewBuilder
     private func tabButton(label: String, icon: String, value: InspectorTab) -> some View {
         Button {
-            withAnimation(Motion.standard) { inspectorTab = value }
+            withAnimation(Motion.standard.adaptive(reduceMotion)) { inspectorTab = value }
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: icon)
