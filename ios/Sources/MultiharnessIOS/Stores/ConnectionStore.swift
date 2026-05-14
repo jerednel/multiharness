@@ -164,15 +164,30 @@ public final class ConnectionStore: NSObject, ControlClientDelegate {
         agents[ws.id] = store
     }
 
-    public func sendPrompt(workspaceId: String, message: String) async {
+    public func sendPrompt(
+        workspaceId: String,
+        message: String,
+        images: [TurnImage] = []
+    ) async {
         let store = agents[workspaceId]
-        store?.turns.append(ConversationTurn(role: .user, text: message))
+        store?.turns.append(ConversationTurn(role: .user, text: message, images: images))
         store?.isStreaming = true
+        var params: [String: Any] = [
+            "workspaceId": workspaceId,
+            "message": message,
+        ]
+        if !images.isEmpty {
+            // Same wire shape the Mac sends; the sidecar treats this as
+            // optional and decodes base64 → pi-ai ImageContent.
+            params["images"] = images.map { img -> [String: String] in
+                [
+                    "data": img.data.base64EncodedString(),
+                    "mimeType": img.mimeType,
+                ]
+            }
+        }
         do {
-            _ = try await client.call(
-                method: "agent.prompt",
-                params: ["workspaceId": workspaceId, "message": message]
-            )
+            _ = try await client.call(method: "agent.prompt", params: params)
         } catch {
             store?.isStreaming = false
             store?.turns.append(ConversationTurn(

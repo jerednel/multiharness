@@ -100,6 +100,13 @@ public final class AppStore {
             "nameSource": workspace.nameSource.rawValue,
             "projectContext": project.contextInstructions,
             "workspaceContext": workspace.contextInstructions,
+            // Orientation fields the sidecar slots into a
+            // <workspace_orientation> block at the top of the system
+            // prompt so the agent doesn't ask "which project / repo?"
+            // after every first message.
+            "projectName": project.name,
+            "branchName": workspace.branchName,
+            "baseBranch": workspace.baseBranch,
         ]
         do {
             _ = try await client.call(method: "agent.create", params: params)

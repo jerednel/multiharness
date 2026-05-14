@@ -18,6 +18,12 @@ export type CreateOptions = {
   nameSource?: NameSource;
   projectContext?: string;
   workspaceContext?: string;
+  /// Human-readable orientation, plumbed through to the AgentSession's
+  /// system prompt. All optional for backwards compat — when missing
+  /// the orientation block falls back to "Working directory: <path>".
+  projectName?: string;
+  branchName?: string;
+  baseBranch?: string;
 };
 
 export class AgentRegistry {
@@ -53,6 +59,9 @@ export class AgentRegistry {
       requestRename: this.requestRename,
       projectContext: opts.projectContext,
       workspaceContext: opts.workspaceContext,
+      projectName: opts.projectName,
+      branchName: opts.branchName,
+      baseBranch: opts.baseBranch,
     });
     this.sessions.set(opts.workspaceId, session);
   }

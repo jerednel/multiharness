@@ -115,6 +115,7 @@ export class DataReader {
       toolName?: string;
       toolCallDescription?: string;
       groupId?: string;
+      images?: Array<{ data: string; mimeType: string }>;
     }>;
     hasMore: boolean;
     total: number;
@@ -130,6 +131,7 @@ export class DataReader {
       toolName?: string;
       toolCallDescription?: string;
       groupId?: string;
+      images?: Array<{ data: string; mimeType: string }>;
     }> = [];
     let groupId: string | undefined;
     let groupCounter = 0;
@@ -155,7 +157,11 @@ export class DataReader {
         const msg = event.message;
         if (!msg) continue;
         const t = extractText(msg.content);
-        if (!t) continue;
+        const imgs = msg.role === "user" ? extractImages(msg.content) : [];
+        // Drop empty assistant turns, but preserve user turns that are
+        // image-only (text empty, images present) so a pasted screenshot
+        // with no caption still rehydrates.
+        if (!t && imgs.length === 0) continue;
         const capped = t.length > perTurnTextLimit
           ? t.slice(0, perTurnTextLimit) + "…"
           : t;
@@ -163,7 +169,9 @@ export class DataReader {
           // Live flow appends user turn ungrouped (before agent_start).
           // Replay sees user message_end inside the group; keep it
           // ungrouped to match.
-          all.push({ role: "user", text: capped });
+          const entry: (typeof all)[number] = { role: "user", text: capped };
+          if (imgs.length > 0) entry.images = imgs;
+          all.push(entry);
         } else if (msg.role === "assistant") {
           all.push({ role: "assistant", text: capped, groupId });
         }
@@ -207,4 +215,23 @@ function extractText(content: unknown): string {
   return content
     .map((item: any) => (item?.type === "text" ? String(item.text ?? "") : ""))
     .join("");
+}
+
+/** Pulls inline image parts out of a user-message content array.
+ *  pi-ai stores them as `{ type: "image", data, mimeType }`. We mirror
+ *  the same shape on the wire so iOS/Mac history rehydration can render
+ *  thumbnails without an extra lookup. */
+function extractImages(
+  content: unknown,
+): Array<{ data: string; mimeType: string }> {
+  if (!Array.isArray(content)) return [];
+  const out: Array<{ data: string; mimeType: string }> = [];
+  for (const item of content as any[]) {
+    if (item?.type === "image"
+      && typeof item.data === "string"
+      && typeof item.mimeType === "string") {
+      out.push({ data: item.data, mimeType: item.mimeType });
+    }
+  }
+  return out;
 }

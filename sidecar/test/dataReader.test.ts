@@ -62,4 +62,56 @@ describe("DataReader.historyTurns", () => {
     expect(out.hasMore).toBe(false);
     expect(out.turns).toHaveLength(2);
   });
+
+  it("extracts image attachments from user message_end events", async () => {
+    // Mirror exactly the shape pi-agent-core persists when prompt() is
+    // called with a string + images: a single user message_end whose
+    // content array interleaves text and image parts.
+    const userWithImages = JSON.stringify({
+      event: {
+        type: "message_end",
+        message: {
+          role: "user",
+          content: [
+            { type: "text", text: "look at this" },
+            { type: "image", data: "AAAA", mimeType: "image/png" },
+            { type: "image", data: "BBBB", mimeType: "image/jpeg" },
+          ],
+        },
+      },
+    });
+    writeHistory("ws-img", [userWithImages]);
+    const r = new DataReader(dir);
+    const out = await r.historyTurns("ws-img");
+    expect(out.turns).toHaveLength(1);
+    expect(out.turns[0]!.role).toBe("user");
+    expect(out.turns[0]!.text).toBe("look at this");
+    expect(out.turns[0]!.images).toEqual([
+      { data: "AAAA", mimeType: "image/png" },
+      { data: "BBBB", mimeType: "image/jpeg" },
+    ]);
+  });
+
+  it("preserves an image-only user turn (no caption)", async () => {
+    // Without this the pre-images guard ("skip turn when text empty")
+    // would have dropped image-only sends entirely.
+    const onlyImage = JSON.stringify({
+      event: {
+        type: "message_end",
+        message: {
+          role: "user",
+          content: [{ type: "image", data: "ZZ", mimeType: "image/png" }],
+        },
+      },
+    });
+    writeHistory("ws-img2", [onlyImage]);
+    const r = new DataReader(dir);
+    const out = await r.historyTurns("ws-img2");
+    expect(out.turns).toHaveLength(1);
+    expect(out.turns[0]!.role).toBe("user");
+    expect(out.turns[0]!.text).toBe("");
+    expect(out.turns[0]!.images).toEqual([
+      { data: "ZZ", mimeType: "image/png" },
+    ]);
+  });
 });

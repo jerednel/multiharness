@@ -1,4 +1,5 @@
 import { Agent, type AgentEvent } from "@mariozechner/pi-agent-core";
+import type { ImageContent } from "@mariozechner/pi-ai";
 import { buildModel, apiKeyFor, type ProviderConfig } from "./providers.js";
 import { buildTools } from "./tools/index.js";
 import { JsonlWriter } from "./jsonl.js";
@@ -30,6 +31,18 @@ export type AgentSessionOptions = {
   requestRename?: RequestRename;
   projectContext?: string;
   workspaceContext?: string;
+  /// Human-readable project name (e.g. "multiharness"). Used in the
+  /// system prompt orientation block so the model knows what repo it's
+  /// in without having to inspect the filesystem. Optional for
+  /// backwards-compat with older Mac builds; when missing the prompt
+  /// falls back to just the worktree path.
+  projectName?: string;
+  /// Branch the worktree is checked out to.
+  branchName?: string;
+  /// Branch the worktree was forked from. Helps the model understand
+  /// what "the base" means when the user says things like "diff vs
+  /// main".
+  baseBranch?: string;
 };
 
 const PERSIST_EVENTS = new Set<AgentEvent["type"]>([
@@ -96,14 +109,19 @@ export class AgentSession {
     this.unsubscribe = this.agent.subscribe((event) => this.handle(event));
   }
 
-  async prompt(message: string): Promise<void> {
+  async prompt(message: string, images?: ImageContent[]): Promise<void> {
     if (this.aiRenameEligible) {
       // Flip eligibility before launching the async naming task so a quick
-      // second prompt can't double-fire it.
+      // second prompt can't double-fire it. The first-prompt text alone is
+      // used to seed the workspace name — images aren't fed to the namer.
       this.aiRenameEligible = false;
       void this.generateAndApplyName(message);
     }
-    await this.agent.prompt(message);
+    if (images && images.length > 0) {
+      await this.agent.prompt(message, images);
+    } else {
+      await this.agent.prompt(message);
+    }
   }
 
   private async generateAndApplyName(firstMessage: string): Promise<void> {
@@ -171,6 +189,7 @@ export class AgentSession {
       parts.push("You are Claude Code, Anthropic's official CLI for Claude.");
     }
     parts.push(buildSystemPrompt(this.opts.buildMode));
+    parts.push(this.buildOrientation());
     if (this.projectContext.trim()) {
       parts.push(
         `<project_instructions>\n${this.projectContext}\n</project_instructions>`,
@@ -182,6 +201,40 @@ export class AgentSession {
       );
     }
     return parts.join("\n\n");
+  }
+
+  /// Concrete "you are here" block. Without this the model sees only
+  /// "operating inside a git worktree" and treats the worktree path as
+  /// an abstraction — when the user says "fix this" it asks "which
+  /// project / directory?" even though every filesystem tool is
+  /// already scoped to the correct checkout. Naming the project +
+  /// branch explicitly anchors the model so it dives into tools
+  /// instead of asking for orientation.
+  private buildOrientation(): string {
+    const projectName = this.opts.projectName?.trim();
+    const branch = this.opts.branchName?.trim();
+    const base = this.opts.baseBranch?.trim();
+    const worktree = this.opts.worktreePath;
+
+    const lines: string[] = ["<workspace_orientation>"];
+    if (projectName) {
+      lines.push(`Project: ${projectName}`);
+    }
+    lines.push(`Working directory: ${worktree}`);
+    if (branch) {
+      const suffix = base ? ` (forked from \`${base}\`)` : "";
+      lines.push(`Branch: \`${branch}\`${suffix}`);
+    }
+    lines.push(
+      "All file-system tools (read_file, write_file, edit_file, list_dir, "
+        + "glob, grep, bash) are scoped to the working directory above. "
+        + "When the user asks you to look at, change, or run something, "
+        + "assume they mean THIS checkout unless they explicitly point "
+        + "elsewhere. Do not ask the user to confirm the project, repo, "
+        + "or directory — use the tools to inspect what's here.",
+    );
+    lines.push("</workspace_orientation>");
+    return lines.join("\n");
   }
 
   async dispose(): Promise<void> {

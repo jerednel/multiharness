@@ -1,5 +1,33 @@
 import Foundation
 
+/// One image attached to a user turn. `data` is the raw bytes (base64-decoded
+/// at the wire boundary); `mimeType` is e.g. "image/png", "image/jpeg".
+/// Sendable + Hashable so it works inside `ConversationTurn` and SwiftUI
+/// `ForEach`. Identified by a stable UUID so reordering/animating works.
+public struct TurnImage: Identifiable, Sendable, Hashable {
+    public let id: UUID
+    public let data: Data
+    public let mimeType: String
+
+    public init(id: UUID = UUID(), data: Data, mimeType: String) {
+        self.id = id
+        self.data = data
+        self.mimeType = mimeType
+    }
+
+    /// Decode a `{ data: <base64>, mimeType: <string> }` JSON dict the
+    /// sidecar emits in `remote.history` and `message_end` events.
+    public init?(json: [String: Any]) {
+        guard let b64 = json["data"] as? String,
+              let mime = json["mimeType"] as? String,
+              let raw = Data(base64Encoded: b64)
+        else { return nil }
+        self.id = UUID()
+        self.data = raw
+        self.mimeType = mime
+    }
+}
+
 public struct ConversationTurn: Identifiable, Sendable {
     public enum Role: String, Sendable { case user, assistant, tool }
     public var id: UUID = UUID()
@@ -17,6 +45,10 @@ public struct ConversationTurn: Identifiable, Sendable {
     /// aren't valid UUIDs.
     public var groupId: String?
     public var streaming: Bool = false
+    /// Inline image attachments. Only meaningful on user turns today, but
+    /// kept on the type uniformly so future assistant-image support is a
+    /// no-op for callers.
+    public var images: [TurnImage] = []
 
     public init(
         id: UUID = UUID(),
@@ -25,7 +57,8 @@ public struct ConversationTurn: Identifiable, Sendable {
         toolName: String? = nil,
         toolCallDescription: String? = nil,
         groupId: String? = nil,
-        streaming: Bool = false
+        streaming: Bool = false,
+        images: [TurnImage] = []
     ) {
         self.id = id
         self.role = role
@@ -34,6 +67,7 @@ public struct ConversationTurn: Identifiable, Sendable {
         self.toolCallDescription = toolCallDescription
         self.groupId = groupId
         self.streaming = streaming
+        self.images = images
     }
 
     /// Display name for the tool: prefer the per-call description (set by

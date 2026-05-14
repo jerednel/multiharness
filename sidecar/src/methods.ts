@@ -52,6 +52,12 @@ export function registerMethods(
       nameSourceRaw === "random" || nameSourceRaw === "named"
         ? (nameSourceRaw as "random" | "named")
         : undefined;
+    // Optional orientation fields. Older Mac builds may not send them;
+    // AgentSession's prompt builder falls back to a path-only block in
+    // that case so the orientation is never simply absent.
+    const projectName = typeof p.projectName === "string" ? p.projectName : undefined;
+    const branchName = typeof p.branchName === "string" ? p.branchName : undefined;
+    const baseBranch = typeof p.baseBranch === "string" ? p.baseBranch : undefined;
     await registry.create({
       workspaceId,
       projectId,
@@ -61,6 +67,9 @@ export function registerMethods(
       nameSource,
       projectContext,
       workspaceContext,
+      projectName,
+      branchName,
+      baseBranch,
     });
     return { ok: true };
   });
@@ -68,10 +77,14 @@ export function registerMethods(
   d.register("agent.prompt", async (p) => {
     const workspaceId = requireString(p, "workspaceId");
     const message = requireString(p, "message");
+    // Optional inline images. Each entry: { data: base64, mimeType: string }.
+    // Clients enforce per-image size caps; the sidecar trusts the framed
+    // payload size limit on the WebSocket layer to catch absurd totals.
+    const images = parseImages(p.images);
     // Don't await — events stream over the WebSocket. Catch all errors so
     // a misbehaving provider/tool can never crash the sidecar; report them
     // through the registry's sink as an `agent_error` event the UI can render.
-    registry.get(workspaceId).prompt(message).catch((err) => {
+    registry.get(workspaceId).prompt(message, images).catch((err) => {
       const reason = err instanceof Error ? err.message : String(err);
       log.error("agent.prompt failed", { workspaceId, err: reason });
       registry.emitError(workspaceId, reason);
@@ -283,4 +296,33 @@ function requireString(p: Record<string, unknown>, name: string): string {
     throw new Error(`${name} must be a non-empty string`);
   }
   return v;
+}
+
+/** Validate the optional `images` array on agent.prompt. Returns undefined
+ *  when absent so the AgentSession can fall through to the no-images
+ *  Agent.prompt overload (avoids feeding pi-agent-core an empty array,
+ *  which it tolerates but the no-arg form is the documented shape). */
+function parseImages(
+  raw: unknown,
+): import("@mariozechner/pi-ai").ImageContent[] | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  if (!Array.isArray(raw)) throw new Error("images must be an array");
+  if (raw.length === 0) return undefined;
+  const out: import("@mariozechner/pi-ai").ImageContent[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") {
+      throw new Error("each image must be an object");
+    }
+    const e = entry as Record<string, unknown>;
+    const data = e.data;
+    const mimeType = e.mimeType;
+    if (typeof data !== "string" || data.length === 0) {
+      throw new Error("image.data must be a non-empty base64 string");
+    }
+    if (typeof mimeType !== "string" || !mimeType.startsWith("image/")) {
+      throw new Error("image.mimeType must be an image/* string");
+    }
+    out.push({ type: "image", data, mimeType });
+  }
+  return out;
 }

@@ -119,7 +119,19 @@ describe("e2e: server + websocket + mock provider", () => {
       },
     });
 
-    await call("agent.prompt", { workspaceId: "w1", message: "say hi" });
+    // Tiny 1×1 PNG (already base64). Roundtrips through methods.ts
+    // image validation, AgentSession.prompt, pi-agent-core's
+    // normalizePromptInput, and finally the JSONL message_end persistence
+    // hook — so we get end-to-end coverage of the image plumbing without
+    // needing the mock provider to actually consume the bytes.
+    const tinyPng =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+
+    await call("agent.prompt", {
+      workspaceId: "w1",
+      message: "say hi",
+      images: [{ data: tinyPng, mimeType: "image/png" }],
+    });
 
     // Wait for agent_end
     await new Promise<void>((res, rej) => {
@@ -139,6 +151,44 @@ describe("e2e: server + websocket + mock provider", () => {
     expect(existsSync(join(dataDir, "workspaces", "w1", "messages.jsonl"))).toBe(true);
     const log = readFileSync(join(dataDir, "workspaces", "w1", "messages.jsonl"), "utf8");
     expect(log).toMatch(/agent_end/);
+
+    // The persisted user message_end should carry the image content part
+    // verbatim, so the Mac's history rehydration (and iOS's remote
+    // history fetch) get back exactly what was sent.
+    const userMessageEnd = log
+      .split("\n")
+      .filter(Boolean)
+      .map((l) => JSON.parse(l))
+      .find(
+        (entry) =>
+          entry?.event?.type === "message_end" &&
+          entry?.event?.message?.role === "user",
+      );
+    expect(userMessageEnd).toBeDefined();
+    const content = userMessageEnd.event.message.content;
+    expect(Array.isArray(content)).toBe(true);
+    const imageParts = content.filter((c: any) => c?.type === "image");
+    expect(imageParts).toHaveLength(1);
+    expect(imageParts[0]).toMatchObject({
+      type: "image",
+      mimeType: "image/png",
+      data: tinyPng,
+    });
+
+    // Validation: bad image payload should error before reaching the
+    // agent. We verify the sidecar still has a session afterward to
+    // confirm it didn't crash the dispatcher.
+    let validationError: string | null = null;
+    try {
+      await call("agent.prompt", {
+        workspaceId: "w1",
+        message: "x",
+        images: [{ data: "", mimeType: "image/png" }],
+      });
+    } catch (e) {
+      validationError = e instanceof Error ? e.message : String(e);
+    }
+    expect(validationError).toContain("image.data");
 
     await call("agent.dispose", { workspaceId: "w1" });
     ws.close();

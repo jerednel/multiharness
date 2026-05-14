@@ -381,12 +381,21 @@ private struct TurnCard: View {
                 }
                 Spacer()
             }
-            Group {
-                if turn.role == .assistant {
-                    MarkdownMessageText(turn.text)
-                } else {
-                    Text(turn.text)
-                        .textSelection(.enabled)
+            VStack(alignment: .leading, spacing: 8) {
+                if !turn.images.isEmpty {
+                    // Wrapping row of fixed-height thumbnails. Click-to-open
+                    // is QuickLook-style (Space key in the future); for now
+                    // the user can right-click → Save to retrieve the
+                    // original bytes.
+                    AttachmentThumbStrip(images: turn.images)
+                }
+                if !turn.text.isEmpty {
+                    if turn.role == .assistant {
+                        MarkdownMessageText(turn.text)
+                    } else {
+                        Text(turn.text)
+                            .textSelection(.enabled)
+                    }
                 }
             }
             .font(.body)
@@ -431,12 +440,22 @@ private struct Composer: View {
     let sessionError: String?
     @State private var draft = ""
     @State private var switcherShown = false
+    /// Image attachments staged for the next send. Cleared after a
+    /// successful send; the user can also remove individual entries with
+    /// the X button on each thumbnail. Drop targets + paste both append
+    /// here.
+    @State private var pendingImages: [TurnImage] = []
+    @State private var attachError: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             if let err = sessionError {
                 Label(err, systemImage: "exclamationmark.triangle")
                     .font(.caption).foregroundStyle(.red)
+            }
+            if let err = attachError {
+                Label(err, systemImage: "exclamationmark.triangle")
+                    .font(.caption).foregroundStyle(.orange)
             }
             HStack(spacing: 8) {
                 Button {
@@ -465,12 +484,54 @@ private struct Composer: View {
                     Text("Streaming…").font(.caption).foregroundStyle(.secondary)
                 }
             }
+            if !pendingImages.isEmpty {
+                ComposerAttachmentStrip(images: $pendingImages)
+            }
             HStack(alignment: .bottom, spacing: 8) {
+                // Manual attach (file picker) — paste/drop are the primary
+                // entrypoints but a button is handy when the user wants to
+                // browse to a screenshot in Finder.
+                Button {
+                    pickImages()
+                } label: {
+                    Image(systemName: "paperclip")
+                        .padding(.horizontal, 8).padding(.vertical, 8)
+                }
+                .buttonStyle(.multiharness)
+                .help("Attach images")
+                .disabled(store.isStreaming)
+
                 TextField("Message", text: $draft, axis: .vertical)
                     .textFieldStyle(.plain)
                     .lineLimit(1...8)
                     .padding(.horizontal, 8).padding(.vertical, 6)
                     .overlay(RoundedRectangle(cornerRadius: 6).stroke(.tertiary))
+                    // Cmd-V image paste. SwiftUI's `.onPasteCommand`
+                    // doesn't fire when a TextField has focus (the field
+                    // editor consumes the paste action and rejects
+                    // non-text bytes with the system bell), so we
+                    // install an NSEvent local monitor that runs *before*
+                    // the field editor sees the keystroke. If the
+                    // pasteboard has an image, we consume it and
+                    // attach; otherwise we pass the event through and
+                    // the field editor handles normal text paste.
+                    .background(
+                        CmdVImagePasteMonitor { nsImages in
+                            let imgs = ComposerPaste.encode(nsImages: nsImages)
+                            guard !imgs.isEmpty else { return false }
+                            pendingImages.append(contentsOf: imgs)
+                            attachError = nil
+                            return true
+                        }
+                    )
+                    .onDrop(of: ComposerPaste.acceptedTypes, isTargeted: nil) { providers in
+                        ComposerPaste.absorb(providers: providers) { result in
+                            Task { @MainActor in
+                                applyAttachResult(result)
+                            }
+                        }
+                        return true
+                    }
                     .onKeyPress(.return) {
                         if NSEvent.modifierFlags.contains(.shift) {
                             // The system's default for Shift+Return on a vertical
@@ -489,12 +550,20 @@ private struct Composer: View {
                     Image(systemName: "paperplane.fill")
                         .padding(.horizontal, 12).padding(.vertical, 8)
                 }
-                .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                          || !sessionReady
-                          || store.isStreaming)
+                .disabled(sendDisabled)
                 .buttonStyle(.borderedProminent)
             }
         }
+    }
+
+    private var sendDisabled: Bool {
+        let textEmpty = draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        // Allow image-only sends: when at least one image is staged, the
+        // empty-text guard relaxes.
+        if textEmpty && pendingImages.isEmpty { return true }
+        if !sessionReady { return true }
+        if store.isStreaming { return true }
+        return false
     }
 
     private var modelLabel: String {
@@ -505,9 +574,45 @@ private struct Composer: View {
     @MainActor
     private func send() async {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
+        let images = pendingImages
+        guard !text.isEmpty || !images.isEmpty else { return }
         draft = ""
-        await store.sendPrompt(text)
+        pendingImages = []
+        await store.sendPrompt(text, images: images)
+    }
+
+    @MainActor
+    private func applyAttachResult(_ result: ComposerPaste.Result) {
+        if !result.images.isEmpty {
+            pendingImages.append(contentsOf: result.images)
+            attachError = nil
+        }
+        if let err = result.error {
+            attachError = err
+        }
+    }
+
+    @MainActor
+    private func pickImages() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowedContentTypes = [.image]
+        guard panel.runModal() == .OK else { return }
+        var added: [TurnImage] = []
+        var lastErr: String?
+        for url in panel.urls {
+            switch ComposerPaste.loadImage(at: url) {
+            case .success(let img): added.append(img)
+            case .failure(let e): lastErr = e.message
+            }
+        }
+        if !added.isEmpty {
+            pendingImages.append(contentsOf: added)
+            attachError = nil
+        }
+        if let lastErr { attachError = lastErr }
     }
 }
 
