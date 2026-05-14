@@ -19,18 +19,18 @@ public struct MultiharnessButtonStyle: ButtonStyle {
 
         @State private var isHovered: Bool = false
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
-        @Environment(\.isEnabled) private var isEnabled
 
         var body: some View {
             let pressed = configuration.isPressed
             let scale: CGFloat = (pressed && !reduceMotion) ? 0.97 : 1.0
             let pressOpacity: Double = pressed ? 0.7 : 1.0
 
+            // NOTE: SwiftUI dims disabled buttons automatically. Don't compound it here.
             return configuration.label
                 .padding(padding)
                 .background(background)
                 .scaleEffect(scale)
-                .opacity(pressOpacity * (isEnabled ? 1.0 : 0.5))
+                .opacity(pressOpacity)
                 .animation(Motion.adaptive(Motion.fast, reduceMotion: reduceMotion), value: pressed)
                 .animation(Motion.adaptive(Motion.fast, reduceMotion: reduceMotion), value: isHovered)
                 #if os(macOS)
