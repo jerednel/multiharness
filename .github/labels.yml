@@ -1,0 +1,24 @@
+- name: good first issue
+  color: 7057ff
+  description: Friendly for new contributors
+- name: help wanted
+  color: 008672
+  description: Maintainers would welcome outside help
+- name: design needed
+  color: d876e3
+  description: Needs design discussion before implementation
+- name: security
+  color: b60205
+  description: Security-sensitive change or report triage
+- name: docs
+  color: 0075ca
+  description: Documentation-only or documentation-heavy work
+- name: ios
+  color: 0e8a16
+  description: iOS companion app
+- name: macos
+  color: 1d76db
+  description: macOS app
+- name: sidecar
+  color: fbca04
+  description: Bun/TypeScript sidecar

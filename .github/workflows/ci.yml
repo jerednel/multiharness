@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sidecar:
+    name: Sidecar typecheck and tests
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install dependencies
+        working-directory: sidecar
+        run: bun install --frozen-lockfile
+      - name: Typecheck
+        working-directory: sidecar
+        run: bun run typecheck
+      - name: Test
+        working-directory: sidecar
+        run: bun test
+
+  swift:
+    name: Swift build and tests
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Show toolchain
+        run: swift --version
+      - name: Resolve dependencies
+        run: swift package resolve
+      - name: Build
+        run: swift build
+      - name: Test
+        run: swift test
+
+  ios-build:
+    name: iOS simulator build
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Build iOS app
+        run: bash scripts/build-ios.sh
