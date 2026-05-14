@@ -584,8 +584,27 @@ private struct Composer: View {
 
                 Spacer()
                 if store.isStreaming {
-                    Text(streamingLabel).font(.caption).foregroundStyle(.secondary)
+                    // Combined "what's running" + "stop it" affordance.
+                    // The label carries the QA/build distinction that
+                    // used to live in a standalone `streamingLabel`
+                    // Text view; folding it into the Stop button keeps
+                    // the row compact and lets the user abort either
+                    // kind of run.
+                    Button {
+                        Task { await store.stopCurrentTurn() }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "stop.fill")
+                            Text(stopButtonLabel)
+                        }
+                        .font(.caption)
+                    }
+                    .buttonStyle(.multiharness)
+                    .help("Abort the in-flight turn")
                 }
+            }
+            if !store.pendingMessages.isEmpty {
+                PendingMessagesStrip(store: store)
             }
             if !pendingImages.isEmpty {
                 ComposerAttachmentStrip(images: $pendingImages)
@@ -602,7 +621,6 @@ private struct Composer: View {
                 }
                 .buttonStyle(.multiharness)
                 .help("Attach images")
-                .disabled(store.isStreaming)
 
                 TextField("Message", text: $draft, axis: .vertical)
                     .textFieldStyle(.plain)
@@ -682,7 +700,9 @@ private struct Composer: View {
         // empty-text guard relaxes.
         if textEmpty && pendingImages.isEmpty { return true }
         if !sessionReady { return true }
-        if store.isStreaming { return true }
+        // Note: `store.isStreaming` no longer disables sending. Composing
+        // while a turn is in flight enqueues onto `store.pendingMessages`;
+        // the queue drains one-at-a-time on `agent_end`.
         return false
     }
 
@@ -691,11 +711,12 @@ private struct Composer: View {
         return "\(providerName) · \(workspace.modelId)"
     }
 
-    /// Distinguishes primary streaming from QA streaming in the
-    /// composer's right-side activity label. Both flip
-    /// `store.isStreaming`; we read `lastGroupKind` to pick a label.
-    private var streamingLabel: String {
-        store.lastGroupKind == .qa ? "🔍 QA running…" : "Streaming…"
+    /// Distinguishes a primary streaming turn from a QA review in the
+    /// Stop button's label. Both flip `store.isStreaming`; we read
+    /// `lastGroupKind` to pick the right wording so the user always
+    /// knows which run they're aborting.
+    private var stopButtonLabel: String {
+        store.lastGroupKind == .qa ? "Stop QA" : "Stop"
     }
 
     @MainActor
@@ -740,6 +761,57 @@ private struct Composer: View {
             attachError = nil
         }
         if let lastErr { attachError = lastErr }
+    }
+}
+
+/// Compact list of user messages that were composed while a turn was in
+/// flight. Each row shows a one-line snippet plus an X to cancel that
+/// individual message. The queue drains one entry per `agent_end` event,
+/// so this view typically shrinks from the top.
+private struct PendingMessagesStrip: View {
+    @Bindable var store: AgentStore
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ForEach(store.pendingMessages) { msg in
+                HStack(spacing: 6) {
+                    Image(systemName: "clock")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Text(snippet(for: msg))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Spacer(minLength: 4)
+                    Button {
+                        store.cancelPendingMessage(id: msg.id)
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Cancel queued message")
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(Color.secondary.opacity(0.08))
+                )
+            }
+        }
+    }
+
+    /// Pick a stable one-line preview: prefer the text, fall back to an
+    /// image-only marker so image-only queued sends still render
+    /// something meaningful.
+    private func snippet(for msg: PendingMessage) -> String {
+        let trimmed = msg.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty { return trimmed }
+        let n = msg.images.count
+        return n == 1 ? "(1 image)" : "(\(n) images)"
     }
 }
 
