@@ -129,6 +129,7 @@ private struct ResponseGroupRow: View {
 
     @State private var manuallyToggled = false
     @State private var manualExpanded = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var isStreaming: Bool {
         children.contains(where: { $0.streaming })
@@ -174,12 +175,15 @@ private struct ResponseGroupRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Button {
-                manuallyToggled = true
-                manualExpanded.toggle()
+                withAnimation(Motion.disclosure.adaptive(reduceMotion)) {
+                    manuallyToggled = true
+                    manualExpanded.toggle()
+                }
             } label: {
                 HStack(spacing: 6) {
-                    Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                    Image(systemName: "chevron.right")
                         .font(.caption2).foregroundStyle(.secondary).frame(width: 10)
+                        .rotationEffect(.degrees(expanded ? 90 : 0))
                     Image(systemName: "sparkles").font(.caption).foregroundStyle(.purple)
                     Text(summary).font(.caption).foregroundStyle(.secondary)
                     if isStreaming {
@@ -189,7 +193,7 @@ private struct ResponseGroupRow: View {
                 }
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.multiharness)
 
             if expanded {
                 VStack(alignment: .leading, spacing: 6) {
@@ -197,6 +201,7 @@ private struct ResponseGroupRow: View {
                         TurnRow(turn: turn).id(turn.id)
                     }
                 }
+                .transition(.disclosureContent)
             }
 
             if let final = liftedFinal {
@@ -212,6 +217,7 @@ private struct ResponseGroupRow: View {
 private struct TurnRow: View {
     let turn: ConversationTurn
     @State private var expanded = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         if turn.role == .tool {
@@ -223,10 +229,13 @@ private struct TurnRow: View {
 
     private var toolRow: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Button { expanded.toggle() } label: {
+            Button {
+                withAnimation(Motion.disclosure.adaptive(reduceMotion)) { expanded.toggle() }
+            } label: {
                 HStack(spacing: 6) {
-                    Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                    Image(systemName: "chevron.right")
                         .font(.caption2).foregroundStyle(.secondary).frame(width: 10)
+                        .rotationEffect(.degrees(expanded ? 90 : 0))
                     Image(systemName: "wrench.and.screwdriver")
                         .foregroundStyle(.orange).font(.caption)
                     Text(turn.toolStepLabel).font(.caption).bold()
@@ -247,13 +256,14 @@ private struct TurnRow: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.multiharness)
             if expanded {
                 Text(turn.text.isEmpty ? "(no output)" : turn.text)
                     .font(.system(.caption, design: .monospaced))
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(8)
                     .textSelection(.enabled)
+                    .transition(.disclosureContent)
             }
         }
         .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))

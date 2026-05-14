@@ -16,7 +16,8 @@ struct WorkspaceSidebar: View {
                         WorkspaceRow(
                             ws: ws,
                             isStreaming: agentRegistry.stores[ws.id]?.isStreaming ?? false,
-                            isUnseen: workspaceStore.unseen(ws)
+                            isUnseen: workspaceStore.unseen(ws),
+                            isSelected: selection == ws.id
                         )
                         .tag(ws.id as UUID?)
                         .contextMenu { workspaceContextMenu(ws) }
@@ -100,6 +101,7 @@ struct RenameWorkspaceSheet: View {
         }
         .padding(24)
         .frame(width: 420)
+        .sheetEntry()
     }
 
     private var trimmed: String {
@@ -133,6 +135,10 @@ struct WorkspaceRow: View {
     var showLifecycleDot: Bool = false
     var isStreaming: Bool = false
     var isUnseen: Bool = false
+    /// True when this row is the selected item in the enclosing `List`.
+    /// Suppresses the hover fill so it doesn't stack on top of the
+    /// system-painted selection background.
+    var isSelected: Bool = false
 
     var body: some View {
         HStack(alignment: .center, spacing: 8) {
@@ -157,6 +163,8 @@ struct WorkspaceRow: View {
             }
         }
         .padding(.vertical, 2)
+        .contentShape(Rectangle())
+        .hoverableRow(strong: true, selected: isSelected)
     }
 
     static func color(for state: LifecycleState) -> Color {
@@ -194,6 +202,7 @@ struct AllProjectsSidebar: View {
                     workspaceStore: workspaceStore,
                     agentRegistry: agentRegistry,
                     branchListService: branchListService,
+                    selection: $selection,
                     onQuickCreate: { onQuickCreate(project) },
                     onReconcile: { pendingReconcileProject = project }
                 )
@@ -220,6 +229,7 @@ private struct ProjectDisclosure: View {
     @Bindable var workspaceStore: WorkspaceStore
     let agentRegistry: AgentRegistryStore
     let branchListService: BranchListService
+    @Binding var selection: UUID?
     let onQuickCreate: () -> Void
     let onReconcile: () -> Void
 
@@ -234,6 +244,7 @@ private struct ProjectDisclosure: View {
         workspaceStore: WorkspaceStore,
         agentRegistry: AgentRegistryStore,
         branchListService: BranchListService,
+        selection: Binding<UUID?>,
         onQuickCreate: @escaping () -> Void,
         onReconcile: @escaping () -> Void
     ) {
@@ -242,6 +253,7 @@ private struct ProjectDisclosure: View {
         self.workspaceStore = workspaceStore
         self.agentRegistry = agentRegistry
         self.branchListService = branchListService
+        self._selection = selection
         self.onQuickCreate = onQuickCreate
         self.onReconcile = onReconcile
         let expandedKey = Self.expandedKey(project.id)
@@ -311,14 +323,14 @@ private struct ProjectDisclosure: View {
                 Image(systemName: "arrow.triangle.merge")
                     .font(.caption)
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.multiharnessIcon)
             .disabled(!hasEligibleWorkspaces)
             .help("Reconcile workspaces")
             Button(action: onQuickCreate) {
                 Image(systemName: "plus")
                     .font(.caption)
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.multiharnessIcon)
             .help("Quick-create workspace from \(project.defaultBaseBranch)")
         }
     }
@@ -346,7 +358,8 @@ private struct ProjectDisclosure: View {
                         WorkspaceRow(
                             ws: ws,
                             isStreaming: agentRegistry.stores[ws.id]?.isStreaming ?? false,
-                            isUnseen: workspaceStore.unseen(ws)
+                            isUnseen: workspaceStore.unseen(ws),
+                            isSelected: selection == ws.id
                         )
                         .tag(ws.id as UUID?)
                         .contextMenu { workspaceContextMenu(ws) }
@@ -359,7 +372,8 @@ private struct ProjectDisclosure: View {
                     ws: ws,
                     showLifecycleDot: true,
                     isStreaming: agentRegistry.stores[ws.id]?.isStreaming ?? false,
-                    isUnseen: workspaceStore.unseen(ws)
+                    isUnseen: workspaceStore.unseen(ws),
+                    isSelected: selection == ws.id
                 )
                 .tag(ws.id as UUID?)
                 .contextMenu { workspaceContextMenu(ws) }

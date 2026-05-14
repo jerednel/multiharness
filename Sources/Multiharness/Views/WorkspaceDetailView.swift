@@ -227,6 +227,7 @@ private struct ResponseGroupView: View {
 
     @State private var manuallyToggled = false
     @State private var manualExpanded = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var isStreaming: Bool {
         children.contains(where: { $0.streaming })
@@ -275,12 +276,15 @@ private struct ResponseGroupView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Button {
-                manuallyToggled = true
-                manualExpanded.toggle()
+                withAnimation(Motion.disclosure.adaptive(reduceMotion)) {
+                    manuallyToggled = true
+                    manualExpanded.toggle()
+                }
             } label: {
                 HStack(spacing: 6) {
-                    Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                    Image(systemName: "chevron.right")
                         .font(.caption2).foregroundStyle(.secondary).frame(width: 10)
+                        .rotationEffect(.degrees(expanded ? 90 : 0))
                     Image(systemName: "sparkles").font(.caption).foregroundStyle(.purple)
                     Text(summary).font(.caption).foregroundStyle(.secondary)
                     if isStreaming {
@@ -290,7 +294,7 @@ private struct ResponseGroupView: View {
                 }
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.multiharness)
 
             if expanded {
                 VStack(alignment: .leading, spacing: 8) {
@@ -298,6 +302,7 @@ private struct ResponseGroupView: View {
                         TurnCard(turn: turn).id(turn.id)
                     }
                 }
+                .transition(.disclosureContent)
             }
 
             if let final = liftedFinal {
@@ -315,6 +320,7 @@ private struct ResponseGroupView: View {
 private struct TurnCard: View {
     let turn: ConversationTurn
     @State private var expanded = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         if turn.role == .tool {
@@ -327,11 +333,12 @@ private struct TurnCard: View {
     private var toolCard: some View {
         VStack(alignment: .leading, spacing: 0) {
             Button {
-                expanded.toggle()
+                withAnimation(Motion.disclosure.adaptive(reduceMotion)) { expanded.toggle() }
             } label: {
                 HStack(spacing: 6) {
-                    Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                    Image(systemName: "chevron.right")
                         .font(.caption2).foregroundStyle(.secondary).frame(width: 10)
+                        .rotationEffect(.degrees(expanded ? 90 : 0))
                     Image(systemName: "wrench.and.screwdriver").foregroundStyle(.orange).font(.caption)
                     Text(turn.toolStepLabel).font(.caption).bold()
                     if let raw = turn.toolName,
@@ -351,13 +358,14 @@ private struct TurnCard: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.multiharness)
             if expanded {
                 Text(turn.text.isEmpty ? "(no output)" : turn.text)
                     .font(.system(.caption, design: .monospaced))
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(8)
                     .textSelection(.enabled)
+                    .transition(.disclosureContent)
             }
         }
         .background(Color.orange.opacity(0.07), in: RoundedRectangle(cornerRadius: 6))
@@ -442,7 +450,7 @@ private struct Composer: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.multiharness)
                 .disabled(store.isStreaming)
                 .popover(isPresented: $switcherShown, arrowEdge: .top) {
                     ModelSwitcher(
@@ -510,18 +518,56 @@ private struct Inspector: View {
     @Bindable var workspaceStore: WorkspaceStore
     let branchListService: BranchListService
 
+    private enum InspectorTab: Hashable { case files, context }
+    @State private var inspectorTab: InspectorTab = .files
+    @Namespace private var inspectorTabNamespace
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
-        TabView {
-            FilesTab(workspace: workspace, env: env)
-                .tabItem { Label("Files", systemImage: "doc.text") }
-            ContextTab(
-                workspace: workspace,
-                appStore: appStore,
-                workspaceStore: workspaceStore,
-                branchListService: branchListService
-            )
-            .tabItem { Label("Context", systemImage: "text.alignleft") }
+        VStack(spacing: 0) {
+            HStack(spacing: 0) {
+                tabButton(label: "Files", icon: "doc.text", value: .files)
+                tabButton(label: "Context", icon: "text.alignleft", value: .context)
+                Spacer()
+            }
+            .padding(.horizontal, 8).padding(.top, 6).padding(.bottom, 4)
+            Divider()
+            // True overlap-crossfade rather than fade-out-then-in: both tabs
+            // stay in the hierarchy while opacity animates between them.
+            TabCrossfade(selection: inspectorTab, first: .files) {
+                FilesTab(workspace: workspace, env: env)
+            } secondView: {
+                ContextTab(
+                    workspace: workspace,
+                    appStore: appStore,
+                    workspaceStore: workspaceStore,
+                    branchListService: branchListService
+                )
+            }
         }
+    }
+
+    @ViewBuilder
+    private func tabButton(label: String, icon: String, value: InspectorTab) -> some View {
+        Button {
+            withAnimation(Motion.standard.adaptive(reduceMotion)) { inspectorTab = value }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                Text(label)
+            }
+            .font(.callout)
+            .padding(.horizontal, 10).padding(.vertical, 4)
+            .background {
+                if inspectorTab == value {
+                    RoundedRectangle(cornerRadius: 5)
+                        .fill(Color.accentColor.opacity(0.18))
+                        .matchedGeometryEffect(id: "inspector-pill", in: inspectorTabNamespace)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.multiharness)
     }
 }
 
@@ -543,7 +589,7 @@ private struct FilesTab: View {
                 } label: {
                     Image(systemName: "arrow.clockwise")
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.multiharnessIcon)
             }
             .padding(.horizontal, 12).padding(.vertical, 10)
             Divider()
@@ -692,6 +738,7 @@ private struct ModelSwitcher: View {
         }
         .padding(16)
         .frame(width: 460, height: 460)
+        .sheetEntry()
     }
 
     @MainActor

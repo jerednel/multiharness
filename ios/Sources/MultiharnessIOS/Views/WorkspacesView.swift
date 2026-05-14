@@ -216,7 +216,7 @@ struct WorkspacesView: View {
                                     Image(systemName: "plus.circle")
                                         .font(.body)
                                 }
-                                .buttonStyle(.plain)
+                                .buttonStyle(.multiharnessIcon)
                                 .disabled(
                                     connection.providers.isEmpty
                                     || quickCreateInFlight.contains(group.project.id)
