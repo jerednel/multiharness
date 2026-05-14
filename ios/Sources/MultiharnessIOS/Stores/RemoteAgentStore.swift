@@ -97,18 +97,23 @@ public final class RemoteAgentStore {
         }
     }
 
-    /// Reconstruct one turn from a remote.history payload entry.
+    /// Reconstruct one turn from a remote.history payload entry. Image
+    /// attachments are decoded out of the optional `images` array (sidecar's
+    /// DataReader emits `[{ data: base64, mimeType }]`).
     public static func turn(from json: [String: Any]) -> ConversationTurn? {
         guard let role = json["role"] as? String,
               let text = json["text"] as? String,
               let r = ConversationTurn.Role(rawValue: role)
         else { return nil }
+        let imagesRaw = (json["images"] as? [[String: Any]]) ?? []
+        let images = imagesRaw.compactMap(TurnImage.init(json:))
         return ConversationTurn(
             role: r,
             text: text,
             toolName: json["toolName"] as? String,
             toolCallDescription: json["toolCallDescription"] as? String,
-            groupId: json["groupId"] as? String
+            groupId: json["groupId"] as? String,
+            images: images
         )
     }
 }

@@ -1,4 +1,5 @@
 import { Agent, type AgentEvent } from "@mariozechner/pi-agent-core";
+import type { ImageContent } from "@mariozechner/pi-ai";
 import { buildModel, apiKeyFor, type ProviderConfig } from "./providers.js";
 import { buildTools } from "./tools/index.js";
 import { JsonlWriter } from "./jsonl.js";
@@ -96,14 +97,19 @@ export class AgentSession {
     this.unsubscribe = this.agent.subscribe((event) => this.handle(event));
   }
 
-  async prompt(message: string): Promise<void> {
+  async prompt(message: string, images?: ImageContent[]): Promise<void> {
     if (this.aiRenameEligible) {
       // Flip eligibility before launching the async naming task so a quick
-      // second prompt can't double-fire it.
+      // second prompt can't double-fire it. The first-prompt text alone is
+      // used to seed the workspace name — images aren't fed to the namer.
       this.aiRenameEligible = false;
       void this.generateAndApplyName(message);
     }
-    await this.agent.prompt(message);
+    if (images && images.length > 0) {
+      await this.agent.prompt(message, images);
+    } else {
+      await this.agent.prompt(message);
+    }
   }
 
   private async generateAndApplyName(firstMessage: string): Promise<void> {

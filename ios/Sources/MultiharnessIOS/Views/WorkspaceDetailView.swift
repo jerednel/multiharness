@@ -1,10 +1,12 @@
 import SwiftUI
 import MultiharnessClient
+import PhotosUI
 
 struct WorkspaceDetailView: View {
     @Bindable var connection: ConnectionStore
     let workspace: RemoteWorkspace
     @State private var draft = ""
+    @State private var draftImages: [TurnImage] = []
     @State private var contextExpanded = false
 
     private var project: RemoteProject? {
@@ -32,9 +34,16 @@ struct WorkspaceDetailView: View {
             Divider()
             Composer(
                 draft: $draft,
+                images: $draftImages,
                 isStreaming: connection.agents[workspace.id]?.isStreaming ?? false,
-                onSend: { text in
-                    Task { await connection.sendPrompt(workspaceId: workspace.id, message: text) }
+                onSend: { text, imgs in
+                    Task {
+                        await connection.sendPrompt(
+                            workspaceId: workspace.id,
+                            message: text,
+                            images: imgs
+                        )
+                    }
                 }
             )
             .padding(8)
@@ -276,12 +285,20 @@ private struct TurnRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(turn.role == .user ? "You" : "Agent")
                     .font(.caption).bold().foregroundStyle(.secondary)
-                Group {
-                    if turn.role == .assistant {
-                        MarkdownMessageText(turn.text)
-                    } else {
-                        Text(turn.text)
-                            .textSelection(.enabled)
+                VStack(alignment: .leading, spacing: 6) {
+                    if !turn.images.isEmpty {
+                        // Wrapping row of thumbnails (the iOS UIImage path —
+                        // ComposerImages on iOS materializes UIImage from
+                        // Data the same way the Mac side uses NSImage).
+                        IOSAttachmentThumbStrip(images: turn.images)
+                    }
+                    if !turn.text.isEmpty {
+                        if turn.role == .assistant {
+                            MarkdownMessageText(turn.text)
+                        } else {
+                            Text(turn.text)
+                                .textSelection(.enabled)
+                        }
                     }
                 }
                 .font(.body)
@@ -312,30 +329,168 @@ private struct ThinkingRow: View {
 
 private struct Composer: View {
     @Binding var draft: String
+    @Binding var images: [TurnImage]
     let isStreaming: Bool
-    let onSend: (String) -> Void
+    let onSend: (String, [TurnImage]) -> Void
+
+    /// PhotosPicker selection. Decoded into `images` in the `.onChange`
+    /// handler then cleared so the picker is ready for another pick.
+    @State private var photoItems: [PhotosPickerItem] = []
+    @State private var attachError: String?
+    /// Mirrors `UIPasteboard.general.hasImages`. SwiftUI's iOS
+    /// `onPasteCommand` is unavailable, so we surface a manual "paste
+    /// image from clipboard" button that lights up only when the system
+    /// clipboard actually contains an image (refreshed on scene
+    /// activation and after attach actions).
+    @State private var clipboardHasImage: Bool = false
 
     var body: some View {
-        HStack(alignment: .bottom, spacing: 8) {
-            TextField("Message", text: $draft, axis: .vertical)
-                .textFieldStyle(.roundedBorder)
-                .lineLimit(1...6)
-            Button {
-                send()
-            } label: {
-                Image(systemName: "paperplane.fill")
-                    .font(.title3)
-                    .padding(.horizontal, 8)
+        VStack(alignment: .leading, spacing: 6) {
+            if let err = attachError {
+                Label(err, systemImage: "exclamationmark.triangle")
+                    .font(.caption).foregroundStyle(.orange)
             }
-            .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isStreaming)
-            .buttonStyle(.borderedProminent)
+            if !images.isEmpty {
+                IOSComposerAttachmentStrip(images: $images)
+            }
+            HStack(alignment: .bottom, spacing: 8) {
+                PhotosPicker(
+                    selection: $photoItems,
+                    maxSelectionCount: 8,
+                    matching: .images,
+                    photoLibrary: .shared()
+                ) {
+                    Image(systemName: "photo.on.rectangle")
+                        .font(.title3)
+                        .padding(.horizontal, 4)
+                }
+                .disabled(isStreaming)
+
+                // Paste-from-clipboard button. iOS doesn't expose a
+                // SwiftUI paste hook on TextField (`onPasteCommand` is
+                // explicitly unavailable), and `PasteButton` insists on
+                // its own visual treatment, so we read UIPasteboard
+                // directly. The button only renders when there's
+                // actually an image to paste — avoids a permanently-on
+                // dimmed control that conveys nothing.
+                if clipboardHasImage {
+                    Button {
+                        pasteFromClipboard()
+                    } label: {
+                        Image(systemName: "doc.on.clipboard")
+                            .font(.title3)
+                            .padding(.horizontal, 4)
+                    }
+                    .disabled(isStreaming)
+                }
+
+                TextField("Message", text: $draft, axis: .vertical)
+                    .textFieldStyle(.roundedBorder)
+                    .lineLimit(1...6)
+
+                Button {
+                    send()
+                } label: {
+                    Image(systemName: "paperplane.fill")
+                        .font(.title3)
+                        .padding(.horizontal, 8)
+                }
+                .disabled(sendDisabled)
+                .buttonStyle(.borderedProminent)
+            }
         }
+        .onAppear { refreshClipboardState() }
+        // UIPasteboard doesn't have a SwiftUI-native change publisher;
+        // poll on the scene-active notification so the button appears
+        // when the user copies a screenshot in another app and switches
+        // back. Cheap (one bool flip).
+        .onReceive(
+            NotificationCenter.default.publisher(
+                for: UIApplication.didBecomeActiveNotification
+            )
+        ) { _ in
+            refreshClipboardState()
+        }
+        .onChange(of: photoItems) { _, newItems in
+            guard !newItems.isEmpty else { return }
+            Task { @MainActor in
+                var picked: [TurnImage] = []
+                var err: String?
+                for item in newItems {
+                    do {
+                        if let data = try await item.loadTransferable(type: Data.self),
+                           let img = IOSComposerPaste.encodeRawImageData(data) {
+                            picked.append(img)
+                        }
+                    } catch {
+                        err = error.localizedDescription
+                    }
+                }
+                images.append(contentsOf: picked)
+                if let err { attachError = err } else { attachError = nil }
+                photoItems = []
+            }
+        }
+    }
+
+    private var sendDisabled: Bool {
+        let textEmpty = draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        if textEmpty && images.isEmpty { return true }
+        if isStreaming { return true }
+        return false
+    }
+
+    /// Read every image on the clipboard, encode each through the same
+    /// pipeline the PhotosPicker path uses, and append to the staged
+    /// list. After consuming we re-check `hasImages` so the button hides
+    /// once the clipboard is exhausted (matches the user's intuition
+    /// that "Paste" is a one-shot action on a given snapshot).
+    @MainActor
+    private func pasteFromClipboard() {
+        let pb = UIPasteboard.general
+        var picked: [TurnImage] = []
+        var lastErr: String?
+        // `pb.images` covers the common UIImage path. For something
+        // weird like a clipboard with explicit HEIC data and no UIImage
+        // rep we'd need `pb.data(forPasteboardType:)` — skipping that
+        // until we see a real case; UIImage covers screenshots, Safari
+        // image copies, Photos, Markup, etc.
+        if let uiimgs = pb.images, !uiimgs.isEmpty {
+            for ui in uiimgs {
+                if let data = ui.pngData(),
+                   let img = IOSComposerPaste.encodeRawImageData(data, hint: .png) {
+                    picked.append(img)
+                } else if let data = ui.jpegData(compressionQuality: 0.9),
+                          let img = IOSComposerPaste.encodeRawImageData(data, hint: .jpeg) {
+                    picked.append(img)
+                } else {
+                    lastErr = "Could not encode pasted image"
+                }
+            }
+        }
+        if !picked.isEmpty {
+            images.append(contentsOf: picked)
+            attachError = nil
+        }
+        if let lastErr { attachError = lastErr }
+        refreshClipboardState()
+    }
+
+    @MainActor
+    private func refreshClipboardState() {
+        // `hasImages` is true for both single-image and multi-image
+        // clipboard contents. Cheap synchronous call; no entitlement
+        // prompt on iOS 16+ for `hasImages`/`hasStrings` (the prompt
+        // only fires when you actually read the data).
+        clipboardHasImage = UIPasteboard.general.hasImages
     }
 
     private func send() {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
+        let imgs = images
+        guard !text.isEmpty || !imgs.isEmpty else { return }
         draft = ""
-        onSend(text)
+        images = []
+        onSend(text, imgs)
     }
 }

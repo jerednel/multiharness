@@ -50,15 +50,22 @@ public final class AgentStore {
                       let role = msg["role"] as? String
                 else { continue }
                 let text = Self.extractText(msg["content"])
+                let images = role == "user" ? Self.extractImages(msg["content"]) : []
                 switch role {
                 case "user":
-                    if !text.isEmpty {
+                    // Preserve image-only user turns (no caption) — empty
+                    // text alone is no longer a reason to skip.
+                    if !text.isEmpty || !images.isEmpty {
                         // User turns are added before agent_start in the live
                         // flow, so they have no groupId. Persisted user
                         // message_end events arrive inside the active group;
                         // strip the groupId here so loaded history matches
                         // the live structure.
-                        loaded.append(ConversationTurn(role: .user, text: text))
+                        loaded.append(ConversationTurn(
+                            role: .user,
+                            text: text,
+                            images: images
+                        ))
                     }
                 case "assistant":
                     if !text.isEmpty {
@@ -105,6 +112,18 @@ public final class AgentStore {
             }
             return nil
         }.joined()
+    }
+
+    /// Pulls image parts out of a user-message content array
+    /// (pi-ai shape: `[{ type: "image", data: <base64>, mimeType }, …]`).
+    /// The Mac's local JSONL persists these verbatim, so history rehydration
+    /// can show the same thumbnails the user saw live.
+    private static func extractImages(_ content: Any?) -> [TurnImage] {
+        guard let arr = content as? [[String: Any]] else { return [] }
+        return arr.compactMap { item -> TurnImage? in
+            guard (item["type"] as? String) == "image" else { return nil }
+            return TurnImage(json: item)
+        }
     }
 
     private static func extractToolResultPreview(_ result: Any?) -> String {
@@ -251,13 +270,25 @@ public final class AgentStore {
         }
     }
 
-    public func sendPrompt(_ text: String) async {
-        turns.append(ConversationTurn(role: .user, text: text))
+    public func sendPrompt(_ text: String, images: [TurnImage] = []) async {
+        turns.append(ConversationTurn(role: .user, text: text, images: images))
+        var params: [String: Any] = [
+            "workspaceId": workspaceId.uuidString,
+            "message": text,
+        ]
+        if !images.isEmpty {
+            // Base64-encode on the way out. The sidecar decodes and re-emits
+            // the same shape into the JSONL log via message_end, so the
+            // round-trip preserves the bytes exactly.
+            params["images"] = images.map { img -> [String: String] in
+                [
+                    "data": img.data.base64EncodedString(),
+                    "mimeType": img.mimeType,
+                ]
+            }
+        }
         do {
-            _ = try await control?.call(
-                method: "agent.prompt",
-                params: ["workspaceId": workspaceId.uuidString, "message": text]
-            )
+            _ = try await control?.call(method: "agent.prompt", params: params)
         } catch {
             lastError = String(describing: error)
         }
