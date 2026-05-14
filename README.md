@@ -67,6 +67,9 @@ bash scripts/setup-codesign.sh
 #   - Signs everything (sidecar gets JIT entitlements — Bun needs JIT)
 bash scripts/build-app.sh
 
+# Build the macOS DMG release
+bash scripts/build-dmg.sh
+
 # Launch it
 open dist/Multiharness.app
 ```

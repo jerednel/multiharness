@@ -6,6 +6,12 @@ cd "$(dirname "$0")/.."
 CONFIG="${CONFIG:-release}"
 BUNDLE_NAME="Multiharness"
 BUNDLE_ID="com.multiharness.app"
+VERSION_FILE="VERSION"
+APP_VERSION="0.1.0"
+
+if [ -f "$VERSION_FILE" ]; then
+  APP_VERSION="$(tr -d '[:space:]' < "$VERSION_FILE")"
+fi
 
 echo "==> Building sidecar binary"
 bash sidecar/scripts/build.sh
@@ -46,7 +52,7 @@ cat > "$CONTENTS/Info.plist" <<PLIST
   <key>CFBundleDisplayName</key><string>$BUNDLE_NAME</string>
   <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
   <key>CFBundleVersion</key><string>1</string>
-  <key>CFBundleShortVersionString</key><string>0.1.0</string>
+  <key>CFBundleShortVersionString</key><string>$APP_VERSION</string>
   <key>CFBundleExecutable</key><string>$BUNDLE_NAME</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
