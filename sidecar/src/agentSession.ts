@@ -1,9 +1,15 @@
 import { Agent, type AgentEvent, type AgentTool } from "@mariozechner/pi-agent-core";
-import type { ImageContent } from "@mariozechner/pi-ai";
+import type { ImageContent, Message } from "@mariozechner/pi-ai";
 import { buildModel, apiKeyFor, type ProviderConfig } from "./providers.js";
 import { buildTools } from "./tools/index.js";
 import { JsonlWriter } from "./jsonl.js";
 import { log } from "./logger.js";
+import {
+  makeTransformContext,
+  type CompactionReport,
+} from "./contextCompactor.js";
+import { makeSummarizer } from "./contextSummarizer.js";
+import { probeOllamaContextWindow } from "./ollamaProbe.js";
 import {
   getAnthropicAccessToken,
   getOpenAICodexAccessToken,
@@ -59,7 +65,11 @@ export type AgentSessionOptions = {
   toolsOverride?: AgentTool<any>[];
 };
 
-const PERSIST_EVENTS = new Set<AgentEvent["type"] | "qa_findings">([
+// Type widened to `string` because we persist two synthetic events that
+// aren't part of pi-agent-core's `AgentEvent` union: the QA runner's
+// `qa_findings` (downstream of post_qa_findings calling its sink) and
+// AgentSession's own `context_compacted` (emitted from onCompaction()).
+const PERSIST_EVENTS = new Set<string>([
   "agent_start",
   "agent_end",
   "turn_end",
@@ -69,11 +79,14 @@ const PERSIST_EVENTS = new Set<AgentEvent["type"] | "qa_findings">([
   // step labels users saw live.
   "tool_execution_start",
   "tool_execution_end",
-  // The QA runner emits qa_findings as a synthetic event (not a real
-  // AgentEvent — it's downstream of post_qa_findings calling its sink).
-  // Persisting it lets history rehydration reconstruct the findings card
-  // without re-running the QA agent.
+  // QA runner emits qa_findings as a synthetic event when the agent
+  // calls post_qa_findings. Persisted so history rehydration can
+  // reconstruct the findings card without re-running the QA agent.
   "qa_findings",
+  // Emitted by AgentSession.onCompaction whenever the context-compactor
+  // had to elide/summarize/drop messages. Persisted so the Mac/iOS apps
+  // can render the compaction marker after reopening a workspace.
+  "context_compacted",
 ]);
 
 export class AgentSession {
@@ -87,6 +100,25 @@ export class AgentSession {
   /// adjective-noun placeholder. Flipped to false before kicking off the
   /// AI rename so a fast second prompt can't double-fire.
   private aiRenameEligible: boolean;
+  /// Last `usage.input` count observed from an assistant message_end.
+  /// Used as the anchor for incremental token estimation in the
+  /// compactor — much more accurate than chars/4 over the whole
+  /// transcript.
+  private lastInputTokens: number | undefined;
+  /// Snapshot of the transcript at the time `lastInputTokens` was
+  /// observed. Compared against the live transcript to compute a delta
+  /// estimate for messages appended since.
+  private lastInputMessages: Message[] | undefined;
+  /// Compacted contextWindow taken from the provider config at
+  /// construction. Reading from `this.agent.state.model.contextWindow`
+  /// would also work, but caching here keeps the transformContext path
+  /// dependency-free and lets tests inject a custom budget.
+  ///
+  /// Not `readonly` because the Ollama auto-probe (fired-and-forgotten
+  /// at construction time) may update it asynchronously when the user
+  /// is pointed at an Ollama endpoint whose effective window differs
+  /// from whatever was configured.
+  private contextWindow: number;
 
   readonly workspaceId: string;
   readonly projectId: string;
@@ -116,12 +148,44 @@ export class AgentSession {
       opts.nameSource === "random" && (opts.sessionMode ?? "build") === "build";
     const cfg = opts.providerConfig;
     const staticKey = apiKeyFor(cfg);
+    const model = buildModel(cfg);
+    // Surface a usable context-window number for the compactor. Manual
+    // configs (Ollama, LM Studio, custom Anthropic proxies) carry it on
+    // the provider config; pi-known models carry it on the Model. Fall
+    // back to a conservative 128k.
+    this.contextWindow =
+      (cfg as any).contextWindow
+      ?? (model as any).contextWindow
+      ?? 128_000;
     this.agent = new Agent({
       initialState: {
         systemPrompt: this.composeSystemPrompt(),
-        model: buildModel(cfg) as any,
+        model: model as any,
         tools: opts.toolsOverride ?? buildTools(opts.worktreePath),
       },
+      // Pre-flight context compaction. pi-agent-core calls this before
+      // every LLM request with the current transcript; we elide / drop
+      // oldest content as needed to keep us under contextWindow. Without
+      // this, Ollama-style small-window models OOM-on-context within a
+      // handful of tool-heavy turns.
+      //
+      // Tier 2.5 summarization uses the same provider/model as the main
+      // agent — no separate config to manage, and on hosted providers
+      // it's typically a sub-cent operation. On Ollama it just makes
+      // another local call.
+      transformContext: makeTransformContext(
+        () => ({
+          contextWindow: this.contextWindow,
+          lastKnownInputTokens: this.lastInputTokens,
+          lastKnownMessages: this.lastInputMessages,
+        }),
+        (report) => this.onCompaction(report),
+        makeSummarizer({
+          providerConfig: cfg,
+          oauthStore: opts.oauthStore,
+          workspaceId: opts.workspaceId,
+        }),
+      ),
       // OAuth providers (Anthropic Pro/Max) need a fresh access token each
       // request — getApiKey is called by pi-ai right before every API
       // call, so refresh-on-demand happens here.
@@ -143,6 +207,47 @@ export class AgentSession {
     });
     this.writer = new JsonlWriter(opts.jsonlPath);
     this.unsubscribe = this.agent.subscribe((event) => this.handle(event));
+
+    // Ollama / OpenAI-compatible auto-probe. Only runs when the user is
+    // on an openai-compatible endpoint AND didn't explicitly configure
+    // a contextWindow on the provider config — if they set one we
+    // respect it as an authoritative override.
+    //
+    // Fire-and-forget on purpose: the compactor reads `this.contextWindow`
+    // through a closure on every call, so a late update is fine. The
+    // first few requests run at the configured (or 128k default) budget;
+    // once the probe resolves, subsequent compactions use the real
+    // number. We don't block construction because Ollama is sometimes
+    // unreachable (LAN endpoint going through Tailscale etc.) and we
+    // don't want session-create to wait on it.
+    if (cfg.kind === "openai-compatible" && cfg.contextWindow === undefined) {
+      void this.probeContextWindow(cfg.baseUrl, cfg.modelId);
+    }
+  }
+
+  private async probeContextWindow(baseUrl: string, modelId: string): Promise<void> {
+    try {
+      const r = await probeOllamaContextWindow(baseUrl, modelId);
+      if (r.contextWindow && r.contextWindow !== this.contextWindow) {
+        log.info("ollama context window auto-detected", {
+          workspaceId: this.opts.workspaceId,
+          baseUrl,
+          modelId,
+          numCtx: r.numCtx,
+          architectureMax: r.architectureMax,
+          previous: this.contextWindow,
+          updated: r.contextWindow,
+        });
+        this.contextWindow = r.contextWindow;
+      }
+    } catch (e) {
+      // probe is internally swallowing errors already; if it throws
+      // anyway, nothing we can do but log.
+      log.warn("ollama probe threw unexpectedly", {
+        workspaceId: this.opts.workspaceId,
+        err: e instanceof Error ? e.message : String(e),
+      });
+    }
   }
 
   async prompt(message: string, images?: ImageContent[]): Promise<void> {
@@ -313,13 +418,63 @@ export class AgentSession {
       this.opts.workspaceId,
       outgoing as unknown as AgentEvent,
     );
-    if (PERSIST_EVENTS.has(event.type as AgentEvent["type"] | "qa_findings")) {
-      // Persist the original event (including the kind annotation when
-      // we added one) so history rehydration reconstructs the same
-      // group structure.
+    // After every completed assistant message we get a fresh, real
+    // `usage.input` from the provider. Capture it (plus the transcript
+    // snapshot that produced it) so the next compaction can anchor its
+    // token estimate against the provider's tokenizer instead of
+    // estimating the whole thing from chars/4.
+    if (event.type === "message_end") {
+      const msg = (event as any).message;
+      if (
+        msg &&
+        msg.role === "assistant" &&
+        msg.usage &&
+        typeof msg.usage.input === "number"
+      ) {
+        this.lastInputTokens = msg.usage.input;
+        // The state.messages array at this point includes the just-
+        // -completed assistant message. The next LLM call's input will
+        // be (everything up to and including this assistant message) +
+        // any new user/toolResult messages appended afterwards — which
+        // is exactly the anchor semantics estimateTokensWithAnchor
+        // expects. We slice() to freeze a snapshot; the live state
+        // array is mutated in place by the agent loop.
+        const snapshot = (this.agent.state.messages as Message[]).slice();
+        this.lastInputMessages = snapshot;
+      }
+    }
+    if (PERSIST_EVENTS.has(event.type)) {
+      // Persist the (possibly kind-annotated) outgoing event so history
+      // rehydration reconstructs the same group structure the live UI
+      // saw.
       this.writer
         .append({ seq: this.seq++, ts: Date.now(), event: outgoing as AgentEvent })
         .catch((err) => log.warn("jsonl append failed", { err: String(err) }));
     }
+  }
+
+  /// Called by the compactor whenever it had to elide or drop messages.
+  /// We log it (visible in the sidecar's structured log for forensics)
+  /// and push a `context_compacted` event through the sink so clients
+  /// can render a "context was compacted" affordance. The Mac/iOS apps
+  /// can ignore unknown event types safely; this gives us a forward-
+  /// compatible hook for surfacing compaction in the UI later.
+  private onCompaction(report: CompactionReport): void {
+    log.info("context compacted", {
+      workspaceId: this.opts.workspaceId,
+      tier: report.tier,
+      beforeTokens: report.beforeTokens,
+      afterTokens: report.afterTokens,
+      beforeMessages: report.beforeMessages,
+      afterMessages: report.afterMessages,
+      elidedToolResults: report.elidedToolResults,
+      elidedAssistantBlocks: report.elidedAssistantBlocks,
+      droppedMessages: report.droppedMessages,
+      budget: report.budget,
+    });
+    this.opts.sink(this.opts.workspaceId, {
+      type: "context_compacted",
+      ...report,
+    } as unknown as AgentEvent);
   }
 }

@@ -21,6 +21,10 @@ function makeOpts(overrides: Partial<AgentSessionOptions> = {}): AgentSessionOpt
       kind: "openai-compatible",
       modelId: "x",
       baseUrl: "http://localhost:1234/v1",
+      // Explicit contextWindow disables the Ollama auto-probe (otherwise
+      // the session fires an async fetch on construction that races the
+      // test lifecycle and logs noise into stdout).
+      contextWindow: 128_000,
     },
     jsonlPath: join(dataDir, "messages.jsonl"),
     sink: () => {},
