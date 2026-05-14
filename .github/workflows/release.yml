@@ -25,7 +25,7 @@ jobs:
       - name: Zip app
         run: ditto -c -k --keepParent dist/Multiharness.app Multiharness-macOS.zip
       - name: Upload workflow artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Multiharness-macOS
           path: Multiharness-macOS.zip
