@@ -229,9 +229,16 @@ private struct TurnRow: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        if turn.role == .tool {
+        switch turn.role {
+        case .tool:
             toolRow
-        } else {
+        case .compaction:
+            CompactionMarkerRow(info: turn.compaction)
+        case .user, .assistant, .qaFindings:
+            // iOS doesn't have a dedicated QA card yet — render the
+            // findings as an assistant-style message row using its
+            // summary text. The structured findings array is preserved
+            // on the turn for a future richer iOS view.
             messageRow
         }
     }
@@ -324,6 +331,51 @@ private struct ThinkingRow: View {
         }
         .padding(8)
         .background(Color.purple.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+/// In-band marker rendered for `.compaction` turns on iOS. Tap to expand
+/// the detail line — iOS has no hover, so the detail breakdown lives in
+/// an expandable second row instead of a tooltip.
+private struct CompactionMarkerRow: View {
+    let info: CompactionInfo?
+    @State private var expanded = false
+
+    var body: some View {
+        VStack(spacing: 2) {
+            HStack(spacing: 8) {
+                Rectangle()
+                    .fill(Color.secondary.opacity(0.3))
+                    .frame(height: 1)
+                Button {
+                    if info?.detail.isEmpty == false { expanded.toggle() }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.down.right.and.arrow.up.left")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        Text(info?.headline ?? "Context compacted")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(Color.secondary.opacity(0.08))
+                    )
+                }
+                .buttonStyle(.plain)
+                Rectangle()
+                    .fill(Color.secondary.opacity(0.3))
+                    .frame(height: 1)
+            }
+            if expanded, let detail = info?.detail, !detail.isEmpty {
+                Text(detail)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+            }
+        }
     }
 }
 

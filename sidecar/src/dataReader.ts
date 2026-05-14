@@ -110,12 +110,24 @@ export class DataReader {
     options?: { limit?: number; perTurnTextLimit?: number },
   ): Promise<{
     turns: Array<{
-      role: "user" | "assistant" | "tool";
+      role: "user" | "assistant" | "tool" | "compaction";
       text: string;
       toolName?: string;
       toolCallDescription?: string;
       groupId?: string;
       images?: Array<{ data: string; mimeType: string }>;
+      compaction?: {
+        tier: number;
+        beforeTokens: number;
+        afterTokens: number;
+        beforeMessages: number;
+        afterMessages: number;
+        elidedToolResults: number;
+        elidedAssistantBlocks: number;
+        summarizedTurnPairs: number;
+        droppedMessages: number;
+        budget: number;
+      };
     }>;
     hasMore: boolean;
     total: number;
@@ -126,12 +138,24 @@ export class DataReader {
     if (!existsSync(path)) return { turns: [], hasMore: false, total: 0 };
     const text = await readFile(path, "utf8");
     const all: Array<{
-      role: "user" | "assistant" | "tool";
+      role: "user" | "assistant" | "tool" | "compaction";
       text: string;
       toolName?: string;
       toolCallDescription?: string;
       groupId?: string;
       images?: Array<{ data: string; mimeType: string }>;
+      compaction?: {
+        tier: number;
+        beforeTokens: number;
+        afterTokens: number;
+        beforeMessages: number;
+        afterMessages: number;
+        elidedToolResults: number;
+        elidedAssistantBlocks: number;
+        summarizedTurnPairs: number;
+        droppedMessages: number;
+        budget: number;
+      };
     }> = [];
     let groupId: string | undefined;
     let groupCounter = 0;
@@ -201,6 +225,28 @@ export class DataReader {
             break;
           }
         }
+      } else if (event.type === "context_compacted") {
+        // Synthetic event emitted by AgentSession.onCompaction. The
+        // sidecar persists these alongside agent_start/end so iOS's
+        // remote.history can rehydrate the in-band compaction marker.
+        // Field-by-field copy (rather than spread) so we don't leak
+        // unrelated event keys into the wire format.
+        all.push({
+          role: "compaction",
+          text: "",
+          compaction: {
+            tier: typeof event.tier === "number" ? event.tier : 0,
+            beforeTokens: event.beforeTokens ?? 0,
+            afterTokens: event.afterTokens ?? 0,
+            beforeMessages: event.beforeMessages ?? 0,
+            afterMessages: event.afterMessages ?? 0,
+            elidedToolResults: event.elidedToolResults ?? 0,
+            elidedAssistantBlocks: event.elidedAssistantBlocks ?? 0,
+            summarizedTurnPairs: event.summarizedTurnPairs ?? 0,
+            droppedMessages: event.droppedMessages ?? 0,
+            budget: event.budget ?? 0,
+          },
+        });
       }
     }
     const total = all.length;

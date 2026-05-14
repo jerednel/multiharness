@@ -114,4 +114,47 @@ describe("DataReader.historyTurns", () => {
       { data: "ZZ", mimeType: "image/png" },
     ]);
   });
+
+  it("rehydrates persisted context_compacted events as compaction turns", async () => {
+    // Mirror the shape the sidecar's AgentSession.onCompaction emits +
+    // persists via JsonlWriter. The DataReader is responsible for
+    // turning these back into wire-level compaction turns so iOS
+    // remote.history shows the marker on reopen.
+    const lines = [
+      userTurn("hi"),
+      JSON.stringify({
+        event: {
+          type: "context_compacted",
+          tier: 2.5,
+          beforeTokens: 198_000,
+          afterTokens: 84_000,
+          beforeMessages: 42,
+          afterMessages: 38,
+          elidedToolResults: 6,
+          elidedAssistantBlocks: 2,
+          summarizedTurnPairs: 1,
+          droppedMessages: 0,
+          budget: 196_000,
+        },
+      }),
+    ];
+    writeHistory("ws-compact", lines);
+    const r = new DataReader(dir);
+    const out = await r.historyTurns("ws-compact");
+    expect(out.turns).toHaveLength(2);
+    const marker = out.turns[1]!;
+    expect(marker.role).toBe("compaction");
+    expect(marker.compaction).toEqual({
+      tier: 2.5,
+      beforeTokens: 198_000,
+      afterTokens: 84_000,
+      beforeMessages: 42,
+      afterMessages: 38,
+      elidedToolResults: 6,
+      elidedAssistantBlocks: 2,
+      summarizedTurnPairs: 1,
+      droppedMessages: 0,
+      budget: 196_000,
+    });
+  });
 });
