@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@mariozechner/pi-ai": "^0.70.6",
+    "@mariozechner/pi-ai": "^0.73.1",
     "@mariozechner/pi-agent-core": "^0.70.6"
   },
   "devDependencies": {
