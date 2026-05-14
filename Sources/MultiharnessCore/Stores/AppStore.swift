@@ -127,6 +127,43 @@ public final class AppStore {
         projects[idx] = updated
     }
 
+    /// Persist the project-level "default QA on/off for new workspaces"
+    /// toggle. Doesn't touch existing workspaces' overrides — only
+    /// workspaces with `qaEnabled == nil` will pick up the new value.
+    @MainActor
+    public func setProjectDefaultQaEnabled(projectId: UUID, enabled: Bool) throws {
+        guard let idx = projects.firstIndex(where: { $0.id == projectId }) else { return }
+        var updated = projects[idx]
+        updated.defaultQaEnabled = enabled
+        try env.persistence.upsertProject(updated)
+        projects[idx] = updated
+    }
+
+    /// Persist the project-level default QA provider/model pair. Both
+    /// fields move together — passing nil for either clears both, since
+    /// a provider without a model isn't usable. Model picks survive the
+    /// `defaultQaEnabled` toggle (spec §2): a project can stage a model
+    /// without enabling QA broadly.
+    @MainActor
+    public func setProjectDefaultQaModel(
+        projectId: UUID,
+        providerId: UUID?,
+        modelId: String?
+    ) throws {
+        guard let idx = projects.firstIndex(where: { $0.id == projectId }) else { return }
+        var updated = projects[idx]
+        let trimmedModel = modelId?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let pid = providerId, let mid = trimmedModel, !mid.isEmpty {
+            updated.defaultQaProviderId = pid
+            updated.defaultQaModelId = mid
+        } else {
+            updated.defaultQaProviderId = nil
+            updated.defaultQaModelId = nil
+        }
+        try env.persistence.upsertProject(updated)
+        projects[idx] = updated
+    }
+
     @MainActor
     public func setProjectDefaultBaseBranch(projectId: UUID, value: String) throws {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -198,6 +235,55 @@ public final class AppStore {
             )
         }
         try await createAgentSession(for: updated)
+    }
+
+    /// Fire-and-forget QA review for `workspace`. Constructs the first
+    /// message Mac-side (diff vs base + last user + last assistant turn,
+    /// truncated to ~50 KB) and calls `qa.run` on the sidecar. The
+    /// sidecar streams events; the workspace's `AgentStore` picks them
+    /// up via the existing event subscription path.
+    ///
+    /// Throws when the provider/model can't be resolved or the control
+    /// client isn't connected. Per-turn agent failures during the QA
+    /// run surface as `agent_error`/`agent_end` events through the
+    /// existing path — they don't throw out of this call.
+    @MainActor
+    public func runQA(
+        workspace: Workspace,
+        providerId: UUID,
+        modelId: String,
+        turns: [ConversationTurn]
+    ) async throws {
+        guard let client = env.control else {
+            throw AgentSessionError.controlClientUnavailable
+        }
+        guard let provider = providers.first(where: { $0.id == providerId }) else {
+            throw AgentSessionError.providerNotFound
+        }
+        let trimmedModel = modelId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedModel.isEmpty else {
+            throw AgentSessionError.providerNotFound
+        }
+        let cfg = providerConfig(provider: provider, modelId: trimmedModel)
+        let firstMessage = QaFirstMessageBuilder.build(
+            worktree: env.worktree,
+            worktreePath: workspace.worktreePath,
+            branchName: workspace.branchName,
+            baseBranch: workspace.baseBranch,
+            turns: turns
+        )
+        let project = projects.first(where: { $0.id == workspace.projectId })
+        var params: [String: Any] = [
+            "workspaceId": workspace.id.uuidString,
+            "firstMessage": firstMessage,
+            "providerConfig": cfg,
+            "branchName": workspace.branchName,
+            "baseBranch": workspace.baseBranch,
+        ]
+        if let projectName = project?.name {
+            params["projectName"] = projectName
+        }
+        _ = try await client.call(method: "qa.run", params: params)
     }
 
     /// Persist a new project-level context override and push it to every

@@ -1,4 +1,4 @@
-import { Agent, type AgentEvent } from "@mariozechner/pi-agent-core";
+import { Agent, type AgentEvent, type AgentTool } from "@mariozechner/pi-agent-core";
 import type { ImageContent } from "@mariozechner/pi-ai";
 import { buildModel, apiKeyFor, type ProviderConfig } from "./providers.js";
 import { buildTools } from "./tools/index.js";
@@ -9,7 +9,12 @@ import {
   getOpenAICodexAccessToken,
   type OAuthStore,
 } from "./oauthStore.js";
-import { buildSystemPrompt, type BuildMode } from "./prompts.js";
+import {
+  buildSystemPrompt,
+  buildQaSystemPrompt,
+  type BuildMode,
+  type SessionMode,
+} from "./prompts.js";
 import { generateWorkspaceName } from "./workspaceNamer.js";
 
 export type EventSink = (workspaceId: string, ev: AgentEvent) => void;
@@ -43,9 +48,18 @@ export type AgentSessionOptions = {
   /// what "the base" means when the user says things like "diff vs
   /// main".
   baseBranch?: string;
+  /// Which kind of session this is. Default is `"build"` (the primary
+  /// coding agent). `"qa"` uses the read-only reviewer prompt and
+  /// suppresses the project/workspace `<*_instructions>` overlays so
+  /// reviewer can't be biased by build-time guidance. See spec §5.
+  sessionMode?: SessionMode;
+  /// Replace the default `buildTools(...)` tool set. Used by the QA
+  /// runner to install a read-only subset plus the terminating
+  /// `post_qa_findings` tool. When omitted, falls back to `buildTools`.
+  toolsOverride?: AgentTool<any>[];
 };
 
-const PERSIST_EVENTS = new Set<AgentEvent["type"]>([
+const PERSIST_EVENTS = new Set<AgentEvent["type"] | "qa_findings">([
   "agent_start",
   "agent_end",
   "turn_end",
@@ -55,6 +69,11 @@ const PERSIST_EVENTS = new Set<AgentEvent["type"]>([
   // step labels users saw live.
   "tool_execution_start",
   "tool_execution_end",
+  // The QA runner emits qa_findings as a synthetic event (not a real
+  // AgentEvent — it's downstream of post_qa_findings calling its sink).
+  // Persisting it lets history rehydration reconstruct the findings card
+  // without re-running the QA agent.
+  "qa_findings",
 ]);
 
 export class AgentSession {
@@ -72,19 +91,36 @@ export class AgentSession {
   readonly workspaceId: string;
   readonly projectId: string;
 
+  /// Public so `qa.run` can grab the same path the primary session
+  /// is rooted at without forcing the Mac to send it twice. Spec §7.
+  get worktreePath(): string {
+    return this.opts.worktreePath;
+  }
+
+  /// Public for the same reason as `worktreePath` — the QA runner reads
+  /// the primary's session mode to assert it's wiring up against an
+  /// actual build session, not (somehow) a stray QA one.
+  get sessionMode(): SessionMode {
+    return this.opts.sessionMode ?? "build";
+  }
+
   constructor(private readonly opts: AgentSessionOptions) {
     this.workspaceId = opts.workspaceId;
     this.projectId = opts.projectId;
     this.projectContext = opts.projectContext ?? "";
     this.workspaceContext = opts.workspaceContext ?? "";
-    this.aiRenameEligible = opts.nameSource === "random";
+    // QA sessions are never AI-renamed (the spec passes nameSource:"named"
+    // explicitly, but also guard at the agent level so a future caller
+    // can't accidentally fire renames during a review pass).
+    this.aiRenameEligible =
+      opts.nameSource === "random" && (opts.sessionMode ?? "build") === "build";
     const cfg = opts.providerConfig;
     const staticKey = apiKeyFor(cfg);
     this.agent = new Agent({
       initialState: {
         systemPrompt: this.composeSystemPrompt(),
         model: buildModel(cfg) as any,
-        tools: buildTools(opts.worktreePath),
+        tools: opts.toolsOverride ?? buildTools(opts.worktreePath),
       },
       // OAuth providers (Anthropic Pro/Max) need a fresh access token each
       // request — getApiKey is called by pi-ai right before every API
@@ -188,17 +224,27 @@ export class AgentSession {
     ) {
       parts.push("You are Claude Code, Anthropic's official CLI for Claude.");
     }
-    parts.push(buildSystemPrompt(this.opts.buildMode));
-    parts.push(this.buildOrientation());
-    if (this.projectContext.trim()) {
-      parts.push(
-        `<project_instructions>\n${this.projectContext}\n</project_instructions>`,
-      );
-    }
-    if (this.workspaceContext.trim()) {
-      parts.push(
-        `<workspace_instructions>\n${this.workspaceContext}\n</workspace_instructions>`,
-      );
+    const mode: SessionMode = this.opts.sessionMode ?? "build";
+    if (mode === "qa") {
+      // QA reviewer: distinct prompt; deliberately omits the
+      // <project_instructions> / <workspace_instructions> blocks (spec
+      // §5) so the reviewer isn't biased by the build-time guidance
+      // the primary agent was given.
+      parts.push(buildQaSystemPrompt());
+      parts.push(this.buildOrientation());
+    } else {
+      parts.push(buildSystemPrompt(this.opts.buildMode));
+      parts.push(this.buildOrientation());
+      if (this.projectContext.trim()) {
+        parts.push(
+          `<project_instructions>\n${this.projectContext}\n</project_instructions>`,
+        );
+      }
+      if (this.workspaceContext.trim()) {
+        parts.push(
+          `<workspace_instructions>\n${this.workspaceContext}\n</workspace_instructions>`,
+        );
+      }
     }
     return parts.join("\n\n");
   }
@@ -248,10 +294,31 @@ export class AgentSession {
   }
 
   private handle(event: AgentEvent): void {
-    this.opts.sink(this.opts.workspaceId, event);
-    if (PERSIST_EVENTS.has(event.type)) {
+    const mode: SessionMode = this.opts.sessionMode ?? "build";
+    // Inject `kind: "qa"` on `agent_start` so the Mac UI can theme this
+    // run's transcript group as a QA review (different header, different
+    // pill colour). We deliberately don't tag `agent_end` — the Mac
+    // attaches the kind to the group at start time and carries it for
+    // the run's duration. Spec §7.
+    let outgoing: { type: string } = event;
+    if (mode === "qa" && event.type === "agent_start") {
+      outgoing = { ...(event as object), type: event.type, kind: "qa" } as {
+        type: string;
+      };
+    }
+    // The sink signature is typed as AgentEvent; the `kind` field is an
+    // extra property that flows through the server's spread-and-broadcast
+    // path (see server.ts's `sink`).
+    this.opts.sink(
+      this.opts.workspaceId,
+      outgoing as unknown as AgentEvent,
+    );
+    if (PERSIST_EVENTS.has(event.type as AgentEvent["type"] | "qa_findings")) {
+      // Persist the original event (including the kind annotation when
+      // we added one) so history rehydration reconstructs the same
+      // group structure.
       this.writer
-        .append({ seq: this.seq++, ts: Date.now(), event })
+        .append({ seq: this.seq++, ts: Date.now(), event: outgoing as AgentEvent })
         .catch((err) => log.warn("jsonl append failed", { err: String(err) }));
     }
   }

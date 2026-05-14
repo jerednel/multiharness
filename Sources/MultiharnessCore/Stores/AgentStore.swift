@@ -10,6 +10,17 @@ public final class AgentStore {
     public var isStreaming: Bool = false
     public var connectionState: String = "disconnected"
     public var lastError: String?
+    /// Per-groupId kind annotation, populated when an `agent_start`
+    /// carries `kind: "qa"` (or rehydrated from the same field in the
+    /// JSONL). Lets the UI theme the disclosure header without
+    /// putting QA-specific fields on every `ConversationTurn`.
+    public var groupKinds: [String: GroupKind] = [:]
+    /// The kind of the most recent agent run. Mirrors `groupKinds` for
+    /// the latest live group; kept around after the run ends so the
+    /// composer's "🔍 QA running…" label can flip back to idle when
+    /// `isStreaming` drops to false. See spec §12 ("Distinguishing
+    /// primary streaming from QA streaming in the UI").
+    public var lastGroupKind: GroupKind?
 
     private let env: AppEnvironment
     private weak var control: ControlClient?
@@ -18,6 +29,13 @@ public final class AgentStore {
         self.env = env
         self.workspaceId = workspaceId
         loadHistory()
+    }
+
+    /// Look up the kind of the group a turn belongs to. Returns `.build`
+    /// for any group that didn't explicitly register as something else.
+    public func groupKind(for groupId: String?) -> GroupKind {
+        guard let id = groupId else { return .build }
+        return groupKinds[id] ?? .build
     }
 
     /// Replay the persisted JSONL message log and reconstruct the visible turn
@@ -30,6 +48,8 @@ public final class AgentStore {
         var loaded: [ConversationTurn] = []
         var groupId: String?
         var groupCounter = 0
+        var rehydratedKinds: [String: GroupKind] = [:]
+        var rehydratedLastKind: GroupKind?
         // Re-derived from agent_start/agent_end markers in the JSONL so
         // history rehydration produces the same group structure as the
         // live event stream.
@@ -42,7 +62,11 @@ public final class AgentStore {
             switch type {
             case "agent_start":
                 groupCounter += 1
-                groupId = "g\(groupCounter)"
+                let gid = "g\(groupCounter)"
+                groupId = gid
+                let kind = (event["kind"] as? String) == "qa" ? GroupKind.qa : .build
+                rehydratedKinds[gid] = kind
+                rehydratedLastKind = kind
             case "agent_end":
                 groupId = nil
             case "message_end":
@@ -95,11 +119,29 @@ public final class AgentStore {
                 if let idx = loaded.indices.reversed().first(where: { loaded[$0].role == .tool }) {
                     loaded[idx].text = preview
                 }
+            case "qa_findings":
+                // Reconstruct the structured QA card from the persisted
+                // event. Lives inside the current group so it renders
+                // alongside the rest of the QA run's tool calls.
+                let verdictRaw = event["verdict"] as? String ?? "info"
+                let verdict = QaVerdict(rawValue: verdictRaw)
+                let summary = event["summary"] as? String ?? ""
+                let findingsRaw = event["findings"] as? [[String: Any]] ?? []
+                let findings = findingsRaw.compactMap(QaFinding.init(json:))
+                loaded.append(ConversationTurn(
+                    role: .qaFindings,
+                    text: summary,
+                    groupId: groupId,
+                    qaVerdict: verdict,
+                    qaFindings: findings
+                ))
             default:
                 break
             }
         }
         self.turns = loaded
+        self.groupKinds = rehydratedKinds
+        self.lastGroupKind = rehydratedLastKind
     }
 
     private static func extractText(_ content: Any?) -> String {
@@ -177,7 +219,11 @@ public final class AgentStore {
             liveGroupCounter += 1
             // Distinct prefix from history-replay ids ("g…") so live runs
             // can never collide with rehydrated ones in the same session.
-            currentGroupId = "live-\(liveGroupCounter)"
+            let gid = "live-\(liveGroupCounter)"
+            currentGroupId = gid
+            let kind: GroupKind = (event.payload["kind"] as? String) == "qa" ? .qa : .build
+            groupKinds[gid] = kind
+            lastGroupKind = kind
         case "agent_end":
             isStreaming = false
             assistantTurnPending = false
@@ -265,6 +311,23 @@ public final class AgentStore {
                     turns[lastIdx].text = preview
                 }
             }
+        case "qa_findings":
+            // Synthetic event the sidecar emits when the QA agent
+            // invokes the post_qa_findings tool. Renders as a
+            // structured card (verdict badge + summary + findings)
+            // inside the current QA group.
+            let verdictRaw = event.payload["verdict"] as? String ?? "info"
+            let verdict = QaVerdict(rawValue: verdictRaw)
+            let summary = event.payload["summary"] as? String ?? ""
+            let findingsRaw = event.payload["findings"] as? [[String: Any]] ?? []
+            let findings = findingsRaw.compactMap(QaFinding.init(json:))
+            turns.append(ConversationTurn(
+                role: .qaFindings,
+                text: summary,
+                groupId: currentGroupId,
+                qaVerdict: verdict,
+                qaFindings: findings
+            ))
         default:
             break
         }

@@ -71,6 +71,16 @@ public struct Project: Codable, Identifiable, Sendable, Equatable, Hashable {
     /// repeated TCC prompts for protected directories (Documents, Desktop, etc.).
     public var repoBookmark: Data?
     public var contextInstructions: String
+    /// Whether new workspaces in this project default to having QA review
+    /// turned on. Workspaces can still opt out individually via
+    /// `Workspace.qaEnabled`.
+    public var defaultQaEnabled: Bool
+    /// Pre-fill for the QA model picker on new workspaces (and the popover
+    /// fallback when a workspace hasn't picked its own yet). Independent
+    /// of `defaultQaEnabled` — a project may set these to "stage" a model
+    /// without enabling QA broadly.
+    public var defaultQaProviderId: UUID?
+    public var defaultQaModelId: String?
 
     public init(
         id: UUID = UUID(),
@@ -83,7 +93,10 @@ public struct Project: Codable, Identifiable, Sendable, Equatable, Hashable {
         defaultBuildMode: BuildMode? = nil,
         createdAt: Date = Date(),
         repoBookmark: Data? = nil,
-        contextInstructions: String = ""
+        contextInstructions: String = "",
+        defaultQaEnabled: Bool = false,
+        defaultQaProviderId: UUID? = nil,
+        defaultQaModelId: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -96,6 +109,9 @@ public struct Project: Codable, Identifiable, Sendable, Equatable, Hashable {
         self.createdAt = createdAt
         self.repoBookmark = repoBookmark
         self.contextInstructions = contextInstructions
+        self.defaultQaEnabled = defaultQaEnabled
+        self.defaultQaProviderId = defaultQaProviderId
+        self.defaultQaModelId = defaultQaModelId
     }
 }
 
@@ -119,6 +135,18 @@ public struct Workspace: Codable, Identifiable, Sendable, Equatable, Hashable {
     /// with the latest persisted `agent_end` timestamp from messages.jsonl
     /// to decide whether to show an "unseen" dot on the workspace row.
     public var lastViewedAt: Date?
+    /// Explicit QA opt-in/opt-out override. `nil` means "inherit project
+    /// default"; `true`/`false` are explicit decisions. Stored as a
+    /// nullable column so we can tell apart "user opted out" from
+    /// "user never picked" — both look identical when projected to a
+    /// non-nullable bool.
+    public var qaEnabled: Bool?
+    /// Workspace-level QA model picks. When non-nil, override the
+    /// project-level defaults in the QA popover's pre-filled selection.
+    /// Independent of `qaEnabled`: model picks persist through toggle
+    /// changes so opting back in restores the previous selection.
+    public var qaProviderId: UUID?
+    public var qaModelId: String?
 
     public init(
         id: UUID = UUID(),
@@ -136,7 +164,10 @@ public struct Workspace: Codable, Identifiable, Sendable, Equatable, Hashable {
         archivedAt: Date? = nil,
         nameSource: NameSource = .random,
         contextInstructions: String = "",
-        lastViewedAt: Date? = Date()
+        lastViewedAt: Date? = Date(),
+        qaEnabled: Bool? = nil,
+        qaProviderId: UUID? = nil,
+        qaModelId: String? = nil
     ) {
         self.id = id
         self.projectId = projectId
@@ -154,6 +185,9 @@ public struct Workspace: Codable, Identifiable, Sendable, Equatable, Hashable {
         self.nameSource = nameSource
         self.contextInstructions = contextInstructions
         self.lastViewedAt = lastViewedAt
+        self.qaEnabled = qaEnabled
+        self.qaProviderId = qaProviderId
+        self.qaModelId = qaModelId
     }
 
     /// Resolves the effective build mode using the precedence chain:
@@ -162,6 +196,38 @@ public struct Workspace: Codable, Identifiable, Sendable, Equatable, Hashable {
         if let m = buildMode { return m }
         if let m = project.defaultBuildMode { return m }
         return .primary
+    }
+
+    /// Resolves the effective QA-enabled flag:
+    /// `workspace.qaEnabled ?? project.defaultQaEnabled`. The composer's
+    /// QA button reads this to decide its idle label.
+    public func effectiveQaEnabled(in project: Project) -> Bool {
+        qaEnabled ?? project.defaultQaEnabled
+    }
+
+    /// `(provider, model)` pair the QA popover should pre-select. Falls
+    /// back to project defaults when the workspace hasn't recorded its
+    /// own picks. Returns `(nil, nil)` when nothing is configured at
+    /// either level.
+    public func qaPopoverInitialSelection(
+        in project: Project
+    ) -> (providerId: UUID?, modelId: String?) {
+        (
+            qaProviderId ?? project.defaultQaProviderId,
+            qaModelId ?? project.defaultQaModelId
+        )
+    }
+
+    /// True iff the workspace carries an explicit `qaEnabled` value
+    /// (either `true` or `false`) — drives whether the popover shows a
+    /// "Use project default" affordance. We deliberately treat
+    /// "explicit-and-matches-the-project" the same as
+    /// "explicit-and-differs": the user made a deliberate decision, and
+    /// the popover should let them reset it back to inheriting.
+    public func qaEnabledIsOverridden(in project: Project) -> Bool {
+        _ = project // suppress unused parameter warning while keeping the
+                    // signature symmetric with the other QA helpers.
+        return qaEnabled != nil
     }
 }
 

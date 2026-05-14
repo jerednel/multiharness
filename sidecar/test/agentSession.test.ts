@@ -148,3 +148,78 @@ describe("AgentSession composeSystemPrompt", () => {
     await s.dispose();
   });
 });
+
+describe("AgentSession in qa session mode", () => {
+  it("uses the QA reviewer prompt, not the build prompt", async () => {
+    const s = new AgentSession(makeOpts({ sessionMode: "qa" }));
+    const text = s.currentSystemPrompt();
+    expect(text).toContain("You are a QA reviewer");
+    expect(text).not.toContain("helpful coding agent operating inside a git worktree");
+    await s.dispose();
+  });
+
+  it("omits project + workspace instruction blocks (no self-confirming review)", async () => {
+    // The whole point of QA is to catch what the build agent missed —
+    // feeding it the same project/workspace guidance the builder had
+    // would just produce a rubber-stamp review.
+    const s = new AgentSession(
+      makeOpts({
+        sessionMode: "qa",
+        projectContext: "always use pnpm",
+        workspaceContext: "prefer SwiftUI",
+      }),
+    );
+    const text = s.currentSystemPrompt();
+    expect(text).not.toContain("<project_instructions>");
+    expect(text).not.toContain("<workspace_instructions>");
+    expect(text).not.toContain("always use pnpm");
+    expect(text).not.toContain("prefer SwiftUI");
+    await s.dispose();
+  });
+
+  it("still includes the workspace orientation block", async () => {
+    // The reviewer still needs to know which repo / branch / worktree
+    // it's looking at — orientation isn't build-specific.
+    const s = new AgentSession(
+      makeOpts({
+        sessionMode: "qa",
+        projectName: "multiharness",
+        branchName: "u/feat",
+        baseBranch: "main",
+      }),
+    );
+    const text = s.currentSystemPrompt();
+    expect(text).toContain("<workspace_orientation>");
+    expect(text).toContain("Project: multiharness");
+    expect(text).toContain("Branch: `u/feat` (forked from `main`)");
+    await s.dispose();
+  });
+
+  // End-to-end proof that kind:"qa" reaches the sink lives in
+  // qaRunner.test.ts ("emits agent_start carrying kind:\"qa\"") — that
+  // test drives an unreachable provider to force an agent_start without
+  // a live model. We don't duplicate it here because constructing a
+  // bare `AgentSession` and provoking a real agent_start requires the
+  // same setup.
+
+  it("exposes worktreePath for the QA runner to reuse", async () => {
+    const s = new AgentSession(makeOpts());
+    expect(s.worktreePath).toBe(worktree);
+    await s.dispose();
+  });
+
+  it("default sessionMode is 'build'", async () => {
+    const s = new AgentSession(makeOpts());
+    expect(s.sessionMode).toBe("build");
+    await s.dispose();
+  });
+
+  it("toolsOverride replaces the default tool set", async () => {
+    // We can't introspect the agent's tools easily, but we can verify
+    // the option is accepted without throwing — and the QaRunner test
+    // covers the integration path that actually exercises a custom set.
+    const s = new AgentSession(makeOpts({ toolsOverride: [] }));
+    expect(s.sessionMode).toBe("build"); // (option accepted; default stays build)
+    await s.dispose();
+  });
+});

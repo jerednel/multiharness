@@ -110,6 +110,24 @@ public final class Statement {
         }
     }
 
+    /// Convenience for nullable booleans: writes 1/0 as INTEGER or NULL.
+    /// SQLite has no native BOOL; we already store booleans as INTEGER
+    /// elsewhere (see `default_qa_enabled`), so this overload makes
+    /// call sites read cleanly.
+    public func bind(_ idx: Int32, _ v: Bool?) {
+        if let v {
+            sqlite3_bind_int64(handle, idx, v ? 1 : 0)
+        } else {
+            sqlite3_bind_null(handle, idx)
+        }
+    }
+
+    /// Read a nullable boolean stored as INTEGER (0/1) — NULL becomes nil.
+    public func bool(_ idx: Int32) -> Bool? {
+        guard let n = int64(idx) else { return nil }
+        return n != 0
+    }
+
     public func bind(_ idx: Int32, _ v: Data?) {
         if let v {
             v.withUnsafeBytes { (ptr: UnsafeRawBufferPointer) in
