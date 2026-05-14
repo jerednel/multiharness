@@ -78,8 +78,13 @@ pick_identity() {
   local devid
   devid="$(printf '%s\n' "$ids" | awk -F'"' '/Developer ID Application/ {print $2; exit}')"
   if [ -n "$devid" ]; then echo "$devid"; return; fi
-  # 4. Self-signed dev cert from setup-codesign.sh
-  if printf '%s\n' "$ids" | awk -F'"' '{print $2}' | grep -Fxq "Multiharness Dev"; then
+  # 4. Self-signed dev cert from setup-codesign.sh. On macOS 26 (Tahoe) a
+  #    self-signed cert lands in the keychain but `find-identity -p codesigning`
+  #    filters it out as CSSMERR_TP_NOT_TRUSTED, even though `codesign -s` can
+  #    use it. Fall back to `find-certificate` so the cert is still picked up.
+  if printf '%s\n' "$ids" | awk -F'"' '{print $2}' | grep -Fxq "Multiharness Dev" \
+     || security find-certificate -c "Multiharness Dev" \
+          "$HOME/Library/Keychains/login.keychain-db" >/dev/null 2>&1; then
     echo "Multiharness Dev"
     return
   fi
