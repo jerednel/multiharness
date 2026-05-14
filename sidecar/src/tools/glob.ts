@@ -14,6 +14,10 @@ const Params = Type.Object({
   ),
 });
 
+// Cap LLM-visible output. A `**/*` glob in a vendored or node_modules-heavy
+// repo can return 100k+ paths and easily exceed model context windows.
+export const MAX_GLOB_OUTPUT_BYTES = 100 * 1024;
+
 export function globTool(worktreePath: string): AgentTool<typeof Params> {
   return {
     name: "glob",
@@ -28,9 +32,18 @@ export function globTool(worktreePath: string): AgentTool<typeof Params> {
         matches.push(m);
       }
       matches.sort();
-      const text = matches.length === 0 ? "(no matches)" : matches.join("\n");
+      let text = matches.length === 0 ? "(no matches)" : matches.join("\n");
+      const totalBytes = Buffer.byteLength(text, "utf8");
+      if (totalBytes > MAX_GLOB_OUTPUT_BYTES) {
+        text =
+          Buffer.from(text, "utf8")
+            .subarray(0, MAX_GLOB_OUTPUT_BYTES)
+            .toString("utf8") +
+          `\n…[truncated: ${matches.length} paths, ${totalBytes} bytes total, first ${MAX_GLOB_OUTPUT_BYTES} bytes shown]`;
+      }
       return {
         content: [{ type: "text", text }],
+        // details keeps the full match list for the UI.
         details: { pattern, matches },
       };
     },

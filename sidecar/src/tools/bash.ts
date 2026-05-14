@@ -18,6 +18,20 @@ const Params = Type.Object({
 
 const DEFAULT_TIMEOUT_MS = 120_000;
 
+// 100 KB each for stdout and stderr. A single `cat huge.log` or `find /`
+// could otherwise return megabytes and push the next LLM request past the
+// model's context window.
+export const MAX_STREAM_BYTES = 100 * 1024;
+
+function capStream(s: string): string {
+  const bytes = Buffer.byteLength(s, "utf8");
+  if (bytes <= MAX_STREAM_BYTES) return s;
+  return (
+    Buffer.from(s, "utf8").subarray(0, MAX_STREAM_BYTES).toString("utf8") +
+    `\n…[truncated: ${bytes} bytes total, first ${MAX_STREAM_BYTES} bytes shown]`
+  );
+}
+
 export function bashTool(worktreePath: string): AgentTool<typeof Params> {
   return {
     name: "bash",
@@ -48,16 +62,21 @@ export function bashTool(worktreePath: string): AgentTool<typeof Params> {
       ]);
       clearTimeout(timer);
 
+      const stdoutCapped = capStream(stdout);
+      const stderrCapped = capStream(stderr);
+
       const summary = [
         `exit ${exitCode}${timedOut ? " (timed out)" : ""}`,
-        stdout ? `stdout:\n${stdout}` : "",
-        stderr ? `stderr:\n${stderr}` : "",
+        stdoutCapped ? `stdout:\n${stdoutCapped}` : "",
+        stderrCapped ? `stderr:\n${stderrCapped}` : "",
       ]
         .filter(Boolean)
         .join("\n");
 
       return {
         content: [{ type: "text", text: summary }],
+        // details keeps the full streams for the UI; only the LLM-visible
+        // `content` summary is capped.
         details: { exitCode, stdout, stderr, timedOut, command, cwd },
       };
     },
