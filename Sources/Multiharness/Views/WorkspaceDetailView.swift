@@ -15,12 +15,16 @@ struct WorkspaceDetailView: View {
     @State private var creatingSession = false
     @State private var sessionReady = false
     @State private var sessionError: String?
+    @State private var showingOneClickPR = false
 
     var body: some View {
         HSplitView {
             VStack(alignment: .leading, spacing: 0) {
-                WorkspaceBanner(workspace: workspace)
-                    .padding(.horizontal, 16).padding(.vertical, 10)
+                WorkspaceBanner(
+                    workspace: workspace,
+                    onOpenPR: { showingOneClickPR = true }
+                )
+                .padding(.horizontal, 16).padding(.vertical, 10)
                 if case let .crashed(reason) = appStore.sidecarStatus {
                     SidecarCrashBanner(reason: reason)
                 }
@@ -70,6 +74,12 @@ struct WorkspaceDetailView: View {
         .task(id: appStore.sidecarBindingVersion) {
             await ensureSession()
         }
+        .sheet(isPresented: $showingOneClickPR) {
+            OneClickPRSheet(
+                workspace: workspace,
+                isPresented: $showingOneClickPR
+            )
+        }
     }
 
     private var isSidecarHealthy: Bool {
@@ -103,6 +113,7 @@ struct WorkspaceDetailView: View {
 
 private struct WorkspaceBanner: View {
     let workspace: Workspace
+    var onOpenPR: () -> Void = {}
     var body: some View {
         HStack(spacing: 16) {
             VStack(alignment: .leading, spacing: 2) {
@@ -115,6 +126,16 @@ private struct WorkspaceBanner: View {
                 }
             }
             Spacer()
+            // 1-click PR: stages anything dirty, commits, pushes,
+            // opens a PR via `gh` against `workspace.baseBranch`.
+            Button {
+                onOpenPR()
+            } label: {
+                Label("Open PR", systemImage: "arrow.up.right.square")
+                    .font(.callout)
+            }
+            .buttonStyle(.borderedProminent)
+            .help("Commit any pending changes, push, and open a GitHub PR against \(workspace.baseBranch)")
             LifecycleBadge(state: workspace.lifecycleState)
         }
     }
