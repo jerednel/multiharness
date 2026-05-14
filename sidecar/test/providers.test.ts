@@ -1,5 +1,36 @@
 import { describe, it, expect } from "bun:test";
-import { buildModel, listModels, PROVIDER_PRESETS } from "../src/providers.js";
+import { apiKeyFor, buildModel, listModels, PROVIDER_PRESETS } from "../src/providers.js";
+
+describe("apiKeyFor", () => {
+  it("returns the configured key for openai-compatible providers", () => {
+    expect(
+      apiKeyFor({
+        kind: "openai-compatible",
+        modelId: "x",
+        baseUrl: "http://localhost:1234/v1",
+        apiKey: "sk-user",
+      }),
+    ).toBe("sk-user");
+  });
+
+  // Without this fallback, pi-ai's streamSimpleOpenAICompletions throws
+  // "No API key for provider: openai-compatible" before ever calling Ollama,
+  // LM Studio, vLLM, or llama.cpp — all of which accept any/no auth header.
+  it("returns a placeholder for openai-compatible providers with no key", () => {
+    const key = apiKeyFor({
+      kind: "openai-compatible",
+      modelId: "llama3",
+      baseUrl: "http://localhost:11434/v1",
+    });
+    expect(typeof key).toBe("string");
+    expect(key && key.length > 0).toBe(true);
+  });
+
+  it("returns undefined for OAuth providers (token resolved per-request)", () => {
+    expect(apiKeyFor({ kind: "anthropic-oauth", modelId: "x" })).toBeUndefined();
+    expect(apiKeyFor({ kind: "openai-codex-oauth", modelId: "x" })).toBeUndefined();
+  });
+});
 
 describe("buildModel — pi-known providers", () => {
   it("resolves an OpenRouter model from the registry", () => {

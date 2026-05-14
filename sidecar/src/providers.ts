@@ -176,6 +176,16 @@ export function buildModel(cfg: ProviderConfig): Model<any> {
 
 export function apiKeyFor(cfg: ProviderConfig): string | undefined {
   if (cfg.kind === "anthropic-oauth" || cfg.kind === "openai-codex-oauth") return undefined;
+  // pi-ai's streamSimpleOpenAICompletions throws "No API key for provider:
+  // openai-compatible" when neither options.apiKey nor an env var is set,
+  // even though endpoints like Ollama, LM Studio, vLLM, and llama.cpp
+  // accept any (or no) Authorization header. Default to a harmless
+  // placeholder so the request goes through; servers that don't need auth
+  // ignore it, and servers that do will reject it with a clearer error
+  // than our generic "no API key" guard.
+  if (cfg.kind === "openai-compatible" && !cfg.apiKey) {
+    return "not-needed";
+  }
   return cfg.apiKey;
 }
 
