@@ -166,7 +166,17 @@ export function buildModel(cfg: ProviderConfig): Model<any> {
     provider: "openai-compatible",
     baseUrl: cfg.baseUrl,
     reasoning: false,
-    input: ["text"],
+    // Declare image input support unconditionally for openai-compatible
+    // endpoints. pi-ai's transformMessages drops every image block (replacing
+    // it with a "(image omitted: model does not support images)" placeholder)
+    // when this list lacks "image", so a `["text"]`-only declaration silently
+    // strips attachments before the HTTP request is built — even for vision
+    // models like qwen2.5-vl, qwen3-vl, llava, llama3.2-vision on Ollama/LM
+    // Studio. Letting pi-ai always emit the `image_url` data-URL part lets
+    // the underlying server decide: vision models consume it; text-only
+    // models on Ollama/LM Studio ignore the part; strict servers will 400,
+    // which is a clearer failure mode than the silent drop we had before.
+    input: ["text", "image"],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: cfg.contextWindow ?? DEFAULT_CONTEXT_WINDOW,
     maxTokens: cfg.maxTokens ?? DEFAULT_MAX_TOKENS,
@@ -176,6 +186,16 @@ export function buildModel(cfg: ProviderConfig): Model<any> {
 
 export function apiKeyFor(cfg: ProviderConfig): string | undefined {
   if (cfg.kind === "anthropic-oauth" || cfg.kind === "openai-codex-oauth") return undefined;
+  // pi-ai's streamSimpleOpenAICompletions throws "No API key for provider:
+  // openai-compatible" when neither options.apiKey nor an env var is set,
+  // even though endpoints like Ollama, LM Studio, vLLM, and llama.cpp
+  // accept any (or no) Authorization header. Default to a harmless
+  // placeholder so the request goes through; servers that don't need auth
+  // ignore it, and servers that do will reject it with a clearer error
+  // than our generic "no API key" guard.
+  if (cfg.kind === "openai-compatible" && !cfg.apiKey) {
+    return "not-needed";
+  }
   return cfg.apiKey;
 }
 

@@ -2,6 +2,22 @@ import Foundation
 import Observation
 import MultiharnessClient
 
+/// A user message that was composed while the agent was mid-turn. Held in
+/// `AgentStore.pendingMessages` until the active turn ends, then flushed
+/// to the sidecar one-at-a-time via `agent.prompt`. Stable `id` so the UI
+/// can address individual entries for cancellation.
+public struct PendingMessage: Identifiable, Sendable {
+    public let id: UUID
+    public var text: String
+    public var images: [TurnImage]
+
+    public init(id: UUID = UUID(), text: String, images: [TurnImage] = []) {
+        self.id = id
+        self.text = text
+        self.images = images
+    }
+}
+
 @MainActor
 @Observable
 public final class AgentStore {
@@ -21,6 +37,11 @@ public final class AgentStore {
     /// `isStreaming` drops to false. See spec §12 ("Distinguishing
     /// primary streaming from QA streaming in the UI").
     public var lastGroupKind: GroupKind?
+    /// FIFO queue of user messages composed while a turn is in flight.
+    /// Drained one-at-a-time on `agent_end` — never sent concurrently with
+    /// an active turn, since pi-agent-core's Agent.prompt() rejects
+    /// overlapping calls.
+    public var pendingMessages: [PendingMessage] = []
 
     private let env: AppEnvironment
     private weak var control: ControlClient?
@@ -229,6 +250,10 @@ public final class AgentStore {
             assistantTurnPending = false
             currentGroupId = nil
             for i in turns.indices { turns[i].streaming = false }
+            // Drain one queued message (if any). Done after the streaming
+            // flags clear so `sendPrompt` takes the immediate-send path
+            // rather than re-queuing.
+            flushNextPendingIfIdle()
         case "message_start":
             if let msg = event.payload["message"] as? [String: Any],
                (msg["role"] as? String) == "assistant" {
@@ -334,6 +359,21 @@ public final class AgentStore {
     }
 
     public func sendPrompt(_ text: String, images: [TurnImage] = []) async {
+        // While a turn is in flight, queue the message instead of sending
+        // it. We can't fire two agent.prompt calls concurrently — the
+        // sidecar's Agent rejects overlapping prompts — so the user-facing
+        // behavior is "queued, will dispatch when the current run ends".
+        if isStreaming || !pendingMessages.isEmpty {
+            pendingMessages.append(PendingMessage(text: text, images: images))
+            return
+        }
+        await dispatchPrompt(text: text, images: images)
+    }
+
+    /// Send a single prompt straight to the sidecar without consulting the
+    /// queue. Caller is responsible for ensuring `!isStreaming` and the
+    /// queue ordering invariant.
+    private func dispatchPrompt(text: String, images: [TurnImage]) async {
         turns.append(ConversationTurn(role: .user, text: text, images: images))
         var params: [String: Any] = [
             "workspaceId": workspaceId.uuidString,
@@ -355,5 +395,43 @@ public final class AgentStore {
         } catch {
             lastError = String(describing: error)
         }
+    }
+
+    /// Pull the next queued message and fire it, but only when the agent
+    /// is genuinely idle. Called on `agent_end` and after manual stops.
+    private func flushNextPendingIfIdle() {
+        guard !isStreaming, !pendingMessages.isEmpty else { return }
+        let next = pendingMessages.removeFirst()
+        Task { [weak self] in
+            await self?.dispatchPrompt(text: next.text, images: next.images)
+        }
+    }
+
+    /// Ask the sidecar to abort the in-flight turn. The sidecar emits an
+    /// `agent_end` shortly after, which clears `isStreaming` and drains
+    /// the next queued message (if any) through the normal path.
+    public func stopCurrentTurn() async {
+        guard isStreaming else { return }
+        do {
+            _ = try await control?.call(
+                method: "agent.abort",
+                params: ["workspaceId": workspaceId.uuidString]
+            )
+        } catch {
+            lastError = String(describing: error)
+        }
+    }
+
+    /// Remove a single queued-but-not-yet-sent message. No-op if the id
+    /// isn't in the queue (e.g. it already drained).
+    public func cancelPendingMessage(id: UUID) {
+        pendingMessages.removeAll { $0.id == id }
+    }
+
+    /// Drop every queued message without sending. Useful for "Stop and
+    /// clear queue" — not currently surfaced in the UI, but kept as a
+    /// hook for future use.
+    public func clearPendingMessages() {
+        pendingMessages.removeAll()
     }
 }
