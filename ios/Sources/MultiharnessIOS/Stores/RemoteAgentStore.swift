@@ -92,6 +92,17 @@ public final class RemoteAgentStore {
                     turns[last].text = preview
                 }
             }
+        case "context_compacted":
+            // Sidecar's context-compactor ran. Render an inline marker so
+            // the user sees that earlier context was elided / summarized /
+            // dropped before the next request.
+            if let info = CompactionInfo(json: event.payload) {
+                turns.append(ConversationTurn(
+                    role: .compaction,
+                    text: "",
+                    compaction: info
+                ))
+            }
         default:
             break
         }
@@ -99,7 +110,8 @@ public final class RemoteAgentStore {
 
     /// Reconstruct one turn from a remote.history payload entry. Image
     /// attachments are decoded out of the optional `images` array (sidecar's
-    /// DataReader emits `[{ data: base64, mimeType }]`).
+    /// DataReader emits `[{ data: base64, mimeType }]`). Compaction
+    /// markers carry their report nested under `compaction`.
     public static func turn(from json: [String: Any]) -> ConversationTurn? {
         guard let role = json["role"] as? String,
               let text = json["text"] as? String,
@@ -107,13 +119,20 @@ public final class RemoteAgentStore {
         else { return nil }
         let imagesRaw = (json["images"] as? [[String: Any]]) ?? []
         let images = imagesRaw.compactMap(TurnImage.init(json:))
+        let compactionInfo: CompactionInfo?
+        if r == .compaction, let dict = json["compaction"] as? [String: Any] {
+            compactionInfo = CompactionInfo(json: dict)
+        } else {
+            compactionInfo = nil
+        }
         return ConversationTurn(
             role: r,
             text: text,
             toolName: json["toolName"] as? String,
             toolCallDescription: json["toolCallDescription"] as? String,
             groupId: json["groupId"] as? String,
-            images: images
+            images: images,
+            compaction: compactionInfo
         )
     }
 }

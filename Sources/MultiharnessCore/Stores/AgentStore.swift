@@ -156,6 +156,19 @@ public final class AgentStore {
                     qaVerdict: verdict,
                     qaFindings: findings
                 ))
+            case "context_compacted":
+                // Synthetic event emitted by the sidecar when its
+                // context-compactor had to elide/summarize/drop messages.
+                // Render it inline so the user knows older context is no
+                // longer fully present in subsequent prompts. Persisted to
+                // JSONL by the sidecar so rehydration sees it.
+                if let info = CompactionInfo(json: event) {
+                    loaded.append(ConversationTurn(
+                        role: .compaction,
+                        text: "",
+                        compaction: info
+                    ))
+                }
             default:
                 break
             }
@@ -353,6 +366,19 @@ public final class AgentStore {
                 qaVerdict: verdict,
                 qaFindings: findings
             ))
+        case "context_compacted":
+            // Sidecar's context-compactor ran (Tier 1/2/2.5/3). Show a
+            // marker in the transcript so the user knows older messages
+            // were elided/summarized/dropped before the next LLM call.
+            // No groupId — the marker should always render as a free-
+            // standing row, not get pulled into the active agent group.
+            if let info = CompactionInfo(json: event.payload) {
+                turns.append(ConversationTurn(
+                    role: .compaction,
+                    text: "",
+                    compaction: info
+                ))
+            }
         default:
             break
         }

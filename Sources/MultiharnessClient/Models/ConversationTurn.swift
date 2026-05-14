@@ -92,6 +92,107 @@ public enum QaVerdict: String, Sendable {
     }
 }
 
+/// Metadata for a `.compaction` turn — the in-band marker the sidecar
+/// emits when its context-compactor had to elide/summarize/drop messages
+/// to keep the next request under the model's window. Rendering this
+/// inline gives the user a visible signal that "earlier context is no
+/// longer fully present" without having to dig through logs.
+///
+/// Numbers come straight from the sidecar's `CompactionReport`. Tier is
+/// a Double because the sidecar uses 2.5 to distinguish summarization
+/// from a hard drop; encode it the same way client-side.
+public struct CompactionInfo: Sendable, Hashable {
+    public let tier: Double
+    public let beforeTokens: Int
+    public let afterTokens: Int
+    public let beforeMessages: Int
+    public let afterMessages: Int
+    public let elidedToolResults: Int
+    public let elidedAssistantBlocks: Int
+    public let summarizedTurnPairs: Int
+    public let droppedMessages: Int
+    public let budget: Int
+
+    public init(
+        tier: Double,
+        beforeTokens: Int,
+        afterTokens: Int,
+        beforeMessages: Int,
+        afterMessages: Int,
+        elidedToolResults: Int,
+        elidedAssistantBlocks: Int,
+        summarizedTurnPairs: Int,
+        droppedMessages: Int,
+        budget: Int
+    ) {
+        self.tier = tier
+        self.beforeTokens = beforeTokens
+        self.afterTokens = afterTokens
+        self.beforeMessages = beforeMessages
+        self.afterMessages = afterMessages
+        self.elidedToolResults = elidedToolResults
+        self.elidedAssistantBlocks = elidedAssistantBlocks
+        self.summarizedTurnPairs = summarizedTurnPairs
+        self.droppedMessages = droppedMessages
+        self.budget = budget
+    }
+
+    /// Decode from a `context_compacted` event payload dict.
+    public init?(json: [String: Any]) {
+        // tier may arrive as Int (0,1,2,3) or Double (2.5) depending on
+        // JSON parser; accept both.
+        let tierValue: Double
+        if let d = json["tier"] as? Double { tierValue = d }
+        else if let i = json["tier"] as? Int { tierValue = Double(i) }
+        else { return nil }
+        guard
+            let beforeTokens = json["beforeTokens"] as? Int,
+            let afterTokens = json["afterTokens"] as? Int,
+            let beforeMessages = json["beforeMessages"] as? Int,
+            let afterMessages = json["afterMessages"] as? Int,
+            let budget = json["budget"] as? Int
+        else { return nil }
+        self.tier = tierValue
+        self.beforeTokens = beforeTokens
+        self.afterTokens = afterTokens
+        self.beforeMessages = beforeMessages
+        self.afterMessages = afterMessages
+        self.elidedToolResults = json["elidedToolResults"] as? Int ?? 0
+        self.elidedAssistantBlocks = json["elidedAssistantBlocks"] as? Int ?? 0
+        self.summarizedTurnPairs = json["summarizedTurnPairs"] as? Int ?? 0
+        self.droppedMessages = json["droppedMessages"] as? Int ?? 0
+        self.budget = budget
+    }
+
+    /// Headline string for the marker, e.g. "Context compacted — Tier 2
+    /// (198k → 84k tokens)". Kept short so it fits on one row.
+    public var headline: String {
+        let tierStr: String
+        if tier == 2.5 { tierStr = "2.5 (summarized)" }
+        else { tierStr = String(Int(tier)) }
+        return "Context compacted — Tier \(tierStr) (\(formatTokens(beforeTokens)) → \(formatTokens(afterTokens)) tokens)"
+    }
+
+    /// One-line detail string explaining which sub-action(s) ran.
+    /// Surfaced under the headline (e.g. in a tooltip) — kept separate
+    /// so the headline can be short.
+    public var detail: String {
+        var parts: [String] = []
+        if elidedToolResults > 0 { parts.append("\(elidedToolResults) tool result\(elidedToolResults == 1 ? "" : "s") elided") }
+        if elidedAssistantBlocks > 0 { parts.append("\(elidedAssistantBlocks) assistant block\(elidedAssistantBlocks == 1 ? "" : "s") elided") }
+        if summarizedTurnPairs > 0 { parts.append("\(summarizedTurnPairs) turn-pair\(summarizedTurnPairs == 1 ? "" : "s") summarized") }
+        if droppedMessages > 0 { parts.append("\(droppedMessages) message\(droppedMessages == 1 ? "" : "s") dropped") }
+        if parts.isEmpty { return "no changes" }
+        return parts.joined(separator: ", ")
+    }
+
+    private func formatTokens(_ n: Int) -> String {
+        if n >= 1_000_000 { return String(format: "%.1fM", Double(n) / 1_000_000) }
+        if n >= 1_000 { return String(format: "%.0fk", Double(n) / 1_000) }
+        return String(n)
+    }
+}
+
 public struct ConversationTurn: Identifiable, Sendable {
     public enum Role: String, Sendable {
         case user, assistant, tool
@@ -100,6 +201,12 @@ public struct ConversationTurn: Identifiable, Sendable {
         /// inside the same group as the rest of the QA run's turns so
         /// it disclose-collapses with them.
         case qaFindings = "qa_findings"
+        /// Synthetic, rendered from a `context_compacted` event the
+        /// sidecar emits when the context-compactor had to elide /
+        /// summarize / drop messages before the next LLM call. Has no
+        /// groupId so it always renders as a free-standing marker
+        /// between agent runs.
+        case compaction
     }
     public var id: UUID = UUID()
     public var role: Role
@@ -125,6 +232,10 @@ public struct ConversationTurn: Identifiable, Sendable {
     /// codebase doesn't need to care.
     public var qaVerdict: QaVerdict?
     public var qaFindings: [QaFinding] = []
+    /// Populated only on `.compaction` turns. Holds the
+    /// `CompactionReport` numbers the sidecar pushed via a
+    /// `context_compacted` event.
+    public var compaction: CompactionInfo?
 
     public init(
         id: UUID = UUID(),
@@ -136,7 +247,8 @@ public struct ConversationTurn: Identifiable, Sendable {
         streaming: Bool = false,
         images: [TurnImage] = [],
         qaVerdict: QaVerdict? = nil,
-        qaFindings: [QaFinding] = []
+        qaFindings: [QaFinding] = [],
+        compaction: CompactionInfo? = nil
     ) {
         self.id = id
         self.role = role
@@ -148,6 +260,7 @@ public struct ConversationTurn: Identifiable, Sendable {
         self.images = images
         self.qaVerdict = qaVerdict
         self.qaFindings = qaFindings
+        self.compaction = compaction
     }
 
     /// Display name for the tool: prefer the per-call description (set by

@@ -356,6 +356,8 @@ private struct TurnCard: View {
             toolCard
         case .qaFindings:
             QaFindingsCard(turn: turn)
+        case .compaction:
+            CompactionMarker(info: turn.compaction)
         case .user, .assistant:
             messageCard
         }
@@ -445,6 +447,8 @@ private struct TurnCard: View {
         // before this view is consulted. Default included for
         // exhaustiveness, not for actual rendering.
         case .qaFindings: return "QA review"
+        // Unreachable — compaction turns route through CompactionMarker.
+        case .compaction: return "Context"
         }
     }
 
@@ -455,6 +459,7 @@ private struct TurnCard: View {
         case .assistant: Image(systemName: "sparkles").foregroundStyle(.purple)
         case .tool: Image(systemName: "wrench.and.screwdriver").foregroundStyle(.orange)
         case .qaFindings: Image(systemName: "magnifyingglass").foregroundStyle(.cyan)
+        case .compaction: Image(systemName: "arrow.down.right.and.arrow.up.left").foregroundStyle(.secondary)
         }
     }
 
@@ -464,7 +469,53 @@ private struct TurnCard: View {
         case .assistant: return Color.purple.opacity(0.06)
         case .tool: return Color.orange.opacity(0.07)
         case .qaFindings: return Color.cyan.opacity(0.06)
+        case .compaction: return Color.secondary.opacity(0.05)
         }
+    }
+}
+
+/// In-band marker rendered for `.compaction` turns. Shows the headline
+/// inline; hovering reveals the breakdown of what changed. Designed to
+/// take minimal vertical space — this is a context-management diagnostic,
+/// not a primary surface.
+private struct CompactionMarker: View {
+    let info: CompactionInfo?
+    @State private var hovered = false
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Rectangle()
+                .fill(Color.secondary.opacity(0.3))
+                .frame(height: 1)
+            HStack(spacing: 6) {
+                Image(systemName: "arrow.down.right.and.arrow.up.left")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                if let info {
+                    Text(info.headline)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    // Defensive: a context_compacted event arrived but
+                    // we couldn't decode its fields. Still render the
+                    // marker so the user knows compaction happened.
+                    Text("Context compacted")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal, 8).padding(.vertical, 2)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color.secondary.opacity(hovered ? 0.12 : 0.06))
+            )
+            .help(info?.detail ?? "")
+            Rectangle()
+                .fill(Color.secondary.opacity(0.3))
+                .frame(height: 1)
+        }
+        .frame(maxWidth: .infinity)
+        .onHover { hovered = $0 }
     }
 }
 
