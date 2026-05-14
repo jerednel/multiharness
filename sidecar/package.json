@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@mariozechner/pi-ai": "^0.70.6",
-    "@mariozechner/pi-agent-core": "^0.70.6"
+    "@mariozechner/pi-agent-core": "^0.73.1"
   },
   "devDependencies": {
     "@types/bun": "latest",
