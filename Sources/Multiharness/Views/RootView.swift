@@ -258,7 +258,10 @@ private struct ProjectPickerHeader: View {
                 .padding(.horizontal, 8).padding(.vertical, 6)
                 .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
             }
-            .buttonStyle(.multiharness)
+            // `Menu` doesn't honor ButtonStyle for its trigger and we'd get
+            // a nested hover-fill halo around the existing quaternary pill.
+            // The pill already provides the affordance.
+            .buttonStyle(.plain)
             if let proj = appStore.selectedProject {
                 Button {
                     showingReconcile = true
