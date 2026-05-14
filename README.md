@@ -9,6 +9,14 @@ Think [conductor.build](https://conductor.build), but local-first, open, and plu
 
 ---
 
+## Project status
+
+Multiharness is an early, source-built developer tool. The core Mac app, bundled Bun sidecar, provider setup, worktree workflow, tests, and iOS companion are present in this repository. The project now has the basic open-source scaffolding — license, contribution docs, security policy, CI, issue templates, and lockfiles — but still needs release packaging, screenshots, and more production hardening before a broad end-user launch.
+
+If you are evaluating whether to contribute, start with the [Contributing](#contributing) and [Open-source readiness](#open-source-readiness) sections below.
+
+---
+
 ## What's in the box
 
 | Component | What it is | Where it lives |
@@ -141,7 +149,8 @@ The pairing token is stored in the Mac's Keychain and the iOS app's Keychain. Pl
 │   └── scripts/build.sh        # Bun --compile → single-file binary
 ├── ios/                        # SwiftUI iOS app, generated from project.yml via xcodegen
 ├── scripts/                    # build-app.sh, build-ios.sh, setup-codesign.sh, …
-├── docs/superpowers/           # Design specs and implementation plans
+├── docs/                       # Privacy/security, roadmap, assets, specs/plans
+│   └── superpowers/             # Design specs and implementation plans
 ├── assets/                     # App icon
 └── CLAUDE.md                   # Architecture deep-dive for AI agents
 ```
@@ -176,6 +185,14 @@ MULTIHARNESS_RESET_XCODE_CACHES=1 bash scripts/build-ios.sh  # nuke caches first
 - **Editing sidecar TypeScript:** `bun run typecheck` + `bun test` from `sidecar/`. The next `build-app.sh` will pick up your changes.
 - **Editing iOS Swift code:** `bash scripts/build-ios.sh` after every change. Adding or removing files (not just edits) needs the same command — it re-runs `xcodegen` to refresh the `.xcodeproj`.
 
+### Additional docs
+
+- [Contributing guide](./CONTRIBUTING.md)
+- [Security policy](./SECURITY.md)
+- [Privacy and security overview](./docs/PRIVACY_AND_SECURITY.md)
+- [Roadmap](./docs/ROADMAP.md)
+- [Asset licensing notes](./docs/ASSETS.md)
+
 ---
 
 ## For AI agents working in this repo
@@ -187,7 +204,7 @@ Quick orientation:
 1. **Where to start reading code:**
    - Sidecar entry: `sidecar/src/index.ts` → `dispatcher.ts` → `methods.ts`.
    - Mac entry: `Sources/Multiharness/App.swift`. State lives in `Sources/MultiharnessCore/`.
-   - iOS entry: `ios/Sources/MultiharnessIOSApp.swift`.
+   - iOS entry: `ios/Sources/MultiharnessIOS/App.swift`.
 
 2. **Authoritative design docs** are under `docs/superpowers/`:
    - `specs/` — design documents per feature (the "what" and "why").
@@ -211,6 +228,52 @@ Quick orientation:
    - `AgentStore.handleEvent` lazy-creates assistant turns on the first `text_delta`, not on `message_start`. This intentionally avoids empty cards for tool-call-only assistant messages — preserve this behavior when refactoring the event handling.
 
 5. **Don't add files outside the documented structure** without checking the relevant spec under `docs/superpowers/specs/` — the layout matters for `xcodegen`, SwiftPM, and the sidecar's bundling.
+
+---
+
+## Contributing
+
+Contributions are welcome. Use this lightweight workflow:
+
+1. Open an issue or draft PR describing the change you want to make.
+2. Keep PRs focused and small. Separate UI polish, sidecar protocol changes, migrations, and iOS work when practical.
+3. Run the relevant verification commands before submitting:
+   - Sidecar: `cd sidecar && bun run typecheck && bun test`
+   - Swift package: `swift build && swift test`
+   - Mac app bundle: `bash scripts/build-app.sh`
+   - iOS: `bash scripts/build-ios.sh`
+4. Update README/CLAUDE.md or the relevant `docs/superpowers/` spec when changing architecture, protocols, persistence, pairing, signing, or build steps.
+
+Good first contribution areas:
+
+- Screenshots, demo GIFs, and a short product walkthrough.
+- Security hardening for remote access (TLS option, token rotation UX, clearer threat model).
+- Signed/notarized release distribution and install instructions for non-developers.
+- More tests around path guards, provider setup, and worktree edge cases.
+- Small UI polish with before/after screenshots.
+
+---
+
+## Open-source readiness
+
+Based on a scan of this repository, Multiharness has a strong technical foundation for an open-source project: clear local-first positioning, native app + sidecar separation, a useful test suite, documented architecture, and reproducible build scripts.
+
+Done in this pass:
+
+- MIT `LICENSE` file.
+- `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, issue templates, and PR template.
+- GitHub Actions CI for sidecar typecheck/tests, Swift build/tests, and iOS simulator build.
+- A tag/manual release workflow that builds and uploads a macOS app zip artifact.
+- Committed dependency lockfiles: `Package.resolved` and `sidecar/bun.lock`.
+- Privacy/security overview, roadmap, and asset licensing docs.
+
+Still worth doing before a broad launch:
+
+- **Harden release distribution.** The release workflow uploads an app zip, but broad distribution still needs Developer ID signing, notarization, Sparkle/Homebrew/cask decisions, and clearer end-user install docs.
+- **Add screenshots and a demo.** The README explains architecture well, but contributors and users need to see the product quickly.
+- **Improve first-run onboarding in the app.** Document permissions and setup in-product, not just in Markdown.
+- **Harden remote access.** Consider TLS, token rotation UX, pairing management, and a clearer network threat model as usage grows.
+- **Convert roadmap items to public issues.** Use `good first issue`, `help wanted`, and `design needed` labels.
 
 ---
 
@@ -259,4 +322,4 @@ Then close and reopen the project in Xcode.
 
 ## License
 
-TBD.
+MIT. See [`LICENSE`](./LICENSE).
