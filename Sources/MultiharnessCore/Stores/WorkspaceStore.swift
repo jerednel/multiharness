@@ -313,6 +313,33 @@ public final class WorkspaceStore {
         )
     }
 
+    /// Update the workspace's QA-related fields atomically (toggle +
+    /// provider + model). Used by the QA popover's Save / Run QA actions.
+    ///
+    /// Passing `enabled = nil` clears the explicit override and falls
+    /// back to the project default. Provider/model `nil`s clear the
+    /// workspace-level picks (popover falls back to project defaults
+    /// for its pre-fill).
+    public func setQa(
+        _ ws: Workspace,
+        enabled: Bool?,
+        providerId: UUID?,
+        modelId: String?
+    ) {
+        guard let idx = workspaces.firstIndex(where: { $0.id == ws.id }) else { return }
+        var updated = workspaces[idx]
+        updated.qaEnabled = enabled
+        updated.qaProviderId = providerId
+        let trimmed = modelId?.trimmingCharacters(in: .whitespacesAndNewlines)
+        updated.qaModelId = (trimmed?.isEmpty ?? true) ? nil : trimmed
+        do {
+            try env.persistence.upsertWorkspace(updated)
+            workspaces[idx] = updated
+        } catch {
+            lastError = String(describing: error)
+        }
+    }
+
     public func setLifecycle(_ ws: Workspace, _ state: LifecycleState) {
         guard let idx = workspaces.firstIndex(where: { $0.id == ws.id }) else { return }
         var updated = workspaces[idx]

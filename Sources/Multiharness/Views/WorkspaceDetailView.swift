@@ -144,7 +144,11 @@ private struct ConversationView: View {
                         case .single(let turn):
                             TurnCard(turn: turn).id(turn.id)
                         case .group(let id, let children):
-                            ResponseGroupView(groupId: id, children: children)
+                            ResponseGroupView(
+                                groupId: id,
+                                children: children,
+                                kind: store.groupKind(for: id)
+                            )
                                 .id(id)
                         }
                     }
@@ -224,6 +228,7 @@ private struct ThinkingCard: View {
 private struct ResponseGroupView: View {
     let groupId: String
     let children: [ConversationTurn]
+    var kind: GroupKind = .build
 
     @State private var manuallyToggled = false
     @State private var manualExpanded = false
@@ -239,9 +244,16 @@ private struct ResponseGroupView: View {
 
     /// Index of the assistant turn we lift OUT of the collapse so the
     /// final reply remains readable when collapsed. Picks the last
-    /// non-empty assistant turn in the group; nil if there isn't one yet.
+    /// non-empty assistant turn in the group; for QA groups the
+    /// findings card wins if present (it IS the conclusion). Nil if
+    /// neither is found yet.
     private var liftedFinalIndex: Int? {
-        children.indices.reversed().first(where: {
+        if let qaIdx = children.indices.reversed().first(where: {
+            children[$0].role == .qaFindings
+        }) {
+            return qaIdx
+        }
+        return children.indices.reversed().first(where: {
             children[$0].role == .assistant && !children[$0].text.isEmpty
         })
     }
@@ -262,12 +274,16 @@ private struct ResponseGroupView: View {
         let messageCount = children.filter {
             $0.role == .assistant && !$0.text.isEmpty
         }.count
+        let findingsCount = children.filter { $0.role == .qaFindings }.count
         var parts: [String] = []
         if toolCount > 0 {
             parts.append("\(toolCount) tool call\(toolCount == 1 ? "" : "s")")
         }
         if messageCount > 0 {
             parts.append("\(messageCount) message\(messageCount == 1 ? "" : "s")")
+        }
+        if findingsCount > 0 {
+            parts.append("\(findingsCount) finding card\(findingsCount == 1 ? "" : "s")")
         }
         if parts.isEmpty { return isStreaming ? "thinking…" : "no output" }
         return parts.joined(separator: ", ")
@@ -285,7 +301,11 @@ private struct ResponseGroupView: View {
                     Image(systemName: "chevron.right")
                         .font(.caption2).foregroundStyle(.secondary).frame(width: 10)
                         .rotationEffect(.degrees(expanded ? 90 : 0))
-                    Image(systemName: "sparkles").font(.caption).foregroundStyle(.purple)
+                    Image(systemName: headerIcon).font(.caption).foregroundStyle(headerColor)
+                    if kind == .qa {
+                        Text("QA review").font(.caption).bold().foregroundStyle(headerColor)
+                        Text("·").font(.caption).foregroundStyle(.secondary)
+                    }
                     Text(summary).font(.caption).foregroundStyle(.secondary)
                     if isStreaming {
                         ProgressView().scaleEffect(0.5).frame(width: 10, height: 10)
@@ -315,6 +335,14 @@ private struct ResponseGroupView: View {
             if nowStreaming { manuallyToggled = false }
         }
     }
+
+    private var headerIcon: String {
+        kind == .qa ? "magnifyingglass" : "sparkles"
+    }
+
+    private var headerColor: Color {
+        kind == .qa ? .cyan : .purple
+    }
 }
 
 private struct TurnCard: View {
@@ -323,9 +351,12 @@ private struct TurnCard: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        if turn.role == .tool {
+        switch turn.role {
+        case .tool:
             toolCard
-        } else {
+        case .qaFindings:
+            QaFindingsCard(turn: turn)
+        case .user, .assistant:
             messageCard
         }
     }
@@ -410,6 +441,10 @@ private struct TurnCard: View {
         case .user: return "You"
         case .assistant: return "Agent"
         case .tool: return "Tool: \(turn.toolStepLabel)"
+        // Unreachable — qaFindings turns route through QaFindingsCard
+        // before this view is consulted. Default included for
+        // exhaustiveness, not for actual rendering.
+        case .qaFindings: return "QA review"
         }
     }
 
@@ -419,6 +454,7 @@ private struct TurnCard: View {
         case .user: Image(systemName: "person.crop.circle").foregroundStyle(.blue)
         case .assistant: Image(systemName: "sparkles").foregroundStyle(.purple)
         case .tool: Image(systemName: "wrench.and.screwdriver").foregroundStyle(.orange)
+        case .qaFindings: Image(systemName: "magnifyingglass").foregroundStyle(.cyan)
         }
     }
 
@@ -427,6 +463,7 @@ private struct TurnCard: View {
         case .user: return Color.blue.opacity(0.08)
         case .assistant: return Color.purple.opacity(0.06)
         case .tool: return Color.orange.opacity(0.07)
+        case .qaFindings: return Color.cyan.opacity(0.06)
         }
     }
 }
@@ -446,6 +483,12 @@ private struct Composer: View {
     /// here.
     @State private var pendingImages: [TurnImage] = []
     @State private var attachError: String?
+    /// True from the moment the user clicks "Run QA" in the popover
+    /// until the sidecar's `agent_start` (or an error) reaches us.
+    /// Closes the small race where a double-click would fire two
+    /// `qa.run` calls before the AgentStore's isStreaming flag flips.
+    /// See spec §12.
+    @State private var qaLaunching = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -479,9 +522,18 @@ private struct Composer: View {
                         isPresented: $switcherShown
                     )
                 }
+
+                QaButton(
+                    workspace: workspace,
+                    appStore: appStore,
+                    workspaceStore: workspaceStore,
+                    store: store,
+                    qaLaunching: $qaLaunching
+                )
+
                 Spacer()
                 if store.isStreaming {
-                    Text("Streaming…").font(.caption).foregroundStyle(.secondary)
+                    Text(streamingLabel).font(.caption).foregroundStyle(.secondary)
                 }
             }
             if !pendingImages.isEmpty {
@@ -554,6 +606,23 @@ private struct Composer: View {
                 .buttonStyle(.borderedProminent)
             }
         }
+        // Drain qaLaunching once the sidecar's agent_start (with kind:qa)
+        // has been observed — at that point store.isStreaming + the QA
+        // group kind take over as the "QA running" signal, and the
+        // launching flag has done its job (covering the race window).
+        .onChange(of: store.isStreaming) { _, nowStreaming in
+            if nowStreaming && store.lastGroupKind == .qa {
+                qaLaunching = false
+            }
+            // Also drain if a run finished without us seeing the flag
+            // turn on (e.g. immediate error — agent_end without
+            // agent_start): when isStreaming flips back to false, any
+            // stale launching flag should be cleared so the button
+            // re-enables.
+            if !nowStreaming {
+                qaLaunching = false
+            }
+        }
     }
 
     private var sendDisabled: Bool {
@@ -569,6 +638,13 @@ private struct Composer: View {
     private var modelLabel: String {
         let providerName = appStore.providers.first(where: { $0.id == workspace.providerId })?.name ?? "?"
         return "\(providerName) · \(workspace.modelId)"
+    }
+
+    /// Distinguishes primary streaming from QA streaming in the
+    /// composer's right-side activity label. Both flip
+    /// `store.isStreaming`; we read `lastGroupKind` to pick a label.
+    private var streamingLabel: String {
+        store.lastGroupKind == .qa ? "🔍 QA running…" : "Streaming…"
     }
 
     @MainActor

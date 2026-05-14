@@ -7,6 +7,7 @@ import { log } from "./logger.js";
 import { DataReader } from "./dataReader.js";
 import type { Relay } from "./relay.js";
 import type { WorkspaceActivityTracker } from "./workspaceActivity.js";
+import { QaRunner } from "./qaRunner.js";
 import {
   hasAnthropicCreds,
   hasOpenAICodexCreds,
@@ -30,6 +31,18 @@ export function registerMethods(
   tracker: WorkspaceActivityTracker,
 ): void {
   const reader = new DataReader(dataDir);
+  // The QA runner is constructed once per sidecar lifetime — its state is
+  // empty (no in-memory map) so it doesn't need to live next to the
+  // registry. Reuses the same sink as the registry so its events flow
+  // through server.ts's broadcast path identically. The `EventSink` /
+  // `EventEmit` types differ by a generic constraint (AgentEvent vs.
+  // open shape) but at runtime they're the same function — the cast is
+  // the same trick AgentRegistry.emitError uses.
+  const qaRunner = new QaRunner(
+    dataDir,
+    sink as unknown as ConstructorParameters<typeof QaRunner>[1],
+    oauthStore,
+  );
   d.register("health.ping", () => ({ pong: true, version: VERSION }));
 
   d.register("agent.create", async (p) => {
@@ -115,6 +128,55 @@ export function registerMethods(
   });
 
   d.register("agent.list", () => ({ workspaceIds: registry.list() }));
+
+  // ── QA review ────────────────────────────────────────────────────────────
+  // Kicks off a transient secondary agent that reviews the primary
+  // agent's work in the same worktree, writing into the same JSONL
+  // log. The Mac side resolves `providerConfig` (incl. Keychain
+  // lookup) and constructs `firstMessage` (diff + last turns) before
+  // calling. Returns immediately; events stream as the QA agent
+  // runs. Spec §7.
+  d.register("qa.run", async (p) => {
+    const workspaceId = requireString(p, "workspaceId");
+    const firstMessage = requireString(p, "firstMessage");
+    const providerConfig = p.providerConfig as ProviderConfig | undefined;
+    if (!providerConfig || typeof providerConfig !== "object") {
+      throw new Error("providerConfig must be an object");
+    }
+    // QA runs in the same worktree as the primary session; we pull
+    // every contextual field from the primary so the Mac doesn't
+    // need to re-send what the sidecar already has. Reject when
+    // there's no primary — `agent.create` should always run first.
+    if (!registry.has(workspaceId)) {
+      throw new Error(`no primary session for workspace ${workspaceId}`);
+    }
+    const primary = registry.get(workspaceId);
+    // Optional orientation fields — older Mac builds may not send
+    // them. The QA session's orientation block falls back to a
+    // path-only line in that case.
+    const projectName = typeof p.projectName === "string" ? p.projectName : undefined;
+    const branchName = typeof p.branchName === "string" ? p.branchName : undefined;
+    const baseBranch = typeof p.baseBranch === "string" ? p.baseBranch : undefined;
+    // Fire-and-forget; errors surface through the sink as
+    // agent_error + agent_end (the same path the primary uses).
+    qaRunner
+      .run({
+        workspaceId,
+        projectId: primary.projectId,
+        worktreePath: primary.worktreePath,
+        providerConfig,
+        qaPromptText: firstMessage,
+        projectName,
+        branchName,
+        baseBranch,
+      })
+      .catch((err) => {
+        const reason = err instanceof Error ? err.message : String(err);
+        log.error("qa.run failed", { workspaceId, err: reason });
+        registry.emitError(workspaceId, reason);
+      });
+    return { ok: true };
+  });
 
   d.register("agent.resolveConflictHunk", async (p) => {
     const filePath = requireString(p, "filePath");

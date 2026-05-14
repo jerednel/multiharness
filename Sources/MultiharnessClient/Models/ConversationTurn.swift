@@ -28,8 +28,79 @@ public struct TurnImage: Identifiable, Sendable, Hashable {
     }
 }
 
+/// One QA finding line — file/line are optional because the reviewer
+/// may emit narrative-only notes that don't pin to a specific location.
+public struct QaFinding: Sendable, Hashable, Identifiable {
+    public enum Severity: String, Sendable { case info, warning, blocker }
+    public let id: UUID
+    public let severity: Severity
+    public let file: String?
+    public let line: Int?
+    public let message: String
+
+    public init(
+        id: UUID = UUID(),
+        severity: Severity,
+        file: String? = nil,
+        line: Int? = nil,
+        message: String
+    ) {
+        self.id = id
+        self.severity = severity
+        self.file = file
+        self.line = line
+        self.message = message
+    }
+
+    /// Decode the `[{severity, file?, line?, message}]` shape emitted by
+    /// the sidecar's `qa_findings` event (and the persisted JSONL).
+    /// Returns nil when required fields are missing/malformed.
+    public init?(json: [String: Any]) {
+        guard let sevRaw = json["severity"] as? String,
+              let severity = Severity(rawValue: sevRaw),
+              let message = json["message"] as? String
+        else { return nil }
+        self.id = UUID()
+        self.severity = severity
+        self.file = json["file"] as? String
+        // JSON numbers come back as Int or Double depending on
+        // JSONSerialization's mood — accept both.
+        if let i = json["line"] as? Int {
+            self.line = i
+        } else if let d = json["line"] as? Double {
+            self.line = Int(d)
+        } else {
+            self.line = nil
+        }
+        self.message = message
+    }
+}
+
+/// Top-level verdict from a QA review. String-backed so it survives
+/// the `[String: Any]` payload extraction in `AgentStore`.
+public enum QaVerdict: String, Sendable {
+    case pass
+    case minorIssues = "minor_issues"
+    case blockingIssues = "blocking_issues"
+
+    public var label: String {
+        switch self {
+        case .pass: return "Pass"
+        case .minorIssues: return "Minor issues"
+        case .blockingIssues: return "Blocking issues"
+        }
+    }
+}
+
 public struct ConversationTurn: Identifiable, Sendable {
-    public enum Role: String, Sendable { case user, assistant, tool }
+    public enum Role: String, Sendable {
+        case user, assistant, tool
+        /// Synthetic, rendered from a `qa_findings` event the sidecar
+        /// emits when the QA agent invokes `post_qa_findings`. Lives
+        /// inside the same group as the rest of the QA run's turns so
+        /// it disclose-collapses with them.
+        case qaFindings = "qa_findings"
+    }
     public var id: UUID = UUID()
     public var role: Role
     public var text: String
@@ -49,6 +120,11 @@ public struct ConversationTurn: Identifiable, Sendable {
     /// kept on the type uniformly so future assistant-image support is a
     /// no-op for callers.
     public var images: [TurnImage] = []
+    /// QA verdict + structured findings, only meaningful when
+    /// `role == .qaFindings`. Defaulted to nil so the rest of the
+    /// codebase doesn't need to care.
+    public var qaVerdict: QaVerdict?
+    public var qaFindings: [QaFinding] = []
 
     public init(
         id: UUID = UUID(),
@@ -58,7 +134,9 @@ public struct ConversationTurn: Identifiable, Sendable {
         toolCallDescription: String? = nil,
         groupId: String? = nil,
         streaming: Bool = false,
-        images: [TurnImage] = []
+        images: [TurnImage] = [],
+        qaVerdict: QaVerdict? = nil,
+        qaFindings: [QaFinding] = []
     ) {
         self.id = id
         self.role = role
@@ -68,6 +146,8 @@ public struct ConversationTurn: Identifiable, Sendable {
         self.groupId = groupId
         self.streaming = streaming
         self.images = images
+        self.qaVerdict = qaVerdict
+        self.qaFindings = qaFindings
     }
 
     /// Display name for the tool: prefer the per-call description (set by
@@ -93,6 +173,14 @@ public struct ConversationTurn: Identifiable, Sendable {
         let tail = parts.dropFirst().joined(separator: " ")
         return tail.isEmpty ? head : "\(head) \(tail)"
     }
+}
+
+/// Distinguishes the kind of agent run a group represents. Tagged onto
+/// the group on `agent_start` and queried by the renderer to swap the
+/// disclosure header between "build" and "🔍 QA review" appearances.
+public enum GroupKind: String, Sendable {
+    case build
+    case qa
 }
 
 /// One row in the rendered conversation: either a standalone turn or a

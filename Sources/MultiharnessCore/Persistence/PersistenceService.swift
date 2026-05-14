@@ -24,8 +24,8 @@ public final class PersistenceService: @unchecked Sendable {
     public func upsertProject(_ p: Project) throws {
         try db.executeUpdate(
             """
-            INSERT INTO projects (id, name, slug, repo_path, default_base_branch, default_provider_id, default_model_id, default_build_mode, created_at, repo_bookmark, context_instructions)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO projects (id, name, slug, repo_path, default_base_branch, default_provider_id, default_model_id, default_build_mode, created_at, repo_bookmark, context_instructions, default_qa_enabled, default_qa_provider_id, default_qa_model_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
               name=excluded.name,
               slug=excluded.slug,
@@ -35,7 +35,10 @@ public final class PersistenceService: @unchecked Sendable {
               default_model_id=excluded.default_model_id,
               default_build_mode=excluded.default_build_mode,
               repo_bookmark=excluded.repo_bookmark,
-              context_instructions=excluded.context_instructions;
+              context_instructions=excluded.context_instructions,
+              default_qa_enabled=excluded.default_qa_enabled,
+              default_qa_provider_id=excluded.default_qa_provider_id,
+              default_qa_model_id=excluded.default_qa_model_id;
             """
         ) { st in
             st.bind(1, p.id.uuidString)
@@ -49,12 +52,18 @@ public final class PersistenceService: @unchecked Sendable {
             st.bind(9, p.createdAt)
             st.bind(10, p.repoBookmark)
             st.bind(11, p.contextInstructions)
+            // default_qa_enabled has NOT NULL DEFAULT 0; we always write a
+            // concrete bool so legacy NULL rows from pre-v7 installs get
+            // normalized on next upsert.
+            st.bind(12, Bool?.some(p.defaultQaEnabled))
+            st.bind(13, p.defaultQaProviderId?.uuidString)
+            st.bind(14, p.defaultQaModelId)
         }
     }
 
     public func listProjects() throws -> [Project] {
         try db.query(
-            "SELECT id, name, slug, repo_path, default_base_branch, default_provider_id, default_model_id, default_build_mode, created_at, repo_bookmark, context_instructions FROM projects ORDER BY created_at ASC;",
+            "SELECT id, name, slug, repo_path, default_base_branch, default_provider_id, default_model_id, default_build_mode, created_at, repo_bookmark, context_instructions, default_qa_enabled, default_qa_provider_id, default_qa_model_id FROM projects ORDER BY created_at ASC;",
             rowMap: { st in
                 Project(
                     id: UUID(uuidString: st.requiredString(0))!,
@@ -67,7 +76,10 @@ public final class PersistenceService: @unchecked Sendable {
                     defaultBuildMode: st.string(7).flatMap(BuildMode.init(rawValue:)),
                     createdAt: st.requiredDate(8),
                     repoBookmark: st.data(9),
-                    contextInstructions: st.string(10) ?? ""
+                    contextInstructions: st.string(10) ?? "",
+                    defaultQaEnabled: st.bool(11) ?? false,
+                    defaultQaProviderId: st.string(12).flatMap { UUID(uuidString: $0) },
+                    defaultQaModelId: st.string(13)
                 )
             }
         )
@@ -135,8 +147,8 @@ public final class PersistenceService: @unchecked Sendable {
     public func upsertWorkspace(_ w: Workspace) throws {
         try db.executeUpdate(
             """
-            INSERT INTO workspaces (id, project_id, name, slug, branch_name, base_branch, worktree_path, lifecycle_state, provider_id, model_id, build_mode, created_at, archived_at, name_source, context_instructions, last_viewed_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO workspaces (id, project_id, name, slug, branch_name, base_branch, worktree_path, lifecycle_state, provider_id, model_id, build_mode, created_at, archived_at, name_source, context_instructions, last_viewed_at, qa_enabled, qa_provider_id, qa_model_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
               name=excluded.name,
               slug=excluded.slug,
@@ -150,7 +162,10 @@ public final class PersistenceService: @unchecked Sendable {
               archived_at=excluded.archived_at,
               name_source=excluded.name_source,
               context_instructions=excluded.context_instructions,
-              last_viewed_at=excluded.last_viewed_at;
+              last_viewed_at=excluded.last_viewed_at,
+              qa_enabled=excluded.qa_enabled,
+              qa_provider_id=excluded.qa_provider_id,
+              qa_model_id=excluded.qa_model_id;
             """
         ) { st in
             st.bind(1, w.id.uuidString)
@@ -169,15 +184,18 @@ public final class PersistenceService: @unchecked Sendable {
             st.bind(14, w.nameSource.rawValue)
             st.bind(15, w.contextInstructions)
             st.bind(16, w.lastViewedAt)
+            st.bind(17, w.qaEnabled)
+            st.bind(18, w.qaProviderId?.uuidString)
+            st.bind(19, w.qaModelId)
         }
     }
 
     public func listWorkspaces(projectId: UUID? = nil) throws -> [Workspace] {
         let sql: String
         if projectId != nil {
-            sql = "SELECT id, project_id, name, slug, branch_name, base_branch, worktree_path, lifecycle_state, provider_id, model_id, build_mode, created_at, archived_at, name_source, context_instructions, last_viewed_at FROM workspaces WHERE project_id = ? ORDER BY created_at DESC;"
+            sql = "SELECT id, project_id, name, slug, branch_name, base_branch, worktree_path, lifecycle_state, provider_id, model_id, build_mode, created_at, archived_at, name_source, context_instructions, last_viewed_at, qa_enabled, qa_provider_id, qa_model_id FROM workspaces WHERE project_id = ? ORDER BY created_at DESC;"
         } else {
-            sql = "SELECT id, project_id, name, slug, branch_name, base_branch, worktree_path, lifecycle_state, provider_id, model_id, build_mode, created_at, archived_at, name_source, context_instructions, last_viewed_at FROM workspaces ORDER BY created_at DESC;"
+            sql = "SELECT id, project_id, name, slug, branch_name, base_branch, worktree_path, lifecycle_state, provider_id, model_id, build_mode, created_at, archived_at, name_source, context_instructions, last_viewed_at, qa_enabled, qa_provider_id, qa_model_id FROM workspaces ORDER BY created_at DESC;"
         }
         return try db.query(
             sql,
@@ -201,7 +219,10 @@ public final class PersistenceService: @unchecked Sendable {
                     archivedAt: st.date(12),
                     nameSource: st.string(13).flatMap(NameSource.init(rawValue:)) ?? .random,
                     contextInstructions: st.string(14) ?? "",
-                    lastViewedAt: st.date(15)
+                    lastViewedAt: st.date(15),
+                    qaEnabled: st.bool(16),
+                    qaProviderId: st.string(17).flatMap { UUID(uuidString: $0) },
+                    qaModelId: st.string(18)
                 )
             }
         )

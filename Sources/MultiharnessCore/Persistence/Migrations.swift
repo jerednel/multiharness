@@ -71,6 +71,19 @@ public struct Migrations {
         ALTER TABLE workspaces ADD COLUMN last_viewed_at INTEGER;
         UPDATE workspaces SET last_viewed_at = CAST(strftime('%s','now') AS INTEGER) * 1000;
         """,
+        // v7: opt-in QA reviewer pass. Project-level columns are the
+        // defaults a new workspace inherits; workspace-level columns are
+        // explicit overrides. `qa_enabled` is nullable on workspaces so
+        // we can distinguish "no opinion → use project default" from
+        // "explicit opt-in" and "explicit opt-out".
+        """
+        ALTER TABLE projects   ADD COLUMN default_qa_enabled INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE projects   ADD COLUMN default_qa_provider_id TEXT;
+        ALTER TABLE projects   ADD COLUMN default_qa_model_id TEXT;
+        ALTER TABLE workspaces ADD COLUMN qa_enabled INTEGER;
+        ALTER TABLE workspaces ADD COLUMN qa_provider_id TEXT;
+        ALTER TABLE workspaces ADD COLUMN qa_model_id TEXT;
+        """,
     ]
 
     public static func apply(_ db: Database) throws {
