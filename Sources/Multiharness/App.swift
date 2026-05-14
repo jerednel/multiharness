@@ -38,7 +38,14 @@ struct MultiharnessApp: App {
             }
             .task { await boot() }
         }
-        .windowResizability(.contentSize)
+        // `.contentSize` would pin the window to the content's preferred
+        // size, which made the window snap to a too-small frame the first
+        // time a workspace was selected (the HSplitView's columns then
+        // got squeezed and the user had to resize manually). `.contentMinSize`
+        // honors our `minWidth: 1100, minHeight: 700` but otherwise lets
+        // AppKit remember the user's chosen frame and lets the user grow
+        // the window beyond the content's ideal size.
+        .windowResizability(.contentMinSize)
         .windowStyle(.hiddenTitleBar)
     }
 
