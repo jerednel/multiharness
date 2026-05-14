@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import MultiharnessCore
 
 @main
@@ -125,6 +126,7 @@ final class AgentRegistryStore: NSObject, ControlClientDelegate {
     weak var appStore: AppStore?
     weak var workspaceStore: WorkspaceStore?
     var relayHandler: RelayHandler?
+    let completionSoundPlayer = CompletionSoundPlayer()
 
     func bindEnvironment(env: AppEnvironment, appStore: AppStore, workspaceStore: WorkspaceStore) {
         self.env = env
@@ -139,6 +141,20 @@ final class AgentRegistryStore: NSObject, ControlClientDelegate {
         if let client = env.control { store.bind(control: client) }
         stores[workspaceId] = store
         return store
+    }
+
+    func maybePlayCompletionSound(for eventWorkspaceId: UUID) {
+        let enabled = appStore?.playCompletionSound ?? true
+        let appIsFrontmost = NSApp.isActive
+        let selected = workspaceStore?.selectedWorkspaceId
+        if CompletionSoundDecision.shouldPlay(
+            enabled: enabled,
+            appIsFrontmost: appIsFrontmost,
+            selectedWorkspaceId: selected,
+            eventWorkspaceId: eventWorkspaceId
+        ) {
+            completionSoundPlayer.play()
+        }
     }
 
     nonisolated func controlClient(_ client: ControlClient, didReceiveEvent event: AgentEventEnvelope) {
@@ -179,6 +195,7 @@ final class AgentRegistryStore: NSObject, ControlClientDelegate {
                 if self.workspaceStore?.selectedWorkspaceId == id {
                     self.workspaceStore?.markViewed(id)
                 }
+                self.maybePlayCompletionSound(for: id)
             }
         }
     }

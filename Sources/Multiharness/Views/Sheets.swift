@@ -588,6 +588,16 @@ private struct DefaultsTab: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Defaults").font(.title3).bold()
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Notifications").font(.headline)
+                Toggle("Play sound when an agent finishes responding",
+                       isOn: $appStore.playCompletionSound)
+                Text("Quiet when this window is focused on the same workspace.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Divider()
+
             Text("Used when creating a workspace if the project has no default and there's no prior workspace to inherit from. iPhone quick-create uses this too.")
                 .font(.caption).foregroundStyle(.secondary)
 

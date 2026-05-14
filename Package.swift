@@ -44,7 +44,8 @@ let package = Package(
         .executableTarget(
             name: "Multiharness",
             dependencies: ["MultiharnessCore", "MultiharnessClient"],
-            path: "Sources/Multiharness"
+            path: "Sources/Multiharness",
+            resources: [.process("Resources")]
         ),
         .testTarget(
             name: "MultiharnessCoreTests",
