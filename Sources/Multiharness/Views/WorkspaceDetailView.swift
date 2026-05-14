@@ -532,21 +532,18 @@ private struct Inspector: View {
             }
             .padding(.horizontal, 8).padding(.top, 6).padding(.bottom, 4)
             Divider()
-            Group {
-                switch inspectorTab {
-                case .files:
-                    FilesTab(workspace: workspace, env: env)
-                case .context:
-                    ContextTab(
-                        workspace: workspace,
-                        appStore: appStore,
-                        workspaceStore: workspaceStore,
-                        branchListService: branchListService
-                    )
-                }
+            // True overlap-crossfade rather than fade-out-then-in: both tabs
+            // stay in the hierarchy while opacity animates between them.
+            TabCrossfade(selection: inspectorTab, first: .files) {
+                FilesTab(workspace: workspace, env: env)
+            } secondView: {
+                ContextTab(
+                    workspace: workspace,
+                    appStore: appStore,
+                    workspaceStore: workspaceStore,
+                    branchListService: branchListService
+                )
             }
-            .id(inspectorTab)
-            .transition(.tabSwap)
         }
     }
 
