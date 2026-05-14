@@ -92,6 +92,34 @@ describe("buildModel — fully custom endpoints", () => {
   });
 });
 
+describe("buildModel — image input declarations", () => {
+  // Regression guard: pi-ai's transformMessages strips every image block
+  // (replacing it with a placeholder string) when model.input lacks "image".
+  // If any of these flip back to text-only, image attachments will be
+  // silently dropped before they hit the wire — Anthropic loses vision,
+  // Ollama/LM Studio vision models (qwen2.5-vl, qwen3-vl, llava, …) stop
+  // receiving pixels, and the bug looks like "the model can't see images"
+  // when really we never sent them.
+  it("declares image input on the anthropic kind", () => {
+    const m = buildModel({
+      kind: "anthropic",
+      modelId: "claude-sonnet-4-6",
+      apiKey: "sk-ant-mock",
+    });
+    expect(m.input).toContain("image");
+  });
+
+  it("declares image input on the openai-compatible kind (Ollama/LM Studio)", () => {
+    const m = buildModel({
+      kind: "openai-compatible",
+      modelId: "qwen3-vl:30b",
+      baseUrl: "http://localhost:11434/v1",
+    });
+    expect(m.input).toContain("image");
+    expect(m.input).toContain("text");
+  });
+});
+
 describe("PROVIDER_PRESETS", () => {
   it("includes LM Studio, OpenRouter, and OpenCode", () => {
     const ids = PROVIDER_PRESETS.map((p) => p.id);
