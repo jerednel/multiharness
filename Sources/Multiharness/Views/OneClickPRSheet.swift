@@ -14,6 +14,11 @@ struct OneClickPRSheet: View {
 
     @State private var phase: PullRequestService.Phase = .staging
     @State private var state: ScreenState = .running
+    /// Captured at flow start so the in-progress checklist can show the
+    /// right label for the final step ("Opening PR via `gh`" vs.
+    /// "Building compare URL"). Updating this once at the top of
+    /// `startFlow()` avoids a re-probe on every redraw.
+    @State private var ghAvailable: Bool = true
     private let service = PullRequestService()
 
     private enum ScreenState {
@@ -60,14 +65,32 @@ struct OneClickPRSheet: View {
                 stepRow(.staging, label: "Staging pending changes")
                 stepRow(.committing, label: "Committing")
                 stepRow(.pushing, label: "Pushing branch to origin")
-                stepRow(.opening, label: "Opening PR via `gh`")
+                stepRow(
+                    .opening,
+                    label: ghAvailable
+                        ? "Opening PR via `gh`"
+                        : "Building GitHub compare URL"
+                )
             }
         case .done(let outcome):
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 8) {
-                    Image(systemName: "checkmark.seal.fill")
-                        .foregroundStyle(.green).font(.title3)
-                    Text("Pull request opened").font(.headline)
+                    Image(systemName: outcome.didCreatePr
+                          ? "checkmark.seal.fill"
+                          : "arrow.up.right.circle.fill")
+                        .foregroundStyle(outcome.didCreatePr ? .green : Color.accentColor)
+                        .font(.title3)
+                    Text(outcome.didCreatePr
+                         ? "Pull request opened"
+                         : "Branch pushed — click to open PR").font(.headline)
+                }
+                if !outcome.didCreatePr {
+                    // Explain the fallback path so the user isn't left
+                    // wondering why the PR didn't auto-open. One
+                    // sentence — anything longer reads as an apology.
+                    Text("`gh` isn't installed, so we couldn't create the PR for you. The branch is on GitHub; click below to open the create-PR form.")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 if outcome.didCommit, let msg = outcome.commitMessage {
                     VStack(alignment: .leading, spacing: 4) {
@@ -162,7 +185,12 @@ struct OneClickPRSheet: View {
                     }
                     isPresented = false
                 } label: {
-                    Label("Open in browser", systemImage: "safari")
+                    Label(
+                        outcome.didCreatePr
+                            ? "Open PR in browser"
+                            : "Create PR on GitHub",
+                        systemImage: "safari"
+                    )
                 }
                 .keyboardShortcut(.defaultAction)
             case .failed:
@@ -178,6 +206,10 @@ struct OneClickPRSheet: View {
     private func startFlow() {
         state = .running
         phase = .staging
+        // Probe gh once up front. The orchestrator does its own probe
+        // when deciding which branch to take; this copy is purely so
+        // the in-progress checklist labels its final step correctly.
+        ghAvailable = (service.locateGh() != nil)
         let svc = service
         let worktreePath = workspace.worktreePath
         let branch = workspace.branchName

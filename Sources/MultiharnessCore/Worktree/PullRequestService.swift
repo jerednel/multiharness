@@ -12,6 +12,12 @@ import Foundation
 ///   4. `gh pr create --base <base> --head <branch> --fill` to open the PR
 ///      against the workspace's base branch and return the URL.
 ///
+/// If `gh` isn't installed, step 4 degrades gracefully: we keep the push
+/// and return the GitHub "compare/create-PR" URL synthesised from the
+/// origin remote. The user gets a real link to click — they just open
+/// the PR form in the browser instead of having it pre-filled by `gh`.
+/// `Outcome.didCreatePr` distinguishes the two cases.
+///
 /// We deliberately keep this in `MultiharnessCore` (not in the view layer)
 /// so the same flow is reachable from the iOS-driven remote API later.
 public struct PullRequestService: Sendable {
@@ -25,20 +31,29 @@ public struct PullRequestService: Sendable {
         public var didCommit: Bool
         public var commitMessage: String?
         public var pushedBranch: String
+        /// Either the URL `gh` returned, or — when `gh` isn't
+        /// installed — the synthesized GitHub compare URL the user
+        /// can click to open a PR in the browser.
         public var pullRequestUrl: String
+        /// True iff `gh pr create` actually opened a PR. False when
+        /// we fell back to "push + compare URL" because `gh` wasn't
+        /// available. The sheet renders different copy for each.
+        public var didCreatePr: Bool
 
         public init(
             stagedFiles: [String],
             didCommit: Bool,
             commitMessage: String?,
             pushedBranch: String,
-            pullRequestUrl: String
+            pullRequestUrl: String,
+            didCreatePr: Bool
         ) {
             self.stagedFiles = stagedFiles
             self.didCommit = didCommit
             self.commitMessage = commitMessage
             self.pushedBranch = pushedBranch
             self.pullRequestUrl = pullRequestUrl
+            self.didCreatePr = didCreatePr
         }
     }
 
@@ -50,7 +65,10 @@ public struct PullRequestService: Sendable {
     }
 
     public enum Failure: Error, CustomStringConvertible, LocalizedError, Equatable {
-        /// `gh` CLI couldn't be found on PATH or in known Homebrew locations.
+        /// `gh` CLI couldn't be found on PATH or in known Homebrew
+        /// locations. The orchestrator no longer throws this — it falls
+        /// back to "push + compare URL". Kept for callers of
+        /// `createPullRequest` that explicitly want to know.
         case ghMissing
         /// `git push` failed.
         case pushFailed(stderr: String)
@@ -62,6 +80,9 @@ public struct PullRequestService: Sendable {
         case nothingToPr
         /// A git invocation failed during staging/committing.
         case gitFailed(args: [String], stderr: String)
+        /// `gh` is missing AND we couldn't synthesise a fallback compare
+        /// URL (no `origin` remote, or it doesn't point at GitHub).
+        case noFallbackUrl(reason: String)
 
         public var description: String {
             switch self {
@@ -75,6 +96,8 @@ public struct PullRequestService: Sendable {
                 return "Nothing to PR — this branch has no commits or pending changes vs its base."
             case .gitFailed(let args, let s):
                 return "git \(args.joined(separator: " ")) failed: \(s)"
+            case .noFallbackUrl(let r):
+                return "Couldn't build a compare URL for this remote: \(r)"
             }
         }
         public var errorDescription: String? { description }
@@ -195,20 +218,98 @@ public struct PullRequestService: Sendable {
         _ = try push(worktreePath: worktreePath, branch: branch)
 
         progress?(.opening)
-        let url = try createPullRequest(
-            worktreePath: worktreePath,
-            baseBranch: baseBranch,
-            headBranch: branch,
-            title: title,
-            body: body
-        )
-        return Outcome(
-            stagedFiles: staged,
-            didCommit: didCommit,
-            commitMessage: didCommit ? commitMessage : nil,
-            pushedBranch: branch,
-            pullRequestUrl: url
-        )
+        // Preferred path: gh creates the PR for us with a nice pre-filled
+        // title/body. Fallback path: gh isn't installed, but a `git push`
+        // already happened, so we hand the user a clickable compare-URL
+        // pointing at the right base/head. They get one extra click to
+        // hit "Create pull request" in the browser — but no work is lost.
+        if locateGh() != nil {
+            let url = try createPullRequest(
+                worktreePath: worktreePath,
+                baseBranch: baseBranch,
+                headBranch: branch,
+                title: title,
+                body: body
+            )
+            return Outcome(
+                stagedFiles: staged,
+                didCommit: didCommit,
+                commitMessage: didCommit ? commitMessage : nil,
+                pushedBranch: branch,
+                pullRequestUrl: url,
+                didCreatePr: true
+            )
+        } else {
+            let url = try fallbackCompareUrl(
+                worktreePath: worktreePath,
+                base: baseBranch,
+                head: branch
+            )
+            return Outcome(
+                stagedFiles: staged,
+                didCommit: didCommit,
+                commitMessage: didCommit ? commitMessage : nil,
+                pushedBranch: branch,
+                pullRequestUrl: url,
+                didCreatePr: false
+            )
+        }
+    }
+
+    /// Synthesises a GitHub "compare across branches → create PR" URL
+    /// from the `origin` remote and the supplied base/head. The result
+    /// looks like:
+    ///   `https://github.com/<owner>/<repo>/compare/<base>...<head>?expand=1`
+    /// which lands the user on GitHub's PR-creation form with both refs
+    /// already selected.
+    public func fallbackCompareUrl(
+        worktreePath: String,
+        base: String,
+        head: String
+    ) throws -> String {
+        let remote: String
+        do {
+            remote = try git(at: worktreePath, args: ["remote", "get-url", "origin"])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        } catch {
+            throw Failure.noFallbackUrl(reason: "no `origin` remote configured")
+        }
+        guard let slug = Self.githubSlug(fromRemoteUrl: remote) else {
+            throw Failure.noFallbackUrl(reason: "origin `\(remote)` doesn't look like a GitHub URL")
+        }
+        let encodedBase = base.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? base
+        let encodedHead = head.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? head
+        return "https://github.com/\(slug)/compare/\(encodedBase)...\(encodedHead)?expand=1"
+    }
+
+    /// Parses an `origin` remote URL into the `owner/repo` slug GitHub
+    /// uses in browser URLs. Handles the two formats `git remote get-url`
+    /// emits in the wild:
+    ///   - SSH:   `git@github.com:owner/repo.git`
+    ///   - HTTPS: `https://github.com/owner/repo.git` (with or without `.git`)
+    /// Returns `nil` for anything that doesn't smell like GitHub (e.g.
+    /// GitLab, Bitbucket, self-hosted GitHub Enterprise on a custom
+    /// host) — those would need their own URL templates.
+    public static func githubSlug(fromRemoteUrl url: String) -> String? {
+        let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        var path: String? = nil
+        if trimmed.hasPrefix("git@github.com:") {
+            path = String(trimmed.dropFirst("git@github.com:".count))
+        } else if trimmed.hasPrefix("ssh://git@github.com/") {
+            path = String(trimmed.dropFirst("ssh://git@github.com/".count))
+        } else if trimmed.hasPrefix("https://github.com/") {
+            path = String(trimmed.dropFirst("https://github.com/".count))
+        } else if trimmed.hasPrefix("http://github.com/") {
+            path = String(trimmed.dropFirst("http://github.com/".count))
+        }
+        guard var p = path else { return nil }
+        if p.hasSuffix(".git") { p.removeLast(4) }
+        if p.hasSuffix("/") { p.removeLast() }
+        // Must have exactly one slash separating owner and repo, both
+        // non-empty.
+        let parts = p.split(separator: "/", omittingEmptySubsequences: false)
+        guard parts.count == 2, !parts[0].isEmpty, !parts[1].isEmpty else { return nil }
+        return "\(parts[0])/\(parts[1])"
     }
 
     // MARK: - Helpers
@@ -226,10 +327,11 @@ public struct PullRequestService: Sendable {
         return "Sweep pending changes (\(preview)\(suffix))"
     }
 
-    /// Try a couple of well-known absolute paths first so the app works
-    /// when launched from Finder (which doesn't inherit the user's shell
-    /// PATH). Falls back to `PATH` lookup.
-    func locateGh() -> String? {
+    /// Returns the absolute path to `gh` if it's installed, otherwise
+    /// `nil`. Tries a couple of well-known absolute paths first so the
+    /// app works when launched from Finder (which doesn't inherit the
+    /// user's shell PATH); falls back to `PATH` lookup.
+    public func locateGh() -> String? {
         let candidates = [
             "/opt/homebrew/bin/gh",
             "/usr/local/bin/gh",

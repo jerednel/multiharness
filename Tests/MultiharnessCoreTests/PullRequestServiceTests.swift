@@ -136,13 +136,16 @@ final class PullRequestServiceTests: XCTestCase {
         )
     }
 
-    /// Full orchestrator up to (but not including) the `gh` step:
-    /// stage + commit + push should all run cleanly, and we should
-    /// then fail at the `gh` step with `.ghMissing` on machines that
-    /// don't have it. On machines that DO have `gh` but aren't
-    /// authenticated against a fake bare repo, we'd see `.ghFailed` —
-    /// either is acceptable here; we just assert "we got that far".
-    func testOpenPullRequestFailsCleanlyAtGhStep() throws {
+    /// Full orchestrator up to (but not including) the `gh` step.
+    /// Three outcomes are acceptable here, depending on the host:
+    ///   - `gh` not installed AND origin doesn't look like GitHub →
+    ///     fall back to `noFallbackUrl` (our bare local path).
+    ///   - `gh` installed but unauthenticated against the fake remote
+    ///     → `.ghFailed`.
+    ///   - `gh` somehow happy with the bare remote → success.
+    /// In every case, by the time the call returns we must have pushed
+    /// to the bare remote and visited all four phases.
+    func testOpenPullRequestRunsAllPhasesAndPushes() throws {
         try "stuff\n".write(
             to: repoDir.appendingPathComponent("a.txt"),
             atomically: true, encoding: .utf8
@@ -155,24 +158,120 @@ final class PullRequestServiceTests: XCTestCase {
                 baseBranch: "main",
                 progress: { seenPhases.append($0) }
             )
-            // If `gh` IS installed and somehow authenticated against
-            // our bare local "remote", treat that as success — the
-            // important behavioral check is that we made it through.
         } catch let err as PullRequestService.Failure {
             switch err {
-            case .ghMissing, .ghFailed:
-                break  // expected
+            case .noFallbackUrl, .ghFailed:
+                break  // expected on hosts without `gh` (local origin
+                       // isn't github.com, so no fallback URL) or with
+                       // `gh` that hates our fake remote.
             default:
                 XCTFail("unexpected failure \(err)")
             }
         }
         XCTAssertEqual(seenPhases.prefix(4),
                        [.staging, .committing, .pushing, .opening])
-        // The push must have actually landed before we tried `gh`.
+        // The push must have landed regardless of which branch we took.
         let refs = try worktreeSvc.runGit(at: remoteDir.path, args: [
             "for-each-ref", "--format=%(refname:short)", "refs/heads/",
         ])
         XCTAssertTrue(refs.contains("feature"))
+    }
+
+    /// When the origin DOES look like GitHub, and `gh` isn't installed,
+    /// the orchestrator should produce a successful Outcome with
+    /// `didCreatePr == false` and a synthesised compare URL.
+    /// We force the "gh missing" branch by pointing origin at a
+    /// github.com URL that doesn't actually exist; the push will fail,
+    /// so we exercise the URL synthesis via `fallbackCompareUrl`
+    /// directly. (Going through `openPullRequest` would require either
+    /// hitting the network or stubbing gh discovery, neither of which
+    /// belong in a unit test.)
+    func testFallbackCompareUrlForGithubSshOrigin() throws {
+        _ = try worktreeSvc.runGit(at: repoDir.path, args: [
+            "remote", "set-url", "origin", "git@github.com:acme/widgets.git",
+        ])
+        let url = try svc.fallbackCompareUrl(
+            worktreePath: repoDir.path,
+            base: "main",
+            head: "feature"
+        )
+        XCTAssertEqual(
+            url,
+            "https://github.com/acme/widgets/compare/main...feature?expand=1"
+        )
+    }
+
+    func testFallbackCompareUrlForGithubHttpsOrigin() throws {
+        _ = try worktreeSvc.runGit(at: repoDir.path, args: [
+            "remote", "set-url", "origin", "https://github.com/acme/widgets.git",
+        ])
+        let url = try svc.fallbackCompareUrl(
+            worktreePath: repoDir.path,
+            base: "main",
+            head: "feature/foo"
+        )
+        // GitHub accepts slashes literally in compare URLs (it's how
+        // `feature/foo`-style branch names work in the browser). We
+        // pass them through `.urlPathAllowed`, which leaves `/`
+        // unescaped — that's the intended behavior.
+        XCTAssertEqual(
+            url,
+            "https://github.com/acme/widgets/compare/main...feature/foo?expand=1"
+        )
+    }
+
+    func testFallbackCompareUrlRejectsNonGithubOrigin() throws {
+        _ = try worktreeSvc.runGit(at: repoDir.path, args: [
+            "remote", "set-url", "origin", "git@gitlab.com:acme/widgets.git",
+        ])
+        XCTAssertThrowsError(
+            try svc.fallbackCompareUrl(
+                worktreePath: repoDir.path,
+                base: "main",
+                head: "feature"
+            )
+        ) { err in
+            if case PullRequestService.Failure.noFallbackUrl = err {
+                // expected
+            } else {
+                XCTFail("expected noFallbackUrl, got \(err)")
+            }
+        }
+    }
+
+    func testGithubSlugParserHandlesCommonShapes() {
+        XCTAssertEqual(
+            PullRequestService.githubSlug(fromRemoteUrl: "git@github.com:acme/widgets.git"),
+            "acme/widgets"
+        )
+        XCTAssertEqual(
+            PullRequestService.githubSlug(fromRemoteUrl: "git@github.com:acme/widgets"),
+            "acme/widgets"
+        )
+        XCTAssertEqual(
+            PullRequestService.githubSlug(fromRemoteUrl: "https://github.com/acme/widgets.git"),
+            "acme/widgets"
+        )
+        XCTAssertEqual(
+            PullRequestService.githubSlug(fromRemoteUrl: "https://github.com/acme/widgets/"),
+            "acme/widgets"
+        )
+        XCTAssertEqual(
+            PullRequestService.githubSlug(fromRemoteUrl: "ssh://git@github.com/acme/widgets.git"),
+            "acme/widgets"
+        )
+        XCTAssertNil(
+            PullRequestService.githubSlug(fromRemoteUrl: "git@gitlab.com:acme/widgets.git"),
+            "non-github hosts should not match"
+        )
+        XCTAssertNil(
+            PullRequestService.githubSlug(fromRemoteUrl: "https://github.com/acme"),
+            "owner-only URL is not a valid slug"
+        )
+        XCTAssertNil(
+            PullRequestService.githubSlug(fromRemoteUrl: ""),
+            "empty input"
+        )
     }
 
     func testOpenPullRequestFailsWithNothingToPrOnCleanRepoWithNoAhead() throws {
