@@ -97,4 +97,54 @@ describe("AgentSession composeSystemPrompt", () => {
     expect(s.currentSystemPrompt()).not.toContain("project_instructions");
     await s.dispose();
   });
+
+  it("always includes a workspace_orientation block with the worktree path", async () => {
+    // Even without projectName/branch supplied (back-compat with older
+    // Mac builds), the orientation block must anchor the agent on a
+    // concrete working directory so it doesn't ask "which project?"
+    // after every prompt.
+    const s = new AgentSession(makeOpts());
+    const text = s.currentSystemPrompt();
+    expect(text).toContain("<workspace_orientation>");
+    expect(text).toContain(`Working directory: ${worktree}`);
+    expect(text).toContain("</workspace_orientation>");
+    await s.dispose();
+  });
+
+  it("orientation block includes project name and branch when provided", async () => {
+    const s = new AgentSession(
+      makeOpts({
+        projectName: "multiharness",
+        branchName: "quick-willow",
+        baseBranch: "main",
+      }),
+    );
+    const text = s.currentSystemPrompt();
+    expect(text).toContain("Project: multiharness");
+    expect(text).toContain("Branch: `quick-willow` (forked from `main`)");
+    await s.dispose();
+  });
+
+  it("orientation block precedes both project and workspace instruction blocks", async () => {
+    // Ordering matters: the model reads top-to-bottom, and the
+    // orientation is what stops it from asking "which repo?" before
+    // the user's project-level guidance ever gets seen.
+    const s = new AgentSession(
+      makeOpts({
+        projectName: "p",
+        branchName: "b",
+        baseBranch: "main",
+        projectContext: "P",
+        workspaceContext: "W",
+      }),
+    );
+    const text = s.currentSystemPrompt();
+    const orientationAt = text.indexOf("<workspace_orientation>");
+    const projectAt = text.indexOf("<project_instructions>");
+    const workspaceAt = text.indexOf("<workspace_instructions>");
+    expect(orientationAt).toBeGreaterThan(-1);
+    expect(orientationAt).toBeLessThan(projectAt);
+    expect(projectAt).toBeLessThan(workspaceAt);
+    await s.dispose();
+  });
 });

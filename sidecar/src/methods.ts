@@ -52,6 +52,12 @@ export function registerMethods(
       nameSourceRaw === "random" || nameSourceRaw === "named"
         ? (nameSourceRaw as "random" | "named")
         : undefined;
+    // Optional orientation fields. Older Mac builds may not send them;
+    // AgentSession's prompt builder falls back to a path-only block in
+    // that case so the orientation is never simply absent.
+    const projectName = typeof p.projectName === "string" ? p.projectName : undefined;
+    const branchName = typeof p.branchName === "string" ? p.branchName : undefined;
+    const baseBranch = typeof p.baseBranch === "string" ? p.baseBranch : undefined;
     await registry.create({
       workspaceId,
       projectId,
@@ -61,6 +67,9 @@ export function registerMethods(
       nameSource,
       projectContext,
       workspaceContext,
+      projectName,
+      branchName,
+      baseBranch,
     });
     return { ok: true };
   });
