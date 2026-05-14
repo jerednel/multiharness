@@ -13,6 +13,11 @@ const Params = Type.Object({
   ),
 });
 
+// Defensive cap. A flat directory with 100k+ entries (e.g. a build output
+// tree the user pointed the agent at) shouldn't be allowed to drown the
+// next LLM call.
+export const MAX_LISTDIR_OUTPUT_BYTES = 50 * 1024;
+
 export function listDirTool(worktreePath: string): AgentTool<typeof Params> {
   return {
     name: "list_dir",
@@ -32,9 +37,18 @@ export function listDirTool(worktreePath: string): AgentTool<typeof Params> {
               ? "symlink"
               : "other",
       }));
-      const text = entries.map((e) => `${e.kind === "dir" ? "d " : "  "}${e.name}`).join("\n");
+      let text = entries.map((e) => `${e.kind === "dir" ? "d " : "  "}${e.name}`).join("\n");
+      const totalBytes = Buffer.byteLength(text, "utf8");
+      if (totalBytes > MAX_LISTDIR_OUTPUT_BYTES) {
+        text =
+          Buffer.from(text, "utf8")
+            .subarray(0, MAX_LISTDIR_OUTPUT_BYTES)
+            .toString("utf8") +
+          `\n…[truncated: ${entries.length} entries, ${totalBytes} bytes total, first ${MAX_LISTDIR_OUTPUT_BYTES} bytes shown]`;
+      }
       return {
         content: [{ type: "text", text: text || "(empty)" }],
+        // details preserves the full entry list for the UI.
         details: { path: full, entries },
       };
     },

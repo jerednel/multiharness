@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from "bun:test";
 import { mkdtempSync, writeFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { readFileTool } from "../../src/tools/readFile.js";
+import { readFileTool, MAX_READ_BYTES } from "../../src/tools/readFile.js";
 
 let root: string;
 beforeEach(() => {
@@ -26,5 +26,17 @@ describe("read_file", () => {
   it("throws for missing file", async () => {
     const tool = readFileTool(root);
     await expect(tool.execute("call-3", { path: "missing.txt" })).rejects.toThrow();
+  });
+
+  it("truncates oversized files in LLM-visible content but keeps details intact", async () => {
+    const huge = "a".repeat(MAX_READ_BYTES + 1024);
+    writeFileSync(join(root, "huge.txt"), huge);
+    const tool = readFileTool(root);
+    const r = await tool.execute("call-4", { path: "huge.txt" });
+    const text = (r.content[0] as { text: string }).text;
+    expect(text.length).toBeLessThan(huge.length);
+    expect(text).toContain("[truncated:");
+    expect(text).toContain(`${MAX_READ_BYTES + 1024} bytes total`);
+    expect(r.details).toMatchObject({ content: huge, bytes: MAX_READ_BYTES + 1024 });
   });
 });
