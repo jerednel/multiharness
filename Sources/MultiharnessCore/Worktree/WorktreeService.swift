@@ -1,8 +1,17 @@
 import Foundation
 
 public struct WorktreeStatus: Sendable, Equatable {
+    /// Files tracked by git with uncommitted working-tree or index changes
+    /// (porcelain code != "??").
     public var modifiedFiles: [String]
+    /// Files present in the worktree but not tracked by git (porcelain "??").
     public var untrackedFiles: [String]
+    /// Files that differ between the workspace branch's tip (HEAD) and the
+    /// base branch's tip — i.e. work that has been committed on this branch
+    /// but isn't in base yet. Excludes anything also in `modifiedFiles`
+    /// (those would double-count when the user has both committed and
+    /// further dirtied a file).
+    public var committedFiles: [String]
     public var diffStatVsBase: String
 }
 
@@ -137,6 +146,26 @@ public struct WorktreeService: Sendable {
                 modified.append(path)
             }
         }
+        // Files changed by commits on this branch since it diverged from
+        // base. We use `base...HEAD` (three-dot) so a stale base branch
+        // doesn't make unrelated upstream changes leak in. Suppress paths
+        // that already appear as uncommitted-modified so a file currently
+        // being edited shows up once (in `modifiedFiles`) rather than in
+        // both buckets.
+        let modifiedSet = Set(modified)
+        let committedRaw: String
+        do {
+            committedRaw = try runGit(
+                at: worktreePath,
+                args: ["diff", "--name-only", "\(baseBranch)...HEAD"]
+            )
+        } catch {
+            committedRaw = ""
+        }
+        let committed = committedRaw
+            .split(separator: "\n", omittingEmptySubsequences: true)
+            .map { String($0) }
+            .filter { !modifiedSet.contains($0) }
         let diffStat: String
         do {
             diffStat = try runGit(
@@ -149,6 +178,7 @@ public struct WorktreeService: Sendable {
         return WorktreeStatus(
             modifiedFiles: modified,
             untrackedFiles: untracked,
+            committedFiles: committed,
             diffStatVsBase: diffStat
         )
     }
@@ -157,6 +187,38 @@ public struct WorktreeService: Sendable {
         var args = ["diff", "\(baseBranch)...HEAD"]
         if let file { args.append(contentsOf: ["--", file]) }
         return try runGit(at: worktreePath, args: args)
+    }
+
+    /// Unified diff for `file` against the base branch, automatically
+    /// covering both committed-on-branch changes (`base...HEAD`) AND
+    /// uncommitted working-tree changes. Implemented as `git diff base --`
+    /// which spans HEAD's history back to base PLUS the working tree.
+    public func diffVsBaseIncludingWorktree(
+        worktreePath: String,
+        baseBranch: String,
+        file: String
+    ) throws -> String {
+        try runGit(at: worktreePath, args: ["diff", baseBranch, "--", file])
+    }
+
+    /// Synthesises an "all added" unified diff for an untracked file by
+    /// reading it from disk and emitting one `+` line per source line.
+    /// Mirrors what `git diff --no-index /dev/null <file>` would print but
+    /// avoids shelling out / dealing with non-zero exit codes from that
+    /// command.
+    public func diffForUntrackedFile(worktreePath: String, file: String) -> String {
+        let full = (worktreePath as NSString).appendingPathComponent(file)
+        guard let body = try? String(contentsOfFile: full, encoding: .utf8) else {
+            return ""
+        }
+        let lines = body.split(separator: "\n", omittingEmptySubsequences: false)
+        var out = "diff --git a/\(file) b/\(file)\n"
+        out += "new file\n"
+        out += "--- /dev/null\n"
+        out += "+++ b/\(file)\n"
+        out += "@@ -0,0 +1,\(lines.count) @@\n"
+        for l in lines { out += "+\(l)\n" }
+        return out
     }
 
     public enum MergeResult: Equatable, Sendable {

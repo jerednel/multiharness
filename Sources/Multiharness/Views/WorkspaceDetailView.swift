@@ -681,8 +681,14 @@ private struct FilesTab: View {
     let env: AppEnvironment
     @State private var status: WorktreeStatus?
     @State private var statusError: String?
-    @State private var fileText: String = ""
+    @State private var diffText: String = ""
+    @State private var diffError: String?
     @State private var selectedFile: String?
+
+    /// Bucket the currently-selected file belongs to. Drives whether we
+    /// render the diff against base+worktree, against base only, or as
+    /// an all-added synthetic diff for an untracked file.
+    private enum FileBucket { case modified, committed, untracked }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -704,29 +710,51 @@ private struct FilesTab: View {
             if let s = status {
                 List(selection: $selectedFile) {
                     if !s.modifiedFiles.isEmpty {
-                        Section("Changed") {
+                        Section("Uncommitted") {
                             ForEach(s.modifiedFiles, id: \.self) { f in
-                                Text(f).tag(Optional(f))
+                                fileRow(f, systemImage: "pencil", tint: .orange)
+                            }
+                        }
+                    }
+                    if !s.committedFiles.isEmpty {
+                        Section("Committed vs \(workspace.baseBranch)") {
+                            ForEach(s.committedFiles, id: \.self) { f in
+                                fileRow(f, systemImage: "checkmark.seal", tint: .green)
                             }
                         }
                     }
                     if !s.untrackedFiles.isEmpty {
                         Section("Untracked") {
                             ForEach(s.untrackedFiles, id: \.self) { f in
-                                Text(f).tag(Optional(f))
+                                fileRow(f, systemImage: "plus.circle", tint: .blue)
                             }
                         }
                     }
-                    if s.modifiedFiles.isEmpty && s.untrackedFiles.isEmpty {
-                        Section { Text("No changes vs \(workspace.baseBranch)").font(.caption).foregroundStyle(.secondary) }
+                    if s.modifiedFiles.isEmpty
+                        && s.committedFiles.isEmpty
+                        && s.untrackedFiles.isEmpty {
+                        Section {
+                            Text("No changes vs \(workspace.baseBranch)")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
                     }
                 }
-                .frame(maxHeight: 200)
+                .frame(maxHeight: 240)
                 Divider()
                 ScrollView {
-                    Text(fileText).font(.system(.body, design: .monospaced))
-                        .frame(maxWidth: .infinity, alignment: .leading).padding(8)
-                        .textSelection(.enabled)
+                    if let err = diffError {
+                        Text(err)
+                            .font(.caption).foregroundStyle(.red)
+                            .padding(12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    } else if selectedFile == nil {
+                        Text("Select a file to see its diff.")
+                            .font(.caption).foregroundStyle(.secondary)
+                            .padding(12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    } else {
+                        UnifiedDiffView(diff: diffText)
+                    }
                 }
             } else {
                 Spacer()
@@ -736,8 +764,24 @@ private struct FilesTab: View {
         }
         .task(id: workspace.id) { await refresh() }
         .onChange(of: selectedFile) { _, _ in
-            Task { await loadFile() }
+            Task { await loadDiff() }
         }
+    }
+
+    @ViewBuilder
+    private func fileRow(_ path: String, systemImage: String, tint: Color) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: systemImage).foregroundStyle(tint).font(.caption)
+            Text(path).lineLimit(1).truncationMode(.middle)
+        }
+        .tag(Optional(path))
+    }
+
+    private func bucket(for path: String, in status: WorktreeStatus) -> FileBucket? {
+        if status.modifiedFiles.contains(path) { return .modified }
+        if status.committedFiles.contains(path) { return .committed }
+        if status.untrackedFiles.contains(path) { return .untracked }
+        return nil
     }
 
     @MainActor
@@ -748,19 +792,62 @@ private struct FilesTab: View {
                 worktreePath: workspace.worktreePath,
                 baseBranch: workspace.baseBranch
             )
+            // Drop a stale selection if the file no longer appears in any
+            // bucket — otherwise the diff pane keeps showing a phantom
+            // diff after the file is reverted/committed.
+            if let sel = selectedFile,
+               let s = self.status,
+               bucket(for: sel, in: s) == nil {
+                selectedFile = nil
+                diffText = ""
+                diffError = nil
+            } else {
+                // Re-pull the diff in case the file's bucket changed
+                // (e.g. user committed it).
+                await loadDiff()
+            }
         } catch {
             statusError = String(describing: error)
         }
     }
 
     @MainActor
-    private func loadFile() async {
-        guard let f = selectedFile else { fileText = ""; return }
-        let path = (workspace.worktreePath as NSString).appendingPathComponent(f)
-        if let data = try? String(contentsOfFile: path, encoding: .utf8) {
-            fileText = data.count > 100_000 ? "(file too large to preview)" : data
-        } else {
-            fileText = "(unable to read \(path))"
+    private func loadDiff() async {
+        diffError = nil
+        guard let f = selectedFile, let s = status, let b = bucket(for: f, in: s) else {
+            diffText = ""
+            return
+        }
+        do {
+            switch b {
+            case .modified:
+                // Spans committed-on-branch + working-tree edits so the
+                // user sees the full delta from base, not just the
+                // uncommitted slice.
+                diffText = try env.worktree.diffVsBaseIncludingWorktree(
+                    worktreePath: workspace.worktreePath,
+                    baseBranch: workspace.baseBranch,
+                    file: f
+                )
+            case .committed:
+                diffText = try env.worktree.diff(
+                    worktreePath: workspace.worktreePath,
+                    baseBranch: workspace.baseBranch,
+                    file: f
+                )
+            case .untracked:
+                diffText = env.worktree.diffForUntrackedFile(
+                    worktreePath: workspace.worktreePath,
+                    file: f
+                )
+            }
+            if diffText.count > 400_000 {
+                diffText = ""
+                diffError = "(diff too large to preview)"
+            }
+        } catch {
+            diffText = ""
+            diffError = String(describing: error)
         }
     }
 }

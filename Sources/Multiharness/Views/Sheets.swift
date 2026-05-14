@@ -336,23 +336,26 @@ struct SettingsSheet: View {
                 Spacer()
             }
             Divider()
-            Group {
-                switch tab {
-                case .providers:
-                    ProvidersTab(appStore: appStore)
-                case .remote:
-                    RemoteAccessTab(env: env)
-                case .permissions:
-                    PermissionsTab(env: env, appStore: appStore)
-                case .sidebar:
-                    SidebarTab(appStore: appStore)
-                case .defaults:
-                    DefaultsTab(appStore: appStore)
+            ScrollView {
+                Group {
+                    switch tab {
+                    case .providers:
+                        ProvidersTab(appStore: appStore)
+                    case .remote:
+                        RemoteAccessTab(env: env)
+                    case .permissions:
+                        PermissionsTab(env: env, appStore: appStore)
+                    case .sidebar:
+                        SidebarTab(appStore: appStore)
+                    case .defaults:
+                        DefaultsTab(appStore: appStore)
+                    }
                 }
+                .id(tab)
+                .transition(.tabSwap)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .id(tab)
-            .transition(.tabSwap)
-            Spacer()
+            .frame(maxHeight: .infinity)
             HStack {
                 Spacer()
                 Button("Done") { isPresented = false }.keyboardShortcut(.defaultAction)
