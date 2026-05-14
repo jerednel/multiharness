@@ -43,7 +43,15 @@ struct WorkspaceDetailView: View {
                     Spacer()
                 }
             }
-            .frame(minWidth: 480)
+            // HSplitView needs an `idealWidth` on each child to decide
+            // how to apportion space — without it the conversation column
+            // could end up at its `minWidth` while the inspector takes
+            // its ideal, leaving the rest of the detail area visually
+            // broken until the user dragged the divider. The conversation
+            // is the primary surface, so it gets the larger ideal and
+            // unbounded max; the inspector grows with the window up to
+            // a generous cap.
+            .frame(minWidth: 480, idealWidth: 720, maxWidth: .infinity)
 
             Inspector(
                 workspace: workspace,
@@ -52,7 +60,7 @@ struct WorkspaceDetailView: View {
                 workspaceStore: workspaceStore,
                 branchListService: branchListService
             )
-            .frame(minWidth: 320, idealWidth: 380, maxWidth: 600)
+            .frame(minWidth: 320, idealWidth: 400, maxWidth: 640)
         }
         .task(id: workspace.id) {
             await ensureSession()
