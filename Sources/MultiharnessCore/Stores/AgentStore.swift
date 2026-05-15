@@ -42,6 +42,12 @@ public final class AgentStore {
     /// an active turn, since pi-agent-core's Agent.prompt() rejects
     /// overlapping calls.
     public var pendingMessages: [PendingMessage] = []
+    /// Number of QA→build cycles already auto-fired during the current
+    /// user task. Reset every time the user manually prompts (i.e. each
+    /// `sendPrompt`). Compared against the hard cap (3) before firing
+    /// another loop iteration so blocking findings can't burn unbounded
+    /// tokens. See `App.swift maybeAutoApplyQaFindings`.
+    public var qaAutoApplyCycles: Int = 0
 
     private let env: AppEnvironment
     private weak var control: ControlClient?
@@ -385,6 +391,8 @@ public final class AgentStore {
     }
 
     public func sendPrompt(_ text: String, images: [TurnImage] = []) async {
+        // User-initiated prompt starts a fresh QA auto-apply cycle.
+        qaAutoApplyCycles = 0
         // While a turn is in flight, queue the message instead of sending
         // it. We can't fire two agent.prompt calls concurrently — the
         // sidecar's Agent rejects overlapping prompts — so the user-facing
@@ -394,6 +402,18 @@ public final class AgentStore {
             return
         }
         await dispatchPrompt(text: text, images: images)
+    }
+
+    /// Auto-apply path: feed QA findings back to the primary as a new
+    /// prompt. Bypasses the user-prompt reset (we want the cycle counter
+    /// to keep climbing) but still respects the queue. Caller is
+    /// responsible for the 3-cycle cap; this method just sends.
+    public func sendAutoApplyPrompt(_ text: String) async {
+        if isStreaming || !pendingMessages.isEmpty {
+            pendingMessages.append(PendingMessage(text: text, images: []))
+            return
+        }
+        await dispatchPrompt(text: text, images: [])
     }
 
     /// Send a single prompt straight to the sidecar without consulting the
@@ -421,6 +441,23 @@ public final class AgentStore {
         } catch {
             lastError = String(describing: error)
         }
+    }
+
+    /// Checks the most recent build-group assistant turn for the QA-ready
+    /// sentinel. If found, strips it from the displayed text and returns
+    /// `true` so the caller can fire QA. Returns `false` if the sentinel
+    /// is absent or the latest assistant turn belongs to a QA group (we
+    /// never want to recursively auto-trigger QA on a QA group).
+    public func consumeQaReadySentinel() -> Bool {
+        for i in turns.indices.reversed() {
+            let t = turns[i]
+            if t.role != .assistant { continue }
+            if groupKind(for: t.groupId) == .qa { return false }
+            guard QaReadySentinel.isPresent(in: t.text) else { return false }
+            turns[i].text = QaReadySentinel.stripped(from: t.text)
+            return true
+        }
+        return false
     }
 
     /// Pull the next queued message and fire it, but only when the agent

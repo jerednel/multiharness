@@ -71,6 +71,8 @@ export function registerMethods(
     const projectName = typeof p.projectName === "string" ? p.projectName : undefined;
     const branchName = typeof p.branchName === "string" ? p.branchName : undefined;
     const baseBranch = typeof p.baseBranch === "string" ? p.baseBranch : undefined;
+    const qaSentinelEnabled =
+      typeof p.qaSentinelEnabled === "boolean" ? p.qaSentinelEnabled : undefined;
     await registry.create({
       workspaceId,
       projectId,
@@ -83,6 +85,7 @@ export function registerMethods(
       projectName,
       branchName,
       baseBranch,
+      qaSentinelEnabled,
     });
     return { ok: true };
   });

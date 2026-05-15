@@ -86,6 +86,7 @@ struct RootView: View {
                     workspaceStore: workspaceStore,
                     showingNewProject: $showingNewProject,
                     showingReconcile: $showingReconcile,
+                    branchListService: branchListService,
                     onQuickCreate: { runQuickCreate(project: $0) }
                 )
                     .padding(.horizontal, 12).padding(.vertical, 10)
@@ -225,7 +226,10 @@ private struct ProjectPickerHeader: View {
     @Bindable var workspaceStore: WorkspaceStore
     @Binding var showingNewProject: Bool
     @Binding var showingReconcile: Bool
+    let branchListService: BranchListService
     var onQuickCreate: (Project) -> Void
+
+    @State private var showingProjectSettings = false
 
     var body: some View {
         HStack(spacing: 8) {
@@ -240,6 +244,9 @@ private struct ProjectPickerHeader: View {
                 }
                 if !appStore.projects.isEmpty { Divider() }
                 Button("Add project…") { showingNewProject = true }
+                if appStore.selectedProject != nil {
+                    Button("Project settings…") { showingProjectSettings = true }
+                }
                 if let proj = appStore.selectedProject {
                     Divider()
                     Button("Delete \(proj.name)…", role: .destructive) {
@@ -279,6 +286,16 @@ private struct ProjectPickerHeader: View {
                 .buttonStyle(.multiharnessIcon)
                 .disabled(appStore.providers.isEmpty)
                 .help("Quick-create workspace from \(proj.defaultBaseBranch)")
+            }
+        }
+        .sheet(isPresented: $showingProjectSettings) {
+            if let proj = appStore.selectedProject {
+                ProjectSettingsSheet(
+                    project: proj,
+                    appStore: appStore,
+                    branchListService: branchListService,
+                    onClose: { showingProjectSettings = false }
+                )
             }
         }
     }

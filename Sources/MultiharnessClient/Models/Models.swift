@@ -81,6 +81,12 @@ public struct Project: Codable, Identifiable, Sendable, Equatable, Hashable {
     /// without enabling QA broadly.
     public var defaultQaProviderId: UUID?
     public var defaultQaModelId: String?
+    /// Project default for the QA auto-apply loop. When true, new
+    /// workspaces start with blocking QA findings being automatically
+    /// fed back to the primary agent. Each workspace can still opt out
+    /// individually via `Workspace.qaAutoApply`. See spec §11
+    /// "Auto-apply loop".
+    public var defaultQaAutoApply: Bool
 
     public init(
         id: UUID = UUID(),
@@ -96,7 +102,8 @@ public struct Project: Codable, Identifiable, Sendable, Equatable, Hashable {
         contextInstructions: String = "",
         defaultQaEnabled: Bool = false,
         defaultQaProviderId: UUID? = nil,
-        defaultQaModelId: String? = nil
+        defaultQaModelId: String? = nil,
+        defaultQaAutoApply: Bool = false
     ) {
         self.id = id
         self.name = name
@@ -112,6 +119,7 @@ public struct Project: Codable, Identifiable, Sendable, Equatable, Hashable {
         self.defaultQaEnabled = defaultQaEnabled
         self.defaultQaProviderId = defaultQaProviderId
         self.defaultQaModelId = defaultQaModelId
+        self.defaultQaAutoApply = defaultQaAutoApply
     }
 }
 
@@ -147,6 +155,11 @@ public struct Workspace: Codable, Identifiable, Sendable, Equatable, Hashable {
     /// changes so opting back in restores the previous selection.
     public var qaProviderId: UUID?
     public var qaModelId: String?
+    /// Explicit override for the QA auto-apply loop. `nil` inherits the
+    /// project default. When effectively true and the QA agent reports
+    /// `blocking_issues`, the Mac auto-prompts the primary with the
+    /// findings (capped at 3 cycles).
+    public var qaAutoApply: Bool?
 
     public init(
         id: UUID = UUID(),
@@ -167,7 +180,8 @@ public struct Workspace: Codable, Identifiable, Sendable, Equatable, Hashable {
         lastViewedAt: Date? = Date(),
         qaEnabled: Bool? = nil,
         qaProviderId: UUID? = nil,
-        qaModelId: String? = nil
+        qaModelId: String? = nil,
+        qaAutoApply: Bool? = nil
     ) {
         self.id = id
         self.projectId = projectId
@@ -188,6 +202,7 @@ public struct Workspace: Codable, Identifiable, Sendable, Equatable, Hashable {
         self.qaEnabled = qaEnabled
         self.qaProviderId = qaProviderId
         self.qaModelId = qaModelId
+        self.qaAutoApply = qaAutoApply
     }
 
     /// Resolves the effective build mode using the precedence chain:
@@ -228,6 +243,13 @@ public struct Workspace: Codable, Identifiable, Sendable, Equatable, Hashable {
         _ = project // suppress unused parameter warning while keeping the
                     // signature symmetric with the other QA helpers.
         return qaEnabled != nil
+    }
+
+    /// Resolves the effective QA auto-apply flag:
+    /// `workspace.qaAutoApply ?? project.defaultQaAutoApply`. The auto-
+    /// trigger loop in `App.swift` reads this on `qa_findings` events.
+    public func effectiveQaAutoApply(in project: Project) -> Bool {
+        qaAutoApply ?? project.defaultQaAutoApply
     }
 }
 

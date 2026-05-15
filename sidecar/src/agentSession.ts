@@ -63,6 +63,11 @@ export type AgentSessionOptions = {
   /// runner to install a read-only subset plus the terminating
   /// `post_qa_findings` tool. When omitted, falls back to `buildTools`.
   toolsOverride?: AgentTool<any>[];
+  /// When true, append the QA-ready sentinel instruction to the build
+  /// system prompt. The Mac side decides this from the workspace's
+  /// effective QA configuration (enabled + model resolvable) and sends
+  /// the flag at `agent.create` time. No-op for `sessionMode === "qa"`.
+  qaSentinelEnabled?: boolean;
 };
 
 // Type widened to `string` because we persist two synthetic events that
@@ -96,6 +101,7 @@ export class AgentSession {
   private seq = 0;
   private projectContext: string;
   private workspaceContext: string;
+  private qaSentinelEnabled: boolean;
   /// True iff this workspace's display name is still the random
   /// adjective-noun placeholder. Flipped to false before kicking off the
   /// AI rename so a fast second prompt can't double-fire.
@@ -141,6 +147,7 @@ export class AgentSession {
     this.projectId = opts.projectId;
     this.projectContext = opts.projectContext ?? "";
     this.workspaceContext = opts.workspaceContext ?? "";
+    this.qaSentinelEnabled = opts.qaSentinelEnabled ?? false;
     // QA sessions are never AI-renamed (the spec passes nameSource:"named"
     // explicitly, but also guard at the agent level so a future caller
     // can't accidentally fire renames during a review pass).
@@ -310,6 +317,12 @@ export class AgentSession {
     this.agent.state.systemPrompt = this.composeSystemPrompt();
   }
 
+  setQaSentinelEnabled(enabled: boolean): void {
+    if (this.qaSentinelEnabled === enabled) return;
+    this.qaSentinelEnabled = enabled;
+    this.agent.state.systemPrompt = this.composeSystemPrompt();
+  }
+
   /** Exposed for testing. */
   currentSystemPrompt(): string {
     return this.agent.state.systemPrompt;
@@ -338,7 +351,9 @@ export class AgentSession {
       parts.push(buildQaSystemPrompt());
       parts.push(this.buildOrientation());
     } else {
-      parts.push(buildSystemPrompt(this.opts.buildMode));
+      parts.push(buildSystemPrompt(this.opts.buildMode, {
+        qaSentinelEnabled: this.qaSentinelEnabled,
+      }));
       parts.push(this.buildOrientation());
       if (this.projectContext.trim()) {
         parts.push(

@@ -153,7 +153,10 @@ public enum QaFirstMessageBuilder {
     /// would be circular.
     public static func lastAssistantText(in turns: [ConversationTurn]) -> String? {
         for t in turns.reversed() where t.role == .assistant && !t.text.isEmpty {
-            return t.text
+            // Scrub the QA-ready sentinel — it's a control token meant
+            // for the Mac harness, not for the QA agent to read.
+            let scrubbed = QaReadySentinel.stripped(from: t.text)
+            return scrubbed.isEmpty ? nil : scrubbed
         }
         return nil
     }

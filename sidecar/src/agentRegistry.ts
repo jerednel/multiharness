@@ -24,6 +24,11 @@ export type CreateOptions = {
   projectName?: string;
   branchName?: string;
   baseBranch?: string;
+  /// When true, append the QA-ready sentinel instruction to the build
+  /// system prompt so the primary agent emits the `<<MULTIHARNESS_QA_READY>>`
+  /// token when it considers a feature done. The Mac watches for it on
+  /// `agent_end` to auto-trigger a QA review.
+  qaSentinelEnabled?: boolean;
 };
 
 export class AgentRegistry {
@@ -62,6 +67,7 @@ export class AgentRegistry {
       projectName: opts.projectName,
       branchName: opts.branchName,
       baseBranch: opts.baseBranch,
+      qaSentinelEnabled: opts.qaSentinelEnabled,
     });
     this.sessions.set(opts.workspaceId, session);
   }

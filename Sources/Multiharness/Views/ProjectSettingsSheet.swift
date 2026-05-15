@@ -21,6 +21,8 @@ struct ProjectSettingsSheet: View {
     @State private var qaProviderId: UUID?
     @State private var qaModelId: String = ""
     @State private var qaSaveState: SaveState = .idle
+    @State private var qaAutoApplyEnabled: Bool = false
+    @State private var qaAutoApplySaveState: SaveState = .idle
 
     enum SaveState { case idle, saving, saved, error(String) }
 
@@ -95,6 +97,8 @@ struct ProjectSettingsSheet: View {
             qaProviderId = project.defaultQaProviderId
             qaModelId = project.defaultQaModelId ?? ""
             qaSaveState = .idle
+            qaAutoApplyEnabled = project.defaultQaAutoApply
+            qaAutoApplySaveState = .idle
         }
         .sheetEntry()
     }
@@ -139,6 +143,34 @@ struct ProjectSettingsSheet: View {
             }
             Text("Setting a model here doesn't turn QA on by itself — toggle it above. Workspaces can still opt out individually.")
                 .font(.caption).foregroundStyle(.secondary)
+
+            Divider().padding(.vertical, 4)
+
+            HStack {
+                Text("Auto-apply QA findings").font(.caption).bold()
+                Spacer()
+                statusLabel(for: qaAutoApplySaveState)
+            }
+            Toggle("Auto-apply blocking findings by default", isOn: $qaAutoApplyEnabled)
+                .toggleStyle(.switch)
+                .onChange(of: qaAutoApplyEnabled) { _, new in
+                    saveQaAutoApply(new)
+                }
+            Text("When QA returns `blocking_issues`, the findings get fed back to the primary agent as a new prompt. Limited to 3 cycles per task. Each workspace can override this.")
+                .font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func saveQaAutoApply(_ value: Bool) {
+        qaAutoApplySaveState = .saving
+        Task { @MainActor in
+            do {
+                try appStore.setProjectDefaultQaAutoApply(projectId: project.id, enabled: value)
+                qaAutoApplySaveState = .saved
+            } catch {
+                qaAutoApplySaveState = .error(String(describing: error))
+            }
         }
     }
 

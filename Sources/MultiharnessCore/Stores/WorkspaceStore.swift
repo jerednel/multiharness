@@ -324,7 +324,8 @@ public final class WorkspaceStore {
         _ ws: Workspace,
         enabled: Bool?,
         providerId: UUID?,
-        modelId: String?
+        modelId: String?,
+        autoApply: Bool?
     ) {
         guard let idx = workspaces.firstIndex(where: { $0.id == ws.id }) else { return }
         var updated = workspaces[idx]
@@ -332,6 +333,7 @@ public final class WorkspaceStore {
         updated.qaProviderId = providerId
         let trimmed = modelId?.trimmingCharacters(in: .whitespacesAndNewlines)
         updated.qaModelId = (trimmed?.isEmpty ?? true) ? nil : trimmed
+        updated.qaAutoApply = autoApply
         do {
             try env.persistence.upsertWorkspace(updated)
             workspaces[idx] = updated
