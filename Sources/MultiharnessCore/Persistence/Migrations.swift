@@ -84,6 +84,15 @@ public struct Migrations {
         ALTER TABLE workspaces ADD COLUMN qa_provider_id TEXT;
         ALTER TABLE workspaces ADD COLUMN qa_model_id TEXT;
         """,
+        // v8: opt-in auto-apply loop. When on, blocking QA findings are
+        // automatically fed back to the primary as a new prompt (capped
+        // at 3 iterations per cycle — see App.swift). Off by default.
+        // Same inheritance shape as v7: project default + nullable
+        // workspace override.
+        """
+        ALTER TABLE projects   ADD COLUMN default_qa_auto_apply INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE workspaces ADD COLUMN qa_auto_apply INTEGER;
+        """,
     ]
 
     public static func apply(_ db: Database) throws {

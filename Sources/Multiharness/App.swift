@@ -203,6 +203,93 @@ final class AgentRegistryStore: NSObject, ControlClientDelegate {
                     self.workspaceStore?.markViewed(id)
                 }
                 self.maybePlayCompletionSound(for: id)
+                self.maybeAutoRunQa(workspaceId: id)
+            }
+            if event.type == "qa_findings" {
+                self.maybeAutoApplyQaFindings(workspaceId: id, payload: event.payload)
+            }
+        }
+    }
+
+    /// Cap on auto-apply cycles per user task. Three was picked together
+    /// with the user: enough to fix and re-validate, low enough that
+    /// a misbehaving model can't burn unbounded tokens. Reset by
+    /// `AgentStore.sendPrompt` whenever the user prompts manually.
+    static let qaAutoApplyCycleCap = 3
+
+    /// Auto-apply hook: when QA returns `blocking_issues` and the
+    /// workspace has the auto-apply loop turned on, feed the findings
+    /// back to the primary agent as a new prompt. Bounded by
+    /// `qaAutoApplyCycleCap` cycles per user task. Surfaces a notice in
+    /// the transcript when the cap is hit so the user knows the loop
+    /// stopped rather than QA silently being ignored.
+    @MainActor
+    func maybeAutoApplyQaFindings(workspaceId: UUID, payload: [String: Any]) {
+        guard let store = stores[workspaceId] else { return }
+        guard let appStore else { return }
+        guard let workspace = workspaceStore?.workspaces.first(where: { $0.id == workspaceId })
+            ?? (try? appStore.persistenceWorkspaces().first(where: { $0.id == workspaceId }))
+        else { return }
+        guard let project = appStore.projects.first(where: { $0.id == workspace.projectId }) else { return }
+        guard workspace.effectiveQaAutoApply(in: project) else { return }
+        let verdictRaw = payload["verdict"] as? String ?? "info"
+        guard let verdict = QaVerdict(rawValue: verdictRaw), verdict == .blockingIssues else { return }
+        if store.qaAutoApplyCycles >= Self.qaAutoApplyCycleCap {
+            // Surface a one-line note so the user understands the loop
+            // halted by policy rather than silently giving up.
+            store.turns.append(ConversationTurn(
+                role: .assistant,
+                text: "⚠️ Auto-QA loop reached its \(Self.qaAutoApplyCycleCap)-cycle cap; not feeding these findings back automatically. Review the QA card and prompt manually if you want another pass."
+            ))
+            return
+        }
+        let summary = payload["summary"] as? String ?? ""
+        let findingsRaw = payload["findings"] as? [[String: Any]] ?? []
+        let findings = findingsRaw.compactMap(QaFinding.init(json:))
+        let cycleIndex = store.qaAutoApplyCycles + 1
+        let prompt = QaAutoApplyPromptBuilder.build(
+            verdict: verdict,
+            summary: summary,
+            findings: findings,
+            cycleIndex: cycleIndex,
+            cycleCap: Self.qaAutoApplyCycleCap
+        )
+        store.qaAutoApplyCycles = cycleIndex
+        Task { @MainActor in
+            await store.sendAutoApplyPrompt(prompt)
+        }
+    }
+
+    /// Auto-QA hook: if the just-finished build turn ended with the
+    /// QA-ready sentinel and the workspace has QA configured, fire a QA
+    /// review automatically. The sentinel is stripped from the visible
+    /// transcript before we kick off so the user never sees it.
+    @MainActor
+    func maybeAutoRunQa(workspaceId: UUID) {
+        guard let store = stores[workspaceId] else { return }
+        guard store.lastGroupKind != .qa else { return }
+        guard let appStore else { return }
+        guard let workspace = workspaceStore?.workspaces.first(where: { $0.id == workspaceId })
+            ?? (try? appStore.persistenceWorkspaces().first(where: { $0.id == workspaceId }))
+        else { return }
+        guard let project = appStore.projects.first(where: { $0.id == workspace.projectId }) else { return }
+        guard AppStore.qaSentinelEnabledForCreate(workspace: workspace, project: project) else { return }
+        guard store.consumeQaReadySentinel() else { return }
+        let (providerId, modelId) = workspace.qaPopoverInitialSelection(in: project)
+        guard let providerId, let modelId, !modelId.isEmpty else { return }
+        Task { @MainActor in
+            do {
+                try await appStore.runQA(
+                    workspace: workspace,
+                    providerId: providerId,
+                    modelId: modelId,
+                    turns: store.turns
+                )
+                if workspace.lifecycleState == .inProgress {
+                    self.workspaceStore?.setLifecycle(workspace, .inReview)
+                }
+            } catch {
+                appStore.lastError = "Auto-QA failed: \(error)"
             }
         }
     }

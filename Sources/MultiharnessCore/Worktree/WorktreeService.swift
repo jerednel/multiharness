@@ -300,9 +300,30 @@ public struct WorktreeService: Sendable {
         p.standardOutput = outPipe
         p.standardError = errPipe
         try p.run()
+
+        // Drain both pipes concurrently with waitUntilExit. macOS pipe
+        // buffers are ~64 KB; if we wait first and read after, any child
+        // whose output exceeds that (e.g. `git diff` against a long-lived
+        // base branch) blocks forever on write and we deadlock here.
+        let collector = ProcessOutputCollector()
+        let group = DispatchGroup()
+        let queue = DispatchQueue.global(qos: .userInitiated)
+        group.enter()
+        queue.async {
+            collector.stdout = outPipe.fileHandleForReading.readDataToEndOfFile()
+            group.leave()
+        }
+        group.enter()
+        queue.async {
+            collector.stderr = errPipe.fileHandleForReading.readDataToEndOfFile()
+            group.leave()
+        }
+
         p.waitUntilExit()
-        let stdout = String(data: outPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        let stderr = String(data: errPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        group.wait()
+
+        let stdout = String(data: collector.stdout, encoding: .utf8) ?? ""
+        let stderr = String(data: collector.stderr, encoding: .utf8) ?? ""
         if p.terminationStatus != 0 {
             throw WorktreeError.gitFailed(
                 args: args, exitCode: p.terminationStatus, stderr: stderr
@@ -310,6 +331,11 @@ public struct WorktreeService: Sendable {
         }
         return stdout
     }
+}
+
+private final class ProcessOutputCollector: @unchecked Sendable {
+    var stdout: Data = Data()
+    var stderr: Data = Data()
 }
 
 public enum WorktreeError: Error, CustomStringConvertible, LocalizedError {

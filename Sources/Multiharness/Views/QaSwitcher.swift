@@ -106,6 +106,8 @@ struct QaSwitcher: View {
     @State private var hasExplicitOverride: Bool
     @State private var selectedProviderId: UUID?
     @State private var selectedModelId: String
+    @State private var autoApplyEnabled: Bool
+    @State private var hasAutoApplyOverride: Bool
     @State private var applying = false
     @State private var applyError: String?
 
@@ -133,10 +135,13 @@ struct QaSwitcher: View {
         } else {
             initialSel = (workspace.qaProviderId, workspace.qaModelId)
         }
+        let initialAutoApply = project.map { workspace.effectiveQaAutoApply(in: $0) } ?? false
         self._enabled = State(initialValue: initialEnabled)
         self._hasExplicitOverride = State(initialValue: overridden)
         self._selectedProviderId = State(initialValue: initialSel.providerId)
         self._selectedModelId = State(initialValue: initialSel.modelId ?? "")
+        self._autoApplyEnabled = State(initialValue: initialAutoApply)
+        self._hasAutoApplyOverride = State(initialValue: workspace.qaAutoApply != nil)
     }
 
     private var project: Project? {
@@ -172,6 +177,8 @@ struct QaSwitcher: View {
         let intendedModel = trimmedModel.isEmpty ? nil : trimmedModel
         if selectedProviderId != workspace.qaProviderId { return true }
         if intendedModel != workspace.qaModelId { return true }
+        let intendedAutoApply: Bool? = hasAutoApplyOverride ? autoApplyEnabled : nil
+        if intendedAutoApply != workspace.qaAutoApply { return true }
         return false
     }
 
@@ -252,6 +259,41 @@ struct QaSwitcher: View {
                 )
             }
 
+            Divider()
+
+            // 3. Auto-apply blocking findings
+            VStack(alignment: .leading, spacing: 4) {
+                Toggle(isOn: Binding(
+                    get: { autoApplyEnabled },
+                    set: { newValue in
+                        autoApplyEnabled = newValue
+                        hasAutoApplyOverride = true
+                    }
+                )) {
+                    Text("Auto-apply blocking QA findings")
+                }
+                .toggleStyle(.switch)
+                .disabled(!enabled)
+                HStack(spacing: 8) {
+                    let projectAutoDefault = project?.defaultQaAutoApply ?? false
+                    Text("Project default: \(projectAutoDefault ? "on" : "off")")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if hasAutoApplyOverride {
+                        Button("Use project default") {
+                            hasAutoApplyOverride = false
+                            autoApplyEnabled = projectAutoDefault
+                        }
+                        .buttonStyle(.link)
+                        .font(.caption)
+                    }
+                }
+                Text("When QA returns `blocking_issues`, the findings get fed back to the primary as a new prompt. Caps at 3 cycles per task.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             if let err = applyError {
                 Text(err)
                     .font(.caption).foregroundStyle(.red).lineLimit(4)
@@ -285,7 +327,7 @@ struct QaSwitcher: View {
             }
         }
         .padding(16)
-        .frame(width: 500, height: 520)
+        .frame(width: 500, height: 640)
         .sheetEntry()
     }
 
@@ -349,11 +391,13 @@ struct QaSwitcher: View {
         let trimmedModel = selectedModelId.trimmingCharacters(in: .whitespacesAndNewlines)
         let model: String? = trimmedModel.isEmpty ? nil : trimmedModel
         let qaEnabled: Bool? = hasExplicitOverride ? enabled : nil
+        let qaAutoApply: Bool? = hasAutoApplyOverride ? autoApplyEnabled : nil
         workspaceStore.setQa(
             workspace,
             enabled: qaEnabled,
             providerId: selectedProviderId,
-            modelId: model
+            modelId: model,
+            autoApply: qaAutoApply
         )
     }
 }

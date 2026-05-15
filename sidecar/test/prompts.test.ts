@@ -1,11 +1,17 @@
 import { describe, it, expect } from "bun:test";
-import { buildSystemPrompt, buildQaSystemPrompt, type BuildMode } from "../src/prompts.js";
+import {
+  buildSystemPrompt,
+  buildQaSystemPrompt,
+  QA_READY_SENTINEL,
+  type BuildMode,
+} from "../src/prompts.js";
 
 describe("buildSystemPrompt", () => {
   it("returns the base prompt for primary mode", () => {
     const out = buildSystemPrompt("primary");
     expect(out).toContain("helpful coding agent operating inside a git worktree");
     expect(out).not.toContain("Builds and tests for this project are run by the user");
+    expect(out).not.toContain(QA_READY_SENTINEL);
   });
 
   it("appends the shadowed addendum for shadowed mode", () => {
@@ -18,6 +24,24 @@ describe("buildSystemPrompt", () => {
   it("rejects unknown modes", () => {
     // @ts-expect-error invalid input
     expect(() => buildSystemPrompt("bogus")).toThrow();
+  });
+
+  it("omits the QA sentinel addendum by default", () => {
+    expect(buildSystemPrompt("primary")).not.toContain(QA_READY_SENTINEL);
+    expect(buildSystemPrompt("shadowed")).not.toContain(QA_READY_SENTINEL);
+  });
+
+  it("appends the QA sentinel instruction when qaSentinelEnabled is true", () => {
+    const out = buildSystemPrompt("primary", { qaSentinelEnabled: true });
+    expect(out).toContain("helpful coding agent operating inside a git worktree");
+    expect(out).toContain(QA_READY_SENTINEL);
+    expect(out).toMatch(/QA reviewer will be automatically dispatched/);
+  });
+
+  it("stacks the QA sentinel on top of the shadowed addendum", () => {
+    const out = buildSystemPrompt("shadowed", { qaSentinelEnabled: true });
+    expect(out).toContain("Do not run build, test, or run commands");
+    expect(out).toContain(QA_READY_SENTINEL);
   });
 });
 

@@ -24,8 +24,8 @@ public final class PersistenceService: @unchecked Sendable {
     public func upsertProject(_ p: Project) throws {
         try db.executeUpdate(
             """
-            INSERT INTO projects (id, name, slug, repo_path, default_base_branch, default_provider_id, default_model_id, default_build_mode, created_at, repo_bookmark, context_instructions, default_qa_enabled, default_qa_provider_id, default_qa_model_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO projects (id, name, slug, repo_path, default_base_branch, default_provider_id, default_model_id, default_build_mode, created_at, repo_bookmark, context_instructions, default_qa_enabled, default_qa_provider_id, default_qa_model_id, default_qa_auto_apply)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
               name=excluded.name,
               slug=excluded.slug,
@@ -38,7 +38,8 @@ public final class PersistenceService: @unchecked Sendable {
               context_instructions=excluded.context_instructions,
               default_qa_enabled=excluded.default_qa_enabled,
               default_qa_provider_id=excluded.default_qa_provider_id,
-              default_qa_model_id=excluded.default_qa_model_id;
+              default_qa_model_id=excluded.default_qa_model_id,
+              default_qa_auto_apply=excluded.default_qa_auto_apply;
             """
         ) { st in
             st.bind(1, p.id.uuidString)
@@ -58,12 +59,13 @@ public final class PersistenceService: @unchecked Sendable {
             st.bind(12, Bool?.some(p.defaultQaEnabled))
             st.bind(13, p.defaultQaProviderId?.uuidString)
             st.bind(14, p.defaultQaModelId)
+            st.bind(15, Bool?.some(p.defaultQaAutoApply))
         }
     }
 
     public func listProjects() throws -> [Project] {
         try db.query(
-            "SELECT id, name, slug, repo_path, default_base_branch, default_provider_id, default_model_id, default_build_mode, created_at, repo_bookmark, context_instructions, default_qa_enabled, default_qa_provider_id, default_qa_model_id FROM projects ORDER BY created_at ASC;",
+            "SELECT id, name, slug, repo_path, default_base_branch, default_provider_id, default_model_id, default_build_mode, created_at, repo_bookmark, context_instructions, default_qa_enabled, default_qa_provider_id, default_qa_model_id, default_qa_auto_apply FROM projects ORDER BY created_at ASC;",
             rowMap: { st in
                 Project(
                     id: UUID(uuidString: st.requiredString(0))!,
@@ -79,7 +81,8 @@ public final class PersistenceService: @unchecked Sendable {
                     contextInstructions: st.string(10) ?? "",
                     defaultQaEnabled: st.bool(11) ?? false,
                     defaultQaProviderId: st.string(12).flatMap { UUID(uuidString: $0) },
-                    defaultQaModelId: st.string(13)
+                    defaultQaModelId: st.string(13),
+                    defaultQaAutoApply: st.bool(14) ?? false
                 )
             }
         )
@@ -147,8 +150,8 @@ public final class PersistenceService: @unchecked Sendable {
     public func upsertWorkspace(_ w: Workspace) throws {
         try db.executeUpdate(
             """
-            INSERT INTO workspaces (id, project_id, name, slug, branch_name, base_branch, worktree_path, lifecycle_state, provider_id, model_id, build_mode, created_at, archived_at, name_source, context_instructions, last_viewed_at, qa_enabled, qa_provider_id, qa_model_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO workspaces (id, project_id, name, slug, branch_name, base_branch, worktree_path, lifecycle_state, provider_id, model_id, build_mode, created_at, archived_at, name_source, context_instructions, last_viewed_at, qa_enabled, qa_provider_id, qa_model_id, qa_auto_apply)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
               name=excluded.name,
               slug=excluded.slug,
@@ -165,7 +168,8 @@ public final class PersistenceService: @unchecked Sendable {
               last_viewed_at=excluded.last_viewed_at,
               qa_enabled=excluded.qa_enabled,
               qa_provider_id=excluded.qa_provider_id,
-              qa_model_id=excluded.qa_model_id;
+              qa_model_id=excluded.qa_model_id,
+              qa_auto_apply=excluded.qa_auto_apply;
             """
         ) { st in
             st.bind(1, w.id.uuidString)
@@ -187,15 +191,16 @@ public final class PersistenceService: @unchecked Sendable {
             st.bind(17, w.qaEnabled)
             st.bind(18, w.qaProviderId?.uuidString)
             st.bind(19, w.qaModelId)
+            st.bind(20, w.qaAutoApply)
         }
     }
 
     public func listWorkspaces(projectId: UUID? = nil) throws -> [Workspace] {
         let sql: String
         if projectId != nil {
-            sql = "SELECT id, project_id, name, slug, branch_name, base_branch, worktree_path, lifecycle_state, provider_id, model_id, build_mode, created_at, archived_at, name_source, context_instructions, last_viewed_at, qa_enabled, qa_provider_id, qa_model_id FROM workspaces WHERE project_id = ? ORDER BY created_at DESC;"
+            sql = "SELECT id, project_id, name, slug, branch_name, base_branch, worktree_path, lifecycle_state, provider_id, model_id, build_mode, created_at, archived_at, name_source, context_instructions, last_viewed_at, qa_enabled, qa_provider_id, qa_model_id, qa_auto_apply FROM workspaces WHERE project_id = ? ORDER BY created_at DESC;"
         } else {
-            sql = "SELECT id, project_id, name, slug, branch_name, base_branch, worktree_path, lifecycle_state, provider_id, model_id, build_mode, created_at, archived_at, name_source, context_instructions, last_viewed_at, qa_enabled, qa_provider_id, qa_model_id FROM workspaces ORDER BY created_at DESC;"
+            sql = "SELECT id, project_id, name, slug, branch_name, base_branch, worktree_path, lifecycle_state, provider_id, model_id, build_mode, created_at, archived_at, name_source, context_instructions, last_viewed_at, qa_enabled, qa_provider_id, qa_model_id, qa_auto_apply FROM workspaces ORDER BY created_at DESC;"
         }
         return try db.query(
             sql,
@@ -222,7 +227,8 @@ public final class PersistenceService: @unchecked Sendable {
                     lastViewedAt: st.date(15),
                     qaEnabled: st.bool(16),
                     qaProviderId: st.string(17).flatMap { UUID(uuidString: $0) },
-                    qaModelId: st.string(18)
+                    qaModelId: st.string(18),
+                    qaAutoApply: st.bool(19)
                 )
             }
         )

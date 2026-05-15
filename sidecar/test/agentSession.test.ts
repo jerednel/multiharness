@@ -153,6 +153,44 @@ describe("AgentSession composeSystemPrompt", () => {
   });
 });
 
+describe("AgentSession qa sentinel addendum", () => {
+  it("does not include the QA-ready sentinel by default", async () => {
+    const s = new AgentSession(makeOpts());
+    expect(s.currentSystemPrompt()).not.toContain("<<MULTIHARNESS_QA_READY>>");
+    await s.dispose();
+  });
+
+  it("includes the QA-ready sentinel when qaSentinelEnabled is true", async () => {
+    const s = new AgentSession(makeOpts({ qaSentinelEnabled: true }));
+    const text = s.currentSystemPrompt();
+    expect(text).toContain("<<MULTIHARNESS_QA_READY>>");
+    expect(text).toMatch(/end your final message/);
+    await s.dispose();
+  });
+
+  it("setQaSentinelEnabled flips the addendum live", async () => {
+    const s = new AgentSession(makeOpts());
+    expect(s.currentSystemPrompt()).not.toContain("<<MULTIHARNESS_QA_READY>>");
+    s.setQaSentinelEnabled(true);
+    expect(s.currentSystemPrompt()).toContain("<<MULTIHARNESS_QA_READY>>");
+    s.setQaSentinelEnabled(false);
+    expect(s.currentSystemPrompt()).not.toContain("<<MULTIHARNESS_QA_READY>>");
+    await s.dispose();
+  });
+
+  it("does not leak the sentinel addendum into qa session mode", async () => {
+    // QA reviewer never emits the sentinel — the addendum belongs to
+    // the build prompt only. Even if qaSentinelEnabled is true, qa
+    // sessionMode should never include it.
+    const s = new AgentSession(makeOpts({
+      sessionMode: "qa",
+      qaSentinelEnabled: true,
+    }));
+    expect(s.currentSystemPrompt()).not.toContain("<<MULTIHARNESS_QA_READY>>");
+    await s.dispose();
+  });
+});
+
 describe("AgentSession in qa session mode", () => {
   it("uses the QA reviewer prompt, not the build prompt", async () => {
     const s = new AgentSession(makeOpts({ sessionMode: "qa" }));

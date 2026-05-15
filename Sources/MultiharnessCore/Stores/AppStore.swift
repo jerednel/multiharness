@@ -91,6 +91,11 @@ public final class AppStore {
         }
         let cfg = providerConfig(provider: provider, modelId: workspace.modelId)
         let mode = workspace.effectiveBuildMode(in: project)
+        // Auto-QA wiring: tell the sidecar to append the QA-ready
+        // sentinel instruction to the build system prompt when the
+        // workspace has QA enabled AND a QA model is resolvable from
+        // workspace+project. The Mac watches for the token on
+        // `agent_end` and fires `runQA` automatically.
         let params: [String: Any] = [
             "workspaceId": workspace.id.uuidString,
             "projectId": project.id.uuidString,
@@ -107,6 +112,9 @@ public final class AppStore {
             "projectName": project.name,
             "branchName": workspace.branchName,
             "baseBranch": workspace.baseBranch,
+            "qaSentinelEnabled": Self.qaSentinelEnabledForCreate(
+                workspace: workspace, project: project
+            ),
         ]
         do {
             _ = try await client.call(method: "agent.create", params: params)
@@ -116,6 +124,19 @@ public final class AppStore {
             }
             throw e
         }
+    }
+
+    /// QA auto-trigger is wired up only when QA is enabled for the
+    /// workspace AND a QA provider+model is actually resolvable. Sending
+    /// the sentinel addendum when no QA model is configured would just
+    /// produce a sentinel token in the transcript with nothing to do
+    /// when it appears.
+    public static func qaSentinelEnabledForCreate(workspace: Workspace, project: Project) -> Bool {
+        guard workspace.effectiveQaEnabled(in: project) else { return false }
+        let (providerId, modelId) = workspace.qaPopoverInitialSelection(in: project)
+        guard providerId != nil else { return false }
+        let trimmed = (modelId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return !trimmed.isEmpty
     }
 
     @MainActor
@@ -160,6 +181,18 @@ public final class AppStore {
             updated.defaultQaProviderId = nil
             updated.defaultQaModelId = nil
         }
+        try env.persistence.upsertProject(updated)
+        projects[idx] = updated
+    }
+
+    /// Persist the project-level default for the QA auto-apply loop.
+    /// Same semantics as `setProjectDefaultQaEnabled`: only workspaces
+    /// with `qaAutoApply == nil` inherit the new value.
+    @MainActor
+    public func setProjectDefaultQaAutoApply(projectId: UUID, enabled: Bool) throws {
+        guard let idx = projects.firstIndex(where: { $0.id == projectId }) else { return }
+        var updated = projects[idx]
+        updated.defaultQaAutoApply = enabled
         try env.persistence.upsertProject(updated)
         projects[idx] = updated
     }
@@ -265,13 +298,22 @@ public final class AppStore {
             throw AgentSessionError.providerNotFound
         }
         let cfg = providerConfig(provider: provider, modelId: trimmedModel)
-        let firstMessage = QaFirstMessageBuilder.build(
-            worktree: env.worktree,
-            worktreePath: workspace.worktreePath,
-            branchName: workspace.branchName,
-            baseBranch: workspace.baseBranch,
-            turns: turns
-        )
+        // Building the first message shells out to `git diff` against the
+        // base branch, which can be slow (and produce many MB of output).
+        // Run it off the main actor so the UI stays responsive.
+        let worktree = env.worktree
+        let worktreePath = workspace.worktreePath
+        let branchName = workspace.branchName
+        let baseBranch = workspace.baseBranch
+        let firstMessage = await Task.detached(priority: .userInitiated) {
+            QaFirstMessageBuilder.build(
+                worktree: worktree,
+                worktreePath: worktreePath,
+                branchName: branchName,
+                baseBranch: baseBranch,
+                turns: turns
+            )
+        }.value
         let project = projects.first(where: { $0.id == workspace.projectId })
         var params: [String: Any] = [
             "workspaceId": workspace.id.uuidString,
