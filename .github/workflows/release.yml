@@ -7,31 +7,191 @@ on:
   workflow_dispatch:
 
 jobs:
-  macos-app:
-    name: Build macOS app artifact
+  build:
+    name: Build macOS app & DMG
     runs-on: macos-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v6
+
+      - name: Select Xcode for notarization
+        run: |
+          # Select the latest stable Xcode that ships notarytool
+          xcode-select --switch /Applications/Xcode_*.app/Contents/Developer 2>/dev/null || true
+          ls /Applications/Xcode*.app || echo "no Xcode in /Applications"
+
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
+
       - name: Install sidecar dependencies
         working-directory: sidecar
         run: bun install --frozen-lockfile
+
       - name: Build app bundle
         run: bash scripts/build-app.sh
-      - name: Zip app
-        run: ditto -c -k --keepParent dist/Multiharness.app Multiharness-macOS.zip
-      - name: Upload workflow artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: Multiharness-macOS
-          path: Multiharness-macOS.zip
-      - name: Attach to GitHub Release
+
+      # ─── Code Signing ────────────────────────────────────────────────
+      # Uses DEVELOPMENT_TEAM ID or falls back to ad-hoc.
+      # For full notarization, set APPLE_API_KEY_ID, APPLE_API_KEY,
+      # APPLE_API_KEY_PATH, and APPLE_TEAM_ID (or TEAM_ID).
+      - name: Code sign app
+        run: |
+          IDENT=""
+          if [ -n "${{ secrets.APPLE_DEV_ID_CN:- }}" ]; then
+            IDENT="${{ secrets.APPLE_DEV_ID_CN }}"
+          else
+            # Try Developer ID Application first, then iPhone Distribution
+            for PAT in "Developer ID Application" "iPhone Distribution"; do
+              IDN=$(security find-identity -v -p codesigning 2>/dev/null \
+                | awk -F'"' "/$PAT/ {print \$2; exit}")
+              if [ -n "$IDN" ]; then IDENT="$IDN"; break; fi
+            done
+          fi
+
+          if [ -z "$IDENT" ]; then
+            echo "! No appropriate code-signing identity found."
+            echo "  Falling back to ad-hoc (not notarized, users may see "
+            echo "  'app is damaged' warning)."
+            IDENT="-"
+          fi
+
+          echo "==> Signing with '$IDENT'"
+
+          # Sign sidecar with JIT entitlements
+          APP_DIR="dist/Multiharness.app"
+          codesign --force --sign "$IDENT" \
+            --options runtime \
+            --entitlements "scripts/sidecar.entitlements" \
+            "$APP_DIR/Contents/Resources/multiharness-sidecar"
+
+          # Sign outer app
+          codesign --force --deep --sign "$IDENT" --options runtime "$APP_DIR"
+
+          # Re-sign sidecar after --deep
+          codesign --force --sign "$IDENT" \
+            --options runtime \
+            --entitlements "scripts/sidecar.entitlements" \
+            "$APP_DIR/Contents/Resources/multiharness-sidecar"
+
+          echo "==> Verifying"
+          codesign --verify --verbose "$APP_DIR"
+
+      # ─── Create DMG ─────────────────────────────────────────────────
+      - name: Build DMG
+        run: |
+          VERSION="$(tr -d '[:space:]' < VERSION)"
+          APP_NAME="Multiharness"
+          APP_PATH="dist/$APP_NAME.app"
+
+          STAGING=$(mktemp -d)
+          trap "rm -rf '$STAGING'" EXIT
+
+          cp -R "$APP_PATH" "$STAGING/$APP_NAME.app"
+          ln -s /Applications "$STAGING/Applications"
+
+          # Generate a Sparkle update URL
+          echo "<h2>Multiharness v${VERSION}</h2>" > "$STAGING/release-notes.md"
+          echo "" >> "$STAGING/release-notes.md"
+          echo "**Download**: [Multiharness-${VERSION}.diskimage.dmg](https://github.com/jerednel/Multiharness/releases/download/v${VERSION}/Multiharness-${VERSION}.diskimage.dmg)" >> "$STAGING/release-notes.md"
+          echo "" >> "$STAGING/release-notes.md"
+          echo "See [CHANGELOG](https://github.com/jerednel/Multiharness/blob/main/CHANGELOG.md) for full details." >> "$STAGING/release-notes.md"
+
+          hdiutil create \
+            -volname "$APP_NAME" \
+            -srcfolder "$STAGING" \
+            -ov \
+            -format UDBZ \
+            "dist/$APP_NAME-$VERSION.dmg"
+
+          echo "==> DMG: dist/$APP_NAME-$VERSION.dmg"
+          ls -lh "dist/$APP_NAME-$VERSION.dmg"
+
+      # ─── Notarization ───────────────────────────────────────────────
+      - name: Notarize DMG
+        if: ${{ secrets.APPLE_API_KEY_PATH != '' || secrets.APPLE_TEAM_ID != '' }}
+        env:
+          APPLE_API_KEY_PATH: ${{ secrets.APPLE_API_KEY_PATH }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          VERSION="$(tr -d '[:space:]' < VERSION)"
+          APP_NAME="Multiharness"
+
+          # Notarize using API key (recommended over password store)
+          KEY_ID="$APPLE_API_KEY_ID"
+          TEAM="$APPLE_TEAM_ID"
+          KEY_PATH="$APPLE_API_KEY_PATH"
+
+          # Authenticate — creates an auth token
+          notarytool login "$KEY_ID" \
+            --key-path "$KEY_PATH" \
+            --team-id "$TEAM" \
+            --output /tmp/notarytool-auth.txt
+
+          # Notarize the disk image
+          DMG="dist/$APP_NAME-$VERSION.dmg"
+          echo "==> Notarizing $DMG"
+          notarytool submit "$DMG" \
+            --key-id "$KEY_ID" \
+            --team-id "$TEAM" \
+            --key-path "$KEY_PATH" \
+            --output-format json
+
+          echo "==> Waiting for notarization..."
+          # Poll until complete
+          for i in $(seq 1 30); do
+            sleep 30
+            STATUS=$(notarytool info "dist/$APP_NAME-$VERSION.dmg" \
+              --key-id "$KEY_ID" \
+              --team-id "$TEAM" \
+              --key-path "$KEY_PATH" \
+              --output /tmp/notarytool-auth.txt 2>/dev/null || echo "notfound")
+            if echo "$STATUS" | grep -q "Accepted\|stapling"; then
+              echo "==> Notarization complete: $STATUS"
+              break
+            fi
+            if [ "$i" -eq 30 ]; then
+              echo "! Notarization timed out after 15 minutes."
+              echo "  Retry manually with: notarytool submit $DMG ..."
+            fi
+          done
+
+          # Staple the ticket to the DMG
+          echo "==> Stapling ticket"
+          notarytool staple "$DMG" \
+            --key-id "$KEY_ID" \
+            --team-id "$TEAM" \
+            --key-path "$KEY_PATH" \
+            --output /tmp/notarytool-auth.txt
+
+          # Verify the staple
+          echo "==> Verifying staple"
+          codesign --verify --verbose "$DMG"
+
+      # ─── Checksums for Sparkle auto-updates ─────────────────────────
+      - name: Generate checksums
+        run: |
+          VERSION="$(tr -d '[:space:]' < VERSION)"
+          APP_NAME="Multiharness"
+          DMG="$APP_NAME-$VERSION.dmg"
+
+          cd dist
+          shasum -a 512 "$DMG" > "$DMG.sha512"
+          shasum -a 384 "$DMG" > "$DMG.sha384"
+          echo "==> Checksums generated"
+          cat "$DMG.sha512"
+          cat "$DMG.sha384"
+
+      # ─── Upload to GitHub Release ───────────────────────────────────
+      - name: Upload to Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v3
         with:
-          files: Multiharness-macOS.zip
+          files: |
+            dist/*.dmg
+            dist/*.sha384
+            dist/*.sha512
           generate_release_notes: true
+          fail_on_unmatched_files: true
