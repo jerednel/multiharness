@@ -16,9 +16,13 @@ public final class AppEnvironment {
     /// the delegate and resync their per-workspace stores.
     public var onControlChanged: ((ControlClient) -> Void)?
 
-    public init(dataDir: URL) throws {
+    public convenience init(dataDir: URL) throws {
+        try self.init(dataDir: dataDir, keychain: KeychainService())
+    }
+
+    public init(dataDir: URL, keychain: KeychainService) throws {
         let p = try PersistenceService(dataDir: dataDir)
-        let k = KeychainService()
+        let k = keychain
         self.persistence = p
         self.keychain = k
         self.worktree = WorktreeService()

@@ -3,11 +3,29 @@ import XCTest
 
 @MainActor
 final class QuickCreateTests: XCTestCase {
+    let worktreeSvc = WorktreeService()
+
     func tempDir() throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("mh-quickcreate-tests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
+    }
+
+    private func makeGitRepo() throws -> URL {
+        let repo = try tempDir().appendingPathComponent("repo", isDirectory: true)
+        try FileManager.default.createDirectory(at: repo, withIntermediateDirectories: true)
+        _ = try worktreeSvc.runGit(at: repo.path, args: ["init", "-q", "-b", "main"])
+        _ = try worktreeSvc.runGit(at: repo.path, args: ["config", "user.email", "test@test"])
+        _ = try worktreeSvc.runGit(at: repo.path, args: ["config", "user.name", "Test"])
+        try "seed\n".write(
+            to: repo.appendingPathComponent("seed.txt"),
+            atomically: true,
+            encoding: .utf8
+        )
+        _ = try worktreeSvc.runGit(at: repo.path, args: ["add", "."])
+        _ = try worktreeSvc.runGit(at: repo.path, args: ["commit", "-q", "-m", "init"])
+        return repo
     }
 
     private func makeFixture() throws -> (AppEnvironment, WorkspaceStore, Project, ProviderRecord) {
@@ -133,7 +151,7 @@ final class QuickCreateTests: XCTestCase {
             projectId: proj.id,
             name: "prior",
             slug: "prior",
-            branchName: "u/prior",
+            branchName: "mh/prior",
             baseBranch: "old-branch",
             worktreePath: "/tmp/prior",
             providerId: prov.id,
@@ -169,5 +187,57 @@ final class QuickCreateTests: XCTestCase {
                 return XCTFail("expected noProviderAvailable, got \(err)")
             }
         }
+    }
+
+    func testCreateUsesMhBranchPrefix() throws {
+        let dir = try tempDir()
+        let env = try AppEnvironment(
+            dataDir: dir,
+            keychain: KeychainService(
+                service: "test",
+                getKey: { _ in nil },
+                setKey: { _, _ in },
+                deleteKey: { _ in }
+            )
+        )
+        let repo = try makeGitRepo()
+        defer { try? FileManager.default.removeItem(at: repo.deletingLastPathComponent()) }
+        let proj = Project(
+            name: "P",
+            slug: "p",
+            repoPath: repo.path,
+            defaultBaseBranch: "main"
+        )
+        try env.persistence.upsertProject(proj)
+        let prov = ProviderRecord(
+            name: "Local",
+            kind: .openaiCompatible,
+            baseUrl: "http://localhost:1234/v1",
+            defaultModelId: "qwen2.5-7b"
+        )
+        try env.persistence.upsertProvider(prov)
+        let store = WorkspaceStore(env: env)
+        store.load(projectId: proj.id)
+        let worktreePath = worktreeSvc.worktreePath(projectSlug: proj.slug, workspaceSlug: "friendly-name")
+        try? FileManager.default.removeItem(at: worktreePath)
+        defer { try? FileManager.default.removeItem(at: worktreePath) }
+
+        let ws = try store.create(
+            project: proj,
+            name: "Friendly Name",
+            baseBranch: "main",
+            provider: prov,
+            modelId: "qwen2.5-7b",
+            gitUserName: "someone"
+        )
+
+        XCTAssertEqual(ws.branchName, "mh/friendly-name")
+        XCTAssertEqual(ws.slug, "friendly-name")
+        XCTAssertTrue(store.workspaces.contains(where: { $0.id == ws.id && $0.branchName == "mh/friendly-name" }))
+
+        let current = try worktreeSvc.currentBranch(repoPath: repo.path)
+        XCTAssertEqual(current, "main")
+        let branches = try worktreeSvc.listBranches(repoPath: repo.path)
+        XCTAssertTrue(branches.contains("mh/friendly-name"))
     }
 }

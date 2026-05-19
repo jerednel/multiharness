@@ -292,7 +292,7 @@ The sidecar itself uses a parent-pid watchdog (poll `getppid()` every 1s; exit i
 User clicks **+ New Workspace** in the sidebar:
 
 1. Modal dialog asks for: `name` (required), `base_branch` (default = project default), `provider + model` (default = project default), `initial prompt` (optional).
-2. App slugifies name → `slug`. Branch name = `<git-user>/<slug>` (matches the convention this branch already uses).
+2. App slugifies name → `slug`. Branch name = `mh/<slug>`.
 3. `WorktreeService.create(...)` runs `git worktree add`.
 4. `PersistenceService` inserts the `Workspace` row with `lifecycle_state = 'in_progress'`.
 5. `ControlClient.send("agent.create", ...)` opens an `AgentSession` in the sidecar.

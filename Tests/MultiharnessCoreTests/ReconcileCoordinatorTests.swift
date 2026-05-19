@@ -26,7 +26,7 @@ final class ReconcileCoordinatorTests: XCTestCase {
         ] {
             let row = Workspace(
                 projectId: proj.id, name: name, slug: name,
-                branchName: "u/\(name)", baseBranch: "main",
+                branchName: "mh/\(name)", baseBranch: "main",
                 worktreePath: "/tmp/\(name)",
                 lifecycleState: state, providerId: prov.id, modelId: "m"
             )

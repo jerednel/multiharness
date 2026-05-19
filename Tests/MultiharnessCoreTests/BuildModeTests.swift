@@ -34,7 +34,7 @@ final class BuildModeTests: XCTestCase {
             projectId: projectId,
             name: "w",
             slug: "w",
-            branchName: "u/w",
+            branchName: "mh/w",
             baseBranch: "main",
             worktreePath: "/tmp/w",
             providerId: UUID(),
