@@ -39,7 +39,7 @@ final class MigrationsV8Tests: XCTestCase {
         let ws = Workspace(
             projectId: proj.id,
             name: "W", slug: "w",
-            branchName: "u/w", baseBranch: "main", worktreePath: "/tmp/w",
+            branchName: "mh/w", baseBranch: "main", worktreePath: "/tmp/w",
             providerId: prov.id, modelId: "m"
         )
         try svc.upsertWorkspace(ws)
@@ -58,7 +58,7 @@ final class MigrationsV8Tests: XCTestCase {
         let ws = Workspace(
             projectId: proj.id,
             name: "W", slug: "w",
-            branchName: "u/w", baseBranch: "main", worktreePath: "/tmp/w",
+            branchName: "mh/w", baseBranch: "main", worktreePath: "/tmp/w",
             providerId: prov.id, modelId: "m",
             qaAutoApply: false
         )
@@ -76,7 +76,7 @@ final class MigrationsV8Tests: XCTestCase {
         let ws = Workspace(
             projectId: proj.id,
             name: "W", slug: "w",
-            branchName: "u/w", baseBranch: "main", worktreePath: "/tmp/w",
+            branchName: "mh/w", baseBranch: "main", worktreePath: "/tmp/w",
             providerId: prov.id, modelId: "m",
             qaAutoApply: true
         )

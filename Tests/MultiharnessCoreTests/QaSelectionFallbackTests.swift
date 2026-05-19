@@ -70,7 +70,7 @@ final class QaSelectionFallbackTests: XCTestCase {
         Workspace(
             projectId: proj.id,
             name: "w", slug: "w",
-            branchName: "u/w", baseBranch: "main", worktreePath: "/tmp/w",
+            branchName: "mh/w", baseBranch: "main", worktreePath: "/tmp/w",
             providerId: UUID(), modelId: "primary-m",
             qaEnabled: enabled,
             qaProviderId: providerId,

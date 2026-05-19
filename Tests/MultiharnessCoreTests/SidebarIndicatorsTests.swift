@@ -19,7 +19,7 @@ final class SidebarIndicatorsTests: XCTestCase {
         try env.persistence.upsertProvider(prov)
         let ws = Workspace(
             projectId: proj.id, name: "W", slug: "w",
-            branchName: "u/w", baseBranch: "main",
+            branchName: "mh/w", baseBranch: "main",
             worktreePath: "/tmp/wt",
             providerId: prov.id, modelId: "m"
         )

@@ -156,7 +156,7 @@ Both present the same `ReconcileSheet`. Buttons are disabled when zero qualifyin
 
 The integration workspace is created via the existing `WorkspaceStore.create(...)` path:
 - name: `_reconcile-<ISO-timestamp>` (e.g., `_reconcile-2026-04-29T15-30-12Z`)
-- branch name: derived as today (`<gitUserName>/<workspace-slug>`), so something like `<user>/_reconcile-2026-04-29t15-30-12z`
+- branch name: `mh/<workspace-slug>`, so something like `mh/_reconcile-2026-04-29t15-30-12z`
 - buildMode: nil (inherit project default)
 
 No new schema. No new persisted state about the reconcile run itself. Once the run finishes, the only artifact is the integration workspace and its git history (which records the merge order via the merge commits).

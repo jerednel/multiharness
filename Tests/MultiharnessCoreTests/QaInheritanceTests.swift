@@ -56,7 +56,7 @@ final class QaInheritanceTests: XCTestCase {
         Workspace(
             projectId: proj.id,
             name: "w", slug: "w",
-            branchName: "u/w", baseBranch: "main", worktreePath: "/tmp/w",
+            branchName: "mh/w", baseBranch: "main", worktreePath: "/tmp/w",
             providerId: UUID(), modelId: "m",
             qaEnabled: override
         )

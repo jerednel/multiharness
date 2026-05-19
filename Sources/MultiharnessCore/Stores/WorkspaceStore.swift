@@ -113,12 +113,12 @@ public final class WorkspaceStore {
         baseBranch: String,
         provider: ProviderRecord,
         modelId: String,
-        gitUserName: String,
+        gitUserName _: String,
         buildMode: BuildMode? = nil,
         nameSource: NameSource = .named
     ) throws -> Workspace {
         let slug = slugify(name)
-        let branch = "\(slugify(gitUserName))/\(slug)"
+        let branch = "mh/\(slug)"
         let path = env.worktree.worktreePath(projectSlug: project.slug, workspaceSlug: slug)
         try env.worktree.createWorktree(
             repoPath: project.repoPath,

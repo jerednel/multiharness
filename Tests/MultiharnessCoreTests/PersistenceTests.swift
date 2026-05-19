@@ -56,7 +56,7 @@ final class PersistenceTests: XCTestCase {
             projectId: proj.id,
             name: "Feature",
             slug: "feature",
-            branchName: "user/feature",
+            branchName: "mh/feature",
             baseBranch: "main",
             worktreePath: "/tmp/wt",
             lifecycleState: .inReview,
@@ -93,7 +93,7 @@ final class PersistenceTests: XCTestCase {
             projectId: proj.id,
             name: "Feature",
             slug: "feature",
-            branchName: "user/feature",
+            branchName: "mh/feature",
             baseBranch: "main",
             worktreePath: "/tmp/wt",
             providerId: prov.id,
@@ -118,7 +118,7 @@ final class PersistenceTests: XCTestCase {
         let randomWs = Workspace(
             projectId: proj.id,
             name: "Lucky Otter", slug: "lucky-otter",
-            branchName: "u/lucky-otter", baseBranch: "main", worktreePath: "/tmp/wa",
+            branchName: "mh/lucky-otter", baseBranch: "main", worktreePath: "/tmp/wa",
             providerId: prov.id, modelId: "m"
         )
         try svc.upsertWorkspace(randomWs)
@@ -126,7 +126,7 @@ final class PersistenceTests: XCTestCase {
         let namedWs = Workspace(
             projectId: proj.id,
             name: "Manual Title", slug: "manual-title",
-            branchName: "u/manual-title", baseBranch: "main", worktreePath: "/tmp/wb",
+            branchName: "mh/manual-title", baseBranch: "main", worktreePath: "/tmp/wb",
             providerId: prov.id, modelId: "m",
             nameSource: .named
         )
@@ -147,7 +147,7 @@ final class PersistenceTests: XCTestCase {
         let ws = Workspace(
             projectId: proj.id,
             name: "W", slug: "w",
-            branchName: "u/w", baseBranch: "main", worktreePath: "/tmp/w",
+            branchName: "mh/w", baseBranch: "main", worktreePath: "/tmp/w",
             providerId: prov.id, modelId: "m"
         )
         try svc.upsertWorkspace(ws)
@@ -180,7 +180,7 @@ final class PersistenceTests: XCTestCase {
         let ws = Workspace(
             projectId: proj.id,
             name: "W", slug: "w",
-            branchName: "u/w", baseBranch: "main", worktreePath: "/tmp/w",
+            branchName: "mh/w", baseBranch: "main", worktreePath: "/tmp/w",
             providerId: prov.id, modelId: "m",
             contextInstructions: "Prefer SwiftUI over UIKit here."
         )
@@ -199,7 +199,7 @@ final class PersistenceTests: XCTestCase {
         let ws = Workspace(
             projectId: proj.id,
             name: "W", slug: "w",
-            branchName: "u/w", baseBranch: "main", worktreePath: "/tmp/w",
+            branchName: "mh/w", baseBranch: "main", worktreePath: "/tmp/w",
             providerId: prov.id, modelId: "m"
         )
         try svc.upsertWorkspace(ws)
@@ -216,7 +216,7 @@ final class PersistenceTests: XCTestCase {
         try svc.upsertProvider(prov)
         let ws = Workspace(
             projectId: proj.id, name: "W", slug: "w",
-            branchName: "u/w", baseBranch: "main",
+            branchName: "mh/w", baseBranch: "main",
             worktreePath: "/tmp/wt",
             providerId: prov.id, modelId: "m"
         )
@@ -237,7 +237,7 @@ final class PersistenceTests: XCTestCase {
         try svc.upsertProvider(prov)
         let ws = Workspace(
             projectId: proj.id, name: "W", slug: "w",
-            branchName: "u/w", baseBranch: "main",
+            branchName: "mh/w", baseBranch: "main",
             worktreePath: "/tmp/wt",
             providerId: prov.id, modelId: "m"
         )

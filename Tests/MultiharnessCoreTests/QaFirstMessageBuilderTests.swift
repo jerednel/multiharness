@@ -7,13 +7,13 @@ final class QaFirstMessageBuilderTests: XCTestCase {
 
     func testEmitsBranchAndBaseHeader() {
         let out = QaFirstMessageBuilder.build(.init(
-            branchName: "u/feat",
+            branchName: "mh/feat",
             baseBranch: "main",
             lastUserPrompt: nil,
             lastAssistantMessage: nil,
             diffVsBase: ""
         ))
-        XCTAssertTrue(out.contains("Branch: u/feat"))
+        XCTAssertTrue(out.contains("Branch: mh/feat"))
         XCTAssertTrue(out.contains("Base:   main"))
     }
 

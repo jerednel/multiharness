@@ -76,7 +76,7 @@ final class MigrationsV7Tests: XCTestCase {
         let ws = Workspace(
             projectId: proj.id,
             name: "W", slug: "w",
-            branchName: "u/w", baseBranch: "main", worktreePath: "/tmp/w",
+            branchName: "mh/w", baseBranch: "main", worktreePath: "/tmp/w",
             providerId: prov.id, modelId: "m"
         )
         try svc.upsertWorkspace(ws)
@@ -98,7 +98,7 @@ final class MigrationsV7Tests: XCTestCase {
         let ws = Workspace(
             projectId: proj.id,
             name: "W", slug: "w",
-            branchName: "u/w", baseBranch: "main", worktreePath: "/tmp/w",
+            branchName: "mh/w", baseBranch: "main", worktreePath: "/tmp/w",
             providerId: prov.id, modelId: "m",
             qaEnabled: false
         )
@@ -116,7 +116,7 @@ final class MigrationsV7Tests: XCTestCase {
         let ws = Workspace(
             projectId: proj.id,
             name: "W", slug: "w",
-            branchName: "u/w", baseBranch: "main", worktreePath: "/tmp/w",
+            branchName: "mh/w", baseBranch: "main", worktreePath: "/tmp/w",
             providerId: prov.id, modelId: "m",
             qaEnabled: true
         )
@@ -135,7 +135,7 @@ final class MigrationsV7Tests: XCTestCase {
         let ws = Workspace(
             projectId: proj.id,
             name: "W", slug: "w",
-            branchName: "u/w", baseBranch: "main", worktreePath: "/tmp/w",
+            branchName: "mh/w", baseBranch: "main", worktreePath: "/tmp/w",
             providerId: prov.id, modelId: "m",
             qaProviderId: qaPid,
             qaModelId: "gpt-5-mini"
