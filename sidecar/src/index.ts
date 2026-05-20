@@ -2,6 +2,7 @@ import { startServer } from "./server.js";
 import { startParentPidWatchdog } from "./watchdog.js";
 import { log } from "./logger.js";
 import { installAnthropicFetchInterceptor } from "./anthropicFetchInterceptor.js";
+import { removePidFile, writePidFile } from "./pidfile.js";
 
 // Must run before any provider client is constructed: rewrites system
 // blocks for Console-minted Anthropic requests so they pass the Claude
@@ -100,10 +101,14 @@ try {
   }
 }
 
+writePidFile(dataDir);
+
 const shutdown = async () => {
   log.info("shutting down");
+  removePidFile(dataDir);
   await handle.stop();
   process.exit(0);
 };
 process.on("SIGTERM", shutdown);
 process.on("SIGINT", shutdown);
+process.on("exit", () => removePidFile(dataDir));

@@ -75,6 +75,8 @@ public final class SidecarManager {
         }
         try FileManager.default.createDirectory(at: dataDir, withIntermediateDirectories: true)
 
+        Self.reapStaleSidecar(dataDir: dataDir)
+
         let p = Process()
         p.executableURL = binary
         var sidecarEnv: [String: String] = [
@@ -222,6 +224,75 @@ public final class SidecarManager {
             let port = try await group.next()!
             group.cancelAll()
             return port
+        }
+    }
+
+    /// If an orphaned sidecar from a previous Mac-app run is still bound to
+    /// the data dir, kill it before we spawn ours. Without this, the new
+    /// sidecar silently falls back to a random port and Bonjour-published
+    /// remote-access pairings stop resolving until the orphan is reaped by
+    /// hand. The PID file is `<dataDir>/sidecar.pid`; we treat it as advisory
+    /// and only act if the live process at that PID is actually our sidecar.
+    nonisolated static func reapStaleSidecar(dataDir: URL) {
+        let pidFile = dataDir.appendingPathComponent("sidecar.pid")
+        guard let contents = try? String(contentsOf: pidFile, encoding: .utf8) else { return }
+        let trimmed = contents.trimmingCharacters(in: .whitespacesAndNewlines)
+        let firstLine = trimmed.split(whereSeparator: { $0.isNewline }).first.map(String.init) ?? ""
+        guard let pid = Int32(firstLine), pid > 1 else {
+            try? FileManager.default.removeItem(at: pidFile)
+            return
+        }
+        // kill(pid, 0) returns 0 if signal could be sent (process exists).
+        if kill(pid, 0) != 0 {
+            try? FileManager.default.removeItem(at: pidFile)
+            return
+        }
+        let exe = processExePath(pid: pid) ?? ""
+        guard exe.hasSuffix("multiharness-sidecar") else {
+            FileHandle.standardError.write(
+                "[sidecar-mgr] stale PID \(pid) belongs to '\(exe)', not our sidecar; ignoring\n"
+                    .data(using: .utf8) ?? Data()
+            )
+            return
+        }
+        FileHandle.standardError.write(
+            "[sidecar-mgr] reaping stale sidecar pid=\(pid) exe=\(exe)\n"
+                .data(using: .utf8) ?? Data()
+        )
+        _ = kill(pid, SIGTERM)
+        let deadline = Date().addingTimeInterval(1.5)
+        while Date() < deadline {
+            if kill(pid, 0) != 0 { break }
+            usleep(100_000)
+        }
+        if kill(pid, 0) == 0 {
+            FileHandle.standardError.write(
+                "[sidecar-mgr] pid=\(pid) survived SIGTERM; SIGKILLing\n"
+                    .data(using: .utf8) ?? Data()
+            )
+            _ = kill(pid, SIGKILL)
+            usleep(500_000)
+        }
+        try? FileManager.default.removeItem(at: pidFile)
+    }
+
+    nonisolated private static func processExePath(pid: Int32) -> String? {
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/bin/ps")
+        proc.arguments = ["-p", String(pid), "-o", "comm="]
+        let outPipe = Pipe()
+        proc.standardOutput = outPipe
+        proc.standardError = Pipe()
+        do {
+            try proc.run()
+            proc.waitUntilExit()
+            guard proc.terminationStatus == 0 else { return nil }
+            let data = outPipe.fileHandleForReading.readDataToEndOfFile()
+            let raw = String(data: data, encoding: .utf8) ?? ""
+            let s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            return s.isEmpty ? nil : s
+        } catch {
+            return nil
         }
     }
 
