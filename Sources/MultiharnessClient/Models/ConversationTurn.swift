@@ -222,6 +222,10 @@ public struct ConversationTurn: Identifiable, Sendable {
     /// history replay synthesizes counter-style ids ("g1", "g2") which
     /// aren't valid UUIDs.
     public var groupId: String?
+    /// Optional annotation describing what kind of agent run produced the
+    /// group. QA runs use this to swap in the QA-specific disclosure header
+    /// and final card on both Mac and iOS.
+    public var groupKind: GroupKind?
     public var streaming: Bool = false
     /// Inline image attachments. Only meaningful on user turns today, but
     /// kept on the type uniformly so future assistant-image support is a
@@ -244,6 +248,7 @@ public struct ConversationTurn: Identifiable, Sendable {
         toolName: String? = nil,
         toolCallDescription: String? = nil,
         groupId: String? = nil,
+        groupKind: GroupKind? = nil,
         streaming: Bool = false,
         images: [TurnImage] = [],
         qaVerdict: QaVerdict? = nil,
@@ -256,6 +261,7 @@ public struct ConversationTurn: Identifiable, Sendable {
         self.toolName = toolName
         self.toolCallDescription = toolCallDescription
         self.groupId = groupId
+        self.groupKind = groupKind
         self.streaming = streaming
         self.images = images
         self.qaVerdict = qaVerdict

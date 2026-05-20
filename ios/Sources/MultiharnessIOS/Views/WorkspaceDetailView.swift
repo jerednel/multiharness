@@ -98,7 +98,11 @@ private struct ConversationList: View {
                         case .single(let turn):
                             TurnRow(turn: turn).id(turn.id)
                         case .group(let id, let children):
-                            ResponseGroupRow(groupId: id, children: children)
+                            ResponseGroupRow(
+                                groupId: id,
+                                children: children,
+                                kind: children.compactMap(\.groupKind).first ?? .build
+                            )
                                 .id(id)
                         }
                     }
@@ -135,6 +139,7 @@ private struct ConversationList: View {
 private struct ResponseGroupRow: View {
     let groupId: String
     let children: [ConversationTurn]
+    let kind: GroupKind
 
     @State private var manuallyToggled = false
     @State private var manualExpanded = false
@@ -149,7 +154,12 @@ private struct ResponseGroupRow: View {
     }
 
     private var liftedFinalIndex: Int? {
-        children.indices.reversed().first(where: {
+        if let qaIdx = children.indices.reversed().first(where: {
+            children[$0].role == .qaFindings
+        }) {
+            return qaIdx
+        }
+        return children.indices.reversed().first(where: {
             children[$0].role == .assistant && !children[$0].text.isEmpty
         })
     }
@@ -170,6 +180,7 @@ private struct ResponseGroupRow: View {
         let messageCount = children.filter {
             $0.role == .assistant && !$0.text.isEmpty
         }.count
+        let findingsCount = children.filter { $0.role == .qaFindings }.count
         var parts: [String] = []
         if toolCount > 0 {
             parts.append("\(toolCount) tool call\(toolCount == 1 ? "" : "s")")
@@ -177,8 +188,19 @@ private struct ResponseGroupRow: View {
         if messageCount > 0 {
             parts.append("\(messageCount) message\(messageCount == 1 ? "" : "s")")
         }
+        if findingsCount > 0 {
+            parts.append("\(findingsCount) finding card\(findingsCount == 1 ? "" : "s")")
+        }
         if parts.isEmpty { return isStreaming ? "thinking…" : "no output" }
         return parts.joined(separator: ", ")
+    }
+
+    private var headerIcon: String {
+        kind == .qa ? "magnifyingglass" : "sparkles"
+    }
+
+    private var headerColor: Color {
+        kind == .qa ? .cyan : .purple
     }
 
     var body: some View {
@@ -193,7 +215,11 @@ private struct ResponseGroupRow: View {
                     Image(systemName: "chevron.right")
                         .font(.caption2).foregroundStyle(.secondary).frame(width: 10)
                         .rotationEffect(.degrees(expanded ? 90 : 0))
-                    Image(systemName: "sparkles").font(.caption).foregroundStyle(.purple)
+                    Image(systemName: headerIcon).font(.caption).foregroundStyle(headerColor)
+                    if kind == .qa {
+                        Text("QA review").font(.caption).bold().foregroundStyle(headerColor)
+                        Text("·").font(.caption).foregroundStyle(.secondary)
+                    }
                     Text(summary).font(.caption).foregroundStyle(.secondary)
                     if isStreaming {
                         ProgressView().scaleEffect(0.5).frame(width: 10, height: 10)
@@ -234,11 +260,9 @@ private struct TurnRow: View {
             toolRow
         case .compaction:
             CompactionMarkerRow(info: turn.compaction)
-        case .user, .assistant, .qaFindings:
-            // iOS doesn't have a dedicated QA card yet — render the
-            // findings as an assistant-style message row using its
-            // summary text. The structured findings array is preserved
-            // on the turn for a future richer iOS view.
+        case .qaFindings:
+            QaFindingsCard(turn: turn)
+        case .user, .assistant:
             messageRow
         }
     }
@@ -377,6 +401,7 @@ private struct CompactionMarkerRow: View {
             }
         }
     }
+
 }
 
 private struct Composer: View {

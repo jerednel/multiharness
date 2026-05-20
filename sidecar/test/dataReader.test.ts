@@ -157,4 +157,47 @@ describe("DataReader.historyTurns", () => {
       budget: 196_000,
     });
   });
+
+  it("rehydrates qa_findings events with QA group metadata", async () => {
+    const lines = [
+      JSON.stringify({
+        event: {
+          type: "agent_start",
+          kind: "qa",
+        },
+      }),
+      JSON.stringify({
+        event: {
+          type: "qa_findings",
+          verdict: "blocking_issues",
+          summary: "Needs follow-up",
+          findings: [
+            {
+              severity: "blocker",
+              file: "src/foo.ts",
+              line: 12,
+              message: "Missing test",
+            },
+          ],
+        },
+      }),
+    ];
+    writeHistory("ws-qa", lines);
+    const r = new DataReader(dir);
+    const out = await r.historyTurns("ws-qa");
+    expect(out.turns).toHaveLength(1);
+    const card = out.turns[0]!;
+    expect(card.role).toBe("qa_findings");
+    expect(card.groupId).toBe("g1");
+    expect(card.groupKind).toBe("qa");
+    expect(card.qaVerdict).toBe("blocking_issues");
+    expect(card.qaFindings).toEqual([
+      {
+        severity: "blocker",
+        file: "src/foo.ts",
+        line: 12,
+        message: "Missing test",
+      },
+    ]);
+  });
 });

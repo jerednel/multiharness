@@ -144,7 +144,7 @@ final class AgentRegistryStore: NSObject, ControlClientDelegate {
     func ensureStore(workspaceId: UUID) -> AgentStore? {
         guard let env else { return nil }
         if let existing = stores[workspaceId] { return existing }
-        let store = AgentStore(env: env, workspaceId: workspaceId)
+        let store = AgentStore(env: env, workspaceId: workspaceId, loadHistoryOnInit: false)
         if let client = env.control { store.bind(control: client) }
         stores[workspaceId] = store
         return store

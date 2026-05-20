@@ -51,11 +51,16 @@ public final class AgentStore {
 
     private let env: AppEnvironment
     private weak var control: ControlClient?
+    private var historyLoadTask: Task<Void, Never>?
 
-    public init(env: AppEnvironment, workspaceId: UUID) {
+    public init(env: AppEnvironment, workspaceId: UUID, loadHistoryOnInit: Bool = true) {
         self.env = env
         self.workspaceId = workspaceId
-        loadHistory()
+        if loadHistoryOnInit {
+            loadHistory()
+        } else {
+            scheduleHistoryLoad()
+        }
     }
 
     /// Look up the kind of the group a turn belongs to. Returns `.build`
@@ -72,6 +77,38 @@ public final class AgentStore {
         let path = env.persistence.messagesPath(workspaceId: workspaceId)
         guard let data = try? Data(contentsOf: path),
               let text = String(data: data, encoding: .utf8) else { return }
+        applyLoadedHistory(Self.rehydrateHistory(from: text))
+    }
+
+    private func scheduleHistoryLoad() {
+        historyLoadTask?.cancel()
+        let path = env.persistence.messagesPath(workspaceId: workspaceId)
+        historyLoadTask = Task.detached(priority: .userInitiated) { [weak self] in
+            guard let data = try? Data(contentsOf: path),
+                  let text = String(data: data, encoding: .utf8)
+            else { return }
+            let loaded = Self.rehydrateHistory(from: text)
+            guard let self else { return }
+            // Keep the UI responsive: if live turns arrive before the
+            // background parse finishes, don't overwrite them.
+            await self.applyLoadedHistory(loaded, onlyIfEmpty: true)
+        }
+    }
+
+    private func applyLoadedHistory(_ loaded: HistorySnapshot, onlyIfEmpty: Bool = false) {
+        guard !onlyIfEmpty || turns.isEmpty else { return }
+        self.turns = loaded.turns
+        self.groupKinds = loaded.groupKinds
+        self.lastGroupKind = loaded.lastGroupKind
+    }
+
+    private struct HistorySnapshot {
+        let turns: [ConversationTurn]
+        let groupKinds: [String: GroupKind]
+        let lastGroupKind: GroupKind?
+    }
+
+    nonisolated private static func rehydrateHistory(from text: String) -> HistorySnapshot {
         var loaded: [ConversationTurn] = []
         var groupId: String?
         var groupCounter = 0
@@ -179,12 +216,14 @@ public final class AgentStore {
                 break
             }
         }
-        self.turns = loaded
-        self.groupKinds = rehydratedKinds
-        self.lastGroupKind = rehydratedLastKind
+        return HistorySnapshot(
+            turns: loaded,
+            groupKinds: rehydratedKinds,
+            lastGroupKind: rehydratedLastKind
+        )
     }
 
-    private static func extractText(_ content: Any?) -> String {
+    nonisolated private static func extractText(_ content: Any?) -> String {
         guard let arr = content as? [[String: Any]] else {
             return content as? String ?? ""
         }
@@ -200,7 +239,7 @@ public final class AgentStore {
     /// (pi-ai shape: `[{ type: "image", data: <base64>, mimeType }, …]`).
     /// The Mac's local JSONL persists these verbatim, so history rehydration
     /// can show the same thumbnails the user saw live.
-    private static func extractImages(_ content: Any?) -> [TurnImage] {
+    nonisolated private static func extractImages(_ content: Any?) -> [TurnImage] {
         guard let arr = content as? [[String: Any]] else { return [] }
         return arr.compactMap { item -> TurnImage? in
             guard (item["type"] as? String) == "image" else { return nil }
@@ -208,7 +247,7 @@ public final class AgentStore {
         }
     }
 
-    private static func extractToolResultPreview(_ result: Any?) -> String {
+    nonisolated private static func extractToolResultPreview(_ result: Any?) -> String {
         guard let dict = result as? [String: Any] else { return "" }
         if let content = dict["content"] as? [[String: Any]],
            let first = content.first,
@@ -497,4 +536,5 @@ public final class AgentStore {
     public func clearPendingMessages() {
         pendingMessages.removeAll()
     }
+
 }

@@ -39,7 +39,7 @@ jobs:
       - name: Code sign app
         run: |
           IDENT=""
-          if [ -n "${{ secrets.APPLE_DEV_ID_CN:- }}" ]; then
+          if [ -n "${{ secrets.APPLE_DEV_ID_CN }}" ]; then
             IDENT="${{ secrets.APPLE_DEV_ID_CN }}"
           else
             # Try Developer ID Application first, then iPhone Distribution
@@ -110,7 +110,7 @@ jobs:
 
       # ─── Notarization ───────────────────────────────────────────────
       - name: Notarize DMG
-        if: ${{ secrets.APPLE_API_KEY_PATH != '' || secrets.APPLE_TEAM_ID != '' }}
+        if: ${{ env.APPLE_TEAM_ID != '' }}
         env:
           APPLE_API_KEY_PATH: ${{ secrets.APPLE_API_KEY_PATH }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
