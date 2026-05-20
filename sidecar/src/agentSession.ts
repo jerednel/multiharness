@@ -440,13 +440,6 @@ export class AgentSession {
         type: string;
       };
     }
-    // The sink signature is typed as AgentEvent; the `kind` field is an
-    // extra property that flows through the server's spread-and-broadcast
-    // path (see server.ts's `sink`).
-    this.opts.sink(
-      this.opts.workspaceId,
-      outgoing as unknown as AgentEvent,
-    );
     // After every completed assistant message we get a fresh, real
     // `usage.input` from the provider. Capture it (plus the transcript
     // snapshot that produced it) so the next compaction can anchor its
@@ -472,14 +465,43 @@ export class AgentSession {
         this.lastInputMessages = snapshot;
       }
     }
+
+    const emit = () => {
+      // The sink signature is typed as AgentEvent; the `kind` field is an
+      // extra property that flows through the server's spread-and-broadcast
+      // path (see server.ts's `sink`).
+      this.opts.sink(
+        this.opts.workspaceId,
+        outgoing as unknown as AgentEvent,
+      );
+    };
+
     if (PERSIST_EVENTS.has(event.type)) {
       // Persist the (possibly kind-annotated) outgoing event so history
       // rehydration reconstructs the same group structure the live UI
-      // saw.
-      this.writer
-        .append({ seq: this.seq++, ts: Date.now(), event: outgoing as AgentEvent })
-        .catch((err) => log.warn("jsonl append failed", { err: String(err) }));
+      // saw. `agent_end` is special: the e2e harness reads messages.jsonl
+      // immediately after observing the live event, so only emit it after
+      // the append has drained.
+      const append = this.writer.append({
+        seq: this.seq++,
+        ts: Date.now(),
+        event: outgoing as AgentEvent,
+      });
+      if (event.type === "agent_end") {
+        void (async () => {
+          try {
+            await append;
+          } catch (err) {
+            log.warn("jsonl append failed", { err: String(err) });
+          }
+          emit();
+        })();
+        return;
+      }
+      void append.catch((err) => log.warn("jsonl append failed", { err: String(err) }));
     }
+
+    emit();
   }
 
   /// Called by the compactor whenever it had to elide or drop messages.
