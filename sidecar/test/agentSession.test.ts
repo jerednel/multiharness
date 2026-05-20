@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from "bun:test";
+import type { AgentEvent } from "@mariozechner/pi-agent-core";
 import { mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -187,6 +188,42 @@ describe("AgentSession qa sentinel addendum", () => {
       qaSentinelEnabled: true,
     }));
     expect(s.currentSystemPrompt()).not.toContain("<<MULTIHARNESS_QA_READY>>");
+    await s.dispose();
+  });
+});
+
+describe("AgentSession event persistence", () => {
+  it("emits agent_end only after its JSONL append resolves", async () => {
+    const captured: AgentEvent[] = [];
+    const s = new AgentSession(makeOpts({
+      sink: (_workspaceId, ev) => {
+        captured.push(ev);
+      },
+    }));
+
+    let resolveAppend: (() => void) | null = null;
+    const appendStarted = new Promise<void>((resolve) => {
+      (s as any).writer.append = () => new Promise<void>((res) => {
+        resolveAppend = () => {
+          res();
+          resolve();
+        };
+      });
+    });
+
+    const event = { type: "agent_end", messages: [] } as AgentEvent;
+    (s as any).handle(event);
+
+    await Promise.resolve();
+    expect(captured).toHaveLength(0);
+
+    expect(resolveAppend).toBeDefined();
+    resolveAppend!();
+    await appendStarted;
+    await Promise.resolve();
+
+    expect(captured).toHaveLength(1);
+    expect(captured[0]).toMatchObject({ type: "agent_end" });
     await s.dispose();
   });
 });
