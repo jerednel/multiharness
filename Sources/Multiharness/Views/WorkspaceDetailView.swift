@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 import MultiharnessClient
 import MultiharnessCore
 
@@ -664,7 +665,7 @@ private struct Composer: View {
                         .padding(.horizontal, 8).padding(.vertical, 8)
                 }
                 .buttonStyle(.multiharness)
-                .help("Attach images")
+                .help("Attach images or text files (CSV, JSON, etc.)")
 
                 TextField("Message", text: $draft, axis: .vertical)
                     .textFieldStyle(.plain)
@@ -693,6 +694,20 @@ private struct Composer: View {
                         ComposerPaste.absorb(providers: providers) { result in
                             Task { @MainActor in
                                 applyAttachResult(result)
+                            }
+                        }
+                        // Also check for file URLs pointing at text files
+                        // (CSV, JSON, etc.) and inline their contents.
+                        ComposerPaste.absorbTextFiles(providers: providers) { blocks in
+                            Task { @MainActor in
+                                if !blocks.isEmpty {
+                                    let joined = blocks.joined(separator: "\n\n")
+                                    if draft.isEmpty {
+                                        draft = joined
+                                    } else {
+                                        draft += "\n\n" + joined
+                                    }
+                                }
                             }
                         }
                         return true
@@ -796,18 +811,47 @@ private struct Composer: View {
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
         panel.canChooseFiles = true
-        panel.allowedContentTypes = [.image]
+        // Accept images (for inline image attachments) AND common
+        // text-based data files (CSV, JSON, TXT, etc.) whose contents
+        // are inlined into the draft as a fenced code block.
+        panel.allowedContentTypes = [
+            .image,
+            .commaSeparatedText,   // .csv
+            .json,
+            .plainText,
+            .xml,
+            .yaml,
+            .sourceCode,
+            .tabSeparatedText,     // .tsv
+        ]
         guard panel.runModal() == .OK else { return }
-        var added: [TurnImage] = []
+        var addedImages: [TurnImage] = []
+        var inlinedText: [String] = []
         var lastErr: String?
         for url in panel.urls {
-            switch ComposerPaste.loadImage(at: url) {
-            case .success(let img): added.append(img)
-            case .failure(let e): lastErr = e.message
+            if ComposerPaste.isTextFile(url) {
+                switch ComposerPaste.loadTextFile(at: url) {
+                case .success(let block): inlinedText.append(block)
+                case .failure(let e): lastErr = e.message
+                }
+            } else {
+                switch ComposerPaste.loadImage(at: url) {
+                case .success(let img): addedImages.append(img)
+                case .failure(let e): lastErr = e.message
+                }
             }
         }
-        if !added.isEmpty {
-            pendingImages.append(contentsOf: added)
+        if !addedImages.isEmpty {
+            pendingImages.append(contentsOf: addedImages)
+            attachError = nil
+        }
+        if !inlinedText.isEmpty {
+            let joined = inlinedText.joined(separator: "\n\n")
+            if draft.isEmpty {
+                draft = joined
+            } else {
+                draft += "\n\n" + joined
+            }
             attachError = nil
         }
         if let lastErr { attachError = lastErr }
