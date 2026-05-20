@@ -701,9 +701,15 @@ private struct Composer: View {
                         if NSEvent.modifierFlags.contains(.shift) {
                             // The system's default for Shift+Return on a vertical
                             // TextField is "extend selection" rather than insert a
-                            // newline — so we insert one ourselves at the end of
-                            // the draft.
-                            draft.append("\n")
+                            // newline — so we insert one ourselves. Reach into the
+                            // focused field editor (NSTextView) and insert at the
+                            // current selection so the newline lands at the cursor
+                            // instead of being appended to the end of the draft.
+                            if let tv = NSApp.keyWindow?.firstResponder as? NSTextView {
+                                tv.insertText("\n", replacementRange: tv.selectedRange())
+                            } else {
+                                draft.append("\n")
+                            }
                             return .handled
                         }
                         Task { await send() }
