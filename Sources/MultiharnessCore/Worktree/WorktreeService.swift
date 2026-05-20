@@ -53,8 +53,21 @@ public struct WorktreeService: Sendable {
                 _ = try runGit(at: repoPath, args: ["branch", "-m", baseBranch])
             }
         }
+        // Prefer the latest tip of `origin/<baseBranch>` over the local
+        // `<baseBranch>` ref, which can lag if the user never `git
+        // pull`s the main repo. Local `<baseBranch>` is left untouched
+        // — any unpushed commits there are preserved; the user just
+        // has to push them if they want them seeded into new
+        // workspaces. Falls back to local when the remote ref is
+        // missing (offline, branch not on origin yet).
+        let originRef = "origin/\(baseBranch)"
+        let hasOrigin = (try? runGit(
+            at: repoPath,
+            args: ["rev-parse", "--quiet", "--verify", "refs/remotes/\(originRef)"]
+        )) != nil
+        let startPoint = hasOrigin ? originRef : baseBranch
         _ = try runGit(at: repoPath, args: [
-            "worktree", "add", "-b", branchName, worktreePath.path, baseBranch,
+            "worktree", "add", "-b", branchName, worktreePath.path, startPoint,
         ])
     }
 

@@ -72,4 +72,71 @@ final class WorktreeServiceBranchTests: XCTestCase {
         ])
         XCTAssertThrowsError(try svc.fetchOrigin(repoPath: repoDir.path, timeoutSeconds: 5))
     }
+
+    /// New worktrees should start at `origin/<base>` (the latest tip on
+    /// the remote), not at whatever the user's stale local `<base>`
+    /// happens to point at.
+    func testCreateWorktreeStartsAtOriginTipWhenLocalBaseIsBehind() throws {
+        // Push a NEW commit on main via a sibling clone — simulates
+        // another developer landing work on origin/main while this
+        // user's local main stays put.
+        let sibling = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mh-sibling-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: sibling, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: sibling) }
+        _ = try svc.runGit(at: sibling.path, args: [
+            "clone", "-q", remoteDir.path, "work",
+        ])
+        let siblingRepo = sibling.appendingPathComponent("work")
+        _ = try svc.runGit(at: siblingRepo.path, args: ["config", "user.email", "other@test"])
+        _ = try svc.runGit(at: siblingRepo.path, args: ["config", "user.name", "Other"])
+        try "second\n".write(
+            to: siblingRepo.appendingPathComponent("b.txt"),
+            atomically: true, encoding: .utf8
+        )
+        _ = try svc.runGit(at: siblingRepo.path, args: ["add", "."])
+        _ = try svc.runGit(at: siblingRepo.path, args: ["commit", "-q", "-m", "second"])
+        _ = try svc.runGit(at: siblingRepo.path, args: ["push", "-q", "origin", "main"])
+        let originTip = try svc.runGit(
+            at: siblingRepo.path,
+            args: ["rev-parse", "HEAD"]
+        ).trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Capture the local main tip BEFORE createWorktree runs — it
+        // should not change as a side-effect of worktree creation.
+        let localTipBefore = try svc.runGit(
+            at: repoDir.path,
+            args: ["rev-parse", "main"]
+        ).trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let worktreePath = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mh-wt-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: worktreePath) }
+        try svc.createWorktree(
+            repoPath: repoDir.path,
+            baseBranch: "main",
+            branchName: "feature/origin-tip",
+            worktreePath: worktreePath
+        )
+
+        // Worktree's HEAD should match origin/main's tip (after the
+        // implicit fetch inside createWorktree), not stale local main.
+        let worktreeTip = try svc.runGit(
+            at: worktreePath.path,
+            args: ["rev-parse", "HEAD"]
+        ).trimmingCharacters(in: .whitespacesAndNewlines)
+        XCTAssertEqual(worktreeTip, originTip,
+                       "worktree should fork from origin/main, not local main")
+        XCTAssertNotEqual(worktreeTip, localTipBefore,
+                          "sanity: origin moved ahead of local main")
+
+        // Local main is intentionally left untouched — unpushed work
+        // there would otherwise be silently swept under origin's tip.
+        let localTipAfter = try svc.runGit(
+            at: repoDir.path,
+            args: ["rev-parse", "main"]
+        ).trimmingCharacters(in: .whitespacesAndNewlines)
+        XCTAssertEqual(localTipAfter, localTipBefore,
+                       "local main must not be moved as a side-effect")
+    }
 }
