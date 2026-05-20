@@ -601,6 +601,15 @@ private struct DefaultsTab: View {
             }
             Divider()
 
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Agent context").font(.headline)
+                Toggle("Auto-load CLAUDE.md / AGENTS.md into the agent system prompt",
+                       isOn: $appStore.autoLoadAgentContext)
+                Text("Read on every session creation from the worktree root. Falls back to AGENTS.md if no CLAUDE.md is present. File edits take effect the next time you open the workspace.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Divider()
+
             Text("Used when creating a workspace if the project has no default and there's no prior workspace to inherit from. iPhone quick-create uses this too.")
                 .font(.caption).foregroundStyle(.secondary)
 

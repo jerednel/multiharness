@@ -42,6 +42,13 @@ export type AgentSessionOptions = {
   requestRename?: RequestRename;
   projectContext?: string;
   workspaceContext?: string;
+  /// Live contents of the worktree's CLAUDE.md (or AGENTS.md fallback),
+  /// loaded by the Mac before agent.create when the global
+  /// `auto_load_agent_context` setting is on. Injected as a separate
+  /// `<agent_context>` block so user-edited project/workspace context
+  /// fields stay untouched. Empty string when the setting is off or
+  /// neither file exists.
+  agentContext?: string;
   /// Human-readable project name (e.g. "multiharness"). Used in the
   /// system prompt orientation block so the model knows what repo it's
   /// in without having to inspect the filesystem. Optional for
@@ -101,6 +108,7 @@ export class AgentSession {
   private seq = 0;
   private projectContext: string;
   private workspaceContext: string;
+  private agentContext: string;
   private qaSentinelEnabled: boolean;
   /// True iff this workspace's display name is still the random
   /// adjective-noun placeholder. Flipped to false before kicking off the
@@ -147,6 +155,7 @@ export class AgentSession {
     this.projectId = opts.projectId;
     this.projectContext = opts.projectContext ?? "";
     this.workspaceContext = opts.workspaceContext ?? "";
+    this.agentContext = opts.agentContext ?? "";
     this.qaSentinelEnabled = opts.qaSentinelEnabled ?? false;
     // QA sessions are never AI-renamed (the spec passes nameSource:"named"
     // explicitly, but also guard at the agent level so a future caller
@@ -355,6 +364,11 @@ export class AgentSession {
         qaSentinelEnabled: this.qaSentinelEnabled,
       }));
       parts.push(this.buildOrientation());
+      if (this.agentContext.trim()) {
+        parts.push(
+          `<agent_context>\n${this.agentContext}\n</agent_context>`,
+        );
+      }
       if (this.projectContext.trim()) {
         parts.push(
           `<project_instructions>\n${this.projectContext}\n</project_instructions>`,

@@ -25,6 +25,18 @@ public final class AppStore {
         }
     }
     public static let playCompletionSoundDefaultsKey = "MultiharnessPlayCompletionSound"
+    /// Opt-out: when on (default), the Mac reads the worktree-root
+    /// CLAUDE.md (falling back to AGENTS.md) before every agent.create
+    /// and ships its contents to the sidecar as an `<agent_context>`
+    /// block. File edits take effect on next session creation; no live
+    /// re-read mid-conversation.
+    public var autoLoadAgentContext: Bool = true {
+        didSet {
+            guard oldValue != autoLoadAgentContext else { return }
+            UserDefaults.standard.set(autoLoadAgentContext, forKey: Self.autoLoadAgentContextDefaultsKey)
+        }
+    }
+    public static let autoLoadAgentContextDefaultsKey = "MultiharnessAutoLoadAgentContext"
     public static let anthropicConsoleProviderName = "Claude (API Usage Billing)"
     public var sidecarStatus: SidecarManager.Status = .stopped
     public var lastError: String?
@@ -96,6 +108,16 @@ public final class AppStore {
         // workspace has QA enabled AND a QA model is resolvable from
         // workspace+project. The Mac watches for the token on
         // `agent_end` and fires `runQA` automatically.
+        // Live-read CLAUDE.md (or AGENTS.md) from the worktree root if the
+        // user hasn't opted out. Done on every agent.create so file edits
+        // take effect on the next session — no SQLite caching.
+        let agentContext: String
+        if autoLoadAgentContext,
+           let loaded = AgentContextLoader.load(worktreePath: workspace.worktreePath) {
+            agentContext = loaded
+        } else {
+            agentContext = ""
+        }
         let params: [String: Any] = [
             "workspaceId": workspace.id.uuidString,
             "projectId": project.id.uuidString,
@@ -105,6 +127,7 @@ public final class AppStore {
             "nameSource": workspace.nameSource.rawValue,
             "projectContext": project.contextInstructions,
             "workspaceContext": workspace.contextInstructions,
+            "agentContext": agentContext,
             // Orientation fields the sidecar slots into a
             // <workspace_orientation> block at the top of the system
             // prompt so the agent doesn't ask "which project / repo?"
@@ -357,6 +380,9 @@ public final class AppStore {
         // Default true when never written; false only if the user explicitly toggled off.
         if UserDefaults.standard.object(forKey: Self.playCompletionSoundDefaultsKey) != nil {
             self.playCompletionSound = UserDefaults.standard.bool(forKey: Self.playCompletionSoundDefaultsKey)
+        }
+        if UserDefaults.standard.object(forKey: Self.autoLoadAgentContextDefaultsKey) != nil {
+            self.autoLoadAgentContext = UserDefaults.standard.bool(forKey: Self.autoLoadAgentContextDefaultsKey)
         }
         // Sync current status — sidecar.start() may have already fired before
         // this store was constructed, in which case the callback below would

@@ -18,6 +18,10 @@ export type CreateOptions = {
   nameSource?: NameSource;
   projectContext?: string;
   workspaceContext?: string;
+  /// Worktree-root CLAUDE.md (or AGENTS.md) contents, loaded by the Mac
+  /// when the global auto-load setting is on. Passed straight through to
+  /// AgentSession; the sidecar never reads the file itself.
+  agentContext?: string;
   /// Human-readable orientation, plumbed through to the AgentSession's
   /// system prompt. All optional for backwards compat — when missing
   /// the orientation block falls back to "Working directory: <path>".
@@ -64,6 +68,7 @@ export class AgentRegistry {
       requestRename: this.requestRename,
       projectContext: opts.projectContext,
       workspaceContext: opts.workspaceContext,
+      agentContext: opts.agentContext,
       projectName: opts.projectName,
       branchName: opts.branchName,
       baseBranch: opts.baseBranch,

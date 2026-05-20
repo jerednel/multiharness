@@ -60,6 +60,7 @@ export function registerMethods(
     }
     const projectContext = typeof p.projectContext === "string" ? p.projectContext : "";
     const workspaceContext = typeof p.workspaceContext === "string" ? p.workspaceContext : "";
+    const agentContext = typeof p.agentContext === "string" ? p.agentContext : "";
     const nameSourceRaw = typeof p.nameSource === "string" ? p.nameSource : undefined;
     const nameSource =
       nameSourceRaw === "random" || nameSourceRaw === "named"
@@ -82,6 +83,7 @@ export function registerMethods(
       nameSource,
       projectContext,
       workspaceContext,
+      agentContext,
       projectName,
       branchName,
       baseBranch,
