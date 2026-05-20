@@ -15,6 +15,7 @@ public final class RemoteAgentStore {
     /// Allocated on agent_start, cleared on agent_end. Mirrors the macOS
     /// AgentStore so the iOS UI can collapse runs into a single group.
     private var currentGroupId: String?
+    private var currentGroupKind: GroupKind?
     private var liveGroupCounter: Int = 0
 
     public init(workspaceId: String) {
@@ -30,10 +31,12 @@ public final class RemoteAgentStore {
             // Distinct prefix from history-replay ids ("g…") so live runs
             // can never collide with rehydrated ones in the same session.
             currentGroupId = "live-\(liveGroupCounter)"
+            currentGroupKind = (event.payload["kind"] as? String) == "qa" ? .qa : .build
         case "agent_end":
             isStreaming = false
             assistantTurnPending = false
             currentGroupId = nil
+            currentGroupKind = nil
             for i in turns.indices { turns[i].streaming = false }
         case "agent_error":
             let msg = (event.payload["message"] as? String) ?? "agent error"
@@ -42,7 +45,8 @@ public final class RemoteAgentStore {
             turns.append(ConversationTurn(
                 role: .assistant,
                 text: "⚠️ " + msg,
-                groupId: currentGroupId
+                groupId: currentGroupId,
+                groupKind: currentGroupKind
             ))
         case "message_start":
             if let msg = event.payload["message"] as? [String: Any],
@@ -58,6 +62,7 @@ public final class RemoteAgentStore {
                         role: .assistant,
                         text: "",
                         groupId: currentGroupId,
+                        groupKind: currentGroupKind,
                         streaming: true
                     ))
                     assistantTurnPending = false
@@ -79,6 +84,7 @@ public final class RemoteAgentStore {
                 toolName: name,
                 toolCallDescription: callDesc,
                 groupId: currentGroupId,
+                groupKind: currentGroupKind,
                 streaming: true
             ))
         case "tool_execution_end":
@@ -125,13 +131,34 @@ public final class RemoteAgentStore {
         } else {
             compactionInfo = nil
         }
+        let groupKind: GroupKind?
+        if let raw = json["groupKind"] as? String {
+            groupKind = GroupKind(rawValue: raw)
+        } else {
+            groupKind = nil
+        }
+        let qaVerdict: QaVerdict?
+        if r == .qaFindings, let raw = json["qaVerdict"] as? String {
+            qaVerdict = QaVerdict(rawValue: raw)
+        } else {
+            qaVerdict = nil
+        }
+        let qaFindings: [QaFinding]
+        if r == .qaFindings, let arr = json["qaFindings"] as? [[String: Any]] {
+            qaFindings = arr.compactMap(QaFinding.init(json:))
+        } else {
+            qaFindings = []
+        }
         return ConversationTurn(
             role: r,
             text: text,
             toolName: json["toolName"] as? String,
             toolCallDescription: json["toolCallDescription"] as? String,
             groupId: json["groupId"] as? String,
+            groupKind: groupKind,
             images: images,
+            qaVerdict: qaVerdict,
+            qaFindings: qaFindings,
             compaction: compactionInfo
         )
     }

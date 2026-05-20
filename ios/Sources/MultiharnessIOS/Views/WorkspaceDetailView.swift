@@ -98,7 +98,11 @@ private struct ConversationList: View {
                         case .single(let turn):
                             TurnRow(turn: turn).id(turn.id)
                         case .group(let id, let children):
-                            ResponseGroupRow(groupId: id, children: children)
+                            ResponseGroupRow(
+                                groupId: id,
+                                children: children,
+                                kind: children.compactMap(\.groupKind).first ?? .build
+                            )
                                 .id(id)
                         }
                     }
@@ -135,6 +139,7 @@ private struct ConversationList: View {
 private struct ResponseGroupRow: View {
     let groupId: String
     let children: [ConversationTurn]
+    let kind: GroupKind
 
     @State private var manuallyToggled = false
     @State private var manualExpanded = false
@@ -149,7 +154,12 @@ private struct ResponseGroupRow: View {
     }
 
     private var liftedFinalIndex: Int? {
-        children.indices.reversed().first(where: {
+        if let qaIdx = children.indices.reversed().first(where: {
+            children[$0].role == .qaFindings
+        }) {
+            return qaIdx
+        }
+        return children.indices.reversed().first(where: {
             children[$0].role == .assistant && !children[$0].text.isEmpty
         })
     }
@@ -170,6 +180,7 @@ private struct ResponseGroupRow: View {
         let messageCount = children.filter {
             $0.role == .assistant && !$0.text.isEmpty
         }.count
+        let findingsCount = children.filter { $0.role == .qaFindings }.count
         var parts: [String] = []
         if toolCount > 0 {
             parts.append("\(toolCount) tool call\(toolCount == 1 ? "" : "s")")
@@ -177,8 +188,19 @@ private struct ResponseGroupRow: View {
         if messageCount > 0 {
             parts.append("\(messageCount) message\(messageCount == 1 ? "" : "s")")
         }
+        if findingsCount > 0 {
+            parts.append("\(findingsCount) finding card\(findingsCount == 1 ? "" : "s")")
+        }
         if parts.isEmpty { return isStreaming ? "thinking…" : "no output" }
         return parts.joined(separator: ", ")
+    }
+
+    private var headerIcon: String {
+        kind == .qa ? "magnifyingglass" : "sparkles"
+    }
+
+    private var headerColor: Color {
+        kind == .qa ? .cyan : .purple
     }
 
     var body: some View {
@@ -193,7 +215,11 @@ private struct ResponseGroupRow: View {
                     Image(systemName: "chevron.right")
                         .font(.caption2).foregroundStyle(.secondary).frame(width: 10)
                         .rotationEffect(.degrees(expanded ? 90 : 0))
-                    Image(systemName: "sparkles").font(.caption).foregroundStyle(.purple)
+                    Image(systemName: headerIcon).font(.caption).foregroundStyle(headerColor)
+                    if kind == .qa {
+                        Text("QA review").font(.caption).bold().foregroundStyle(headerColor)
+                        Text("·").font(.caption).foregroundStyle(.secondary)
+                    }
                     Text(summary).font(.caption).foregroundStyle(.secondary)
                     if isStreaming {
                         ProgressView().scaleEffect(0.5).frame(width: 10, height: 10)
@@ -234,11 +260,9 @@ private struct TurnRow: View {
             toolRow
         case .compaction:
             CompactionMarkerRow(info: turn.compaction)
-        case .user, .assistant, .qaFindings:
-            // iOS doesn't have a dedicated QA card yet — render the
-            // findings as an assistant-style message row using its
-            // summary text. The structured findings array is preserved
-            // on the turn for a future richer iOS view.
+        case .qaFindings:
+            QaFindingsCard(turn: turn)
+        case .user, .assistant:
             messageRow
         }
     }
@@ -321,6 +345,156 @@ private struct TurnRow: View {
 
 }
 
+/// Structured render for the `qa_findings` turn the sidecar rehydrates
+/// from history.
+private struct QaFindingsCard: View {
+    let turn: ConversationTurn
+    @State private var findingsExpanded = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var verdict: QaVerdict {
+        turn.qaVerdict ?? .minorIssues
+    }
+
+    private var verdictAccent: Color {
+        switch verdict {
+        case .pass: return .green
+        case .minorIssues: return .orange
+        case .blockingIssues: return .red
+        }
+    }
+
+    private var verdictGlyph: String {
+        switch verdict {
+        case .pass: return "checkmark.seal.fill"
+        case .minorIssues: return "exclamationmark.triangle.fill"
+        case .blockingIssues: return "octagon.fill"
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass").foregroundStyle(.cyan).font(.caption)
+                Text("QA review").font(.caption).bold().foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+                verdictBadge
+            }
+
+            if !turn.text.isEmpty {
+                Text(turn.text)
+                    .font(.body)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            if !turn.qaFindings.isEmpty {
+                findingsDisclosure
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.cyan.opacity(0.06))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(verdictAccent.opacity(0.3), lineWidth: 1)
+        )
+    }
+
+    private var verdictBadge: some View {
+        HStack(spacing: 4) {
+            Image(systemName: verdictGlyph)
+            Text(verdict.label)
+        }
+        .font(.caption).bold()
+        .foregroundStyle(.white)
+        .padding(.horizontal, 8).padding(.vertical, 3)
+        .background(verdictAccent, in: Capsule())
+    }
+
+    private var findingsDisclosure: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Button {
+                withAnimation(.spring(duration: reduceMotion ? 0 : 0.2)) {
+                    findingsExpanded.toggle()
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "chevron.right")
+                        .font(.caption2).foregroundStyle(.secondary).frame(width: 10)
+                        .rotationEffect(.degrees(findingsExpanded ? 90 : 0))
+                    Text(findingsSummary)
+                        .font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if findingsExpanded {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(turn.qaFindings) { finding in
+                        findingRow(finding)
+                    }
+                }
+                .padding(.leading, 16)
+            }
+        }
+    }
+
+    private var findingsSummary: String {
+        let n = turn.qaFindings.count
+        return "\(n) finding\(n == 1 ? "" : "s")"
+    }
+
+    private func findingRow(_ finding: QaFinding) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: severityIcon(finding.severity))
+                .foregroundStyle(severityColor(finding.severity))
+                .font(.caption2)
+                .frame(width: 12)
+            VStack(alignment: .leading, spacing: 1) {
+                if let file = finding.file {
+                    HStack(spacing: 2) {
+                        Text(file)
+                            .font(.system(.caption2, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                        if let line = finding.line {
+                            Text(":\(line)")
+                                .font(.system(.caption2, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                Text(finding.message)
+                    .font(.caption)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func severityIcon(_ s: QaFinding.Severity) -> String {
+        switch s {
+        case .info: return "info.circle"
+        case .warning: return "exclamationmark.triangle"
+        case .blocker: return "octagon"
+        }
+    }
+
+    private func severityColor(_ s: QaFinding.Severity) -> Color {
+        switch s {
+        case .info: return .blue
+        case .warning: return .orange
+        case .blocker: return .red
+        }
+    }
+}
+
 private struct ThinkingRow: View {
     var body: some View {
         HStack(spacing: 8) {
@@ -377,6 +551,7 @@ private struct CompactionMarkerRow: View {
             }
         }
     }
+
 }
 
 private struct Composer: View {

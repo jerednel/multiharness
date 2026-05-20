@@ -110,11 +110,19 @@ export class DataReader {
     options?: { limit?: number; perTurnTextLimit?: number },
   ): Promise<{
     turns: Array<{
-      role: "user" | "assistant" | "tool" | "compaction";
+      role: "user" | "assistant" | "tool" | "qa_findings" | "compaction";
       text: string;
       toolName?: string;
       toolCallDescription?: string;
       groupId?: string;
+      groupKind?: "build" | "qa";
+      qaVerdict?: string;
+      qaFindings?: Array<{
+        severity: "info" | "warning" | "blocker";
+        file?: string;
+        line?: number;
+        message: string;
+      }>;
       images?: Array<{ data: string; mimeType: string }>;
       compaction?: {
         tier: number;
@@ -138,11 +146,19 @@ export class DataReader {
     if (!existsSync(path)) return { turns: [], hasMore: false, total: 0 };
     const text = await readFile(path, "utf8");
     const all: Array<{
-      role: "user" | "assistant" | "tool" | "compaction";
+      role: "user" | "assistant" | "tool" | "qa_findings" | "compaction";
       text: string;
       toolName?: string;
       toolCallDescription?: string;
       groupId?: string;
+      groupKind?: "build" | "qa";
+      qaVerdict?: string;
+      qaFindings?: Array<{
+        severity: "info" | "warning" | "blocker";
+        file?: string;
+        line?: number;
+        message: string;
+      }>;
       images?: Array<{ data: string; mimeType: string }>;
       compaction?: {
         tier: number;
@@ -158,6 +174,7 @@ export class DataReader {
       };
     }> = [];
     let groupId: string | undefined;
+    let groupKind: "build" | "qa" | undefined;
     let groupCounter = 0;
     for (const line of text.split("\n")) {
       if (!line.trim()) continue;
@@ -175,8 +192,10 @@ export class DataReader {
         // grouping helper, so a counter is enough.
         groupCounter += 1;
         groupId = `g${groupCounter}`;
+        groupKind = event.kind === "qa" ? "qa" : "build";
       } else if (event.type === "agent_end") {
         groupId = undefined;
+        groupKind = undefined;
       } else if (event.type === "message_end") {
         const msg = event.message;
         if (!msg) continue;
@@ -197,7 +216,12 @@ export class DataReader {
           if (imgs.length > 0) entry.images = imgs;
           all.push(entry);
         } else if (msg.role === "assistant") {
-          all.push({ role: "assistant", text: capped, groupId });
+          all.push({
+            role: "assistant",
+            text: capped,
+            ...(groupId ? { groupId } : {}),
+            ...(groupKind ? { groupKind } : {}),
+          });
         }
       } else if (event.type === "tool_execution_start") {
         const toolName = event.toolName ?? "tool";
@@ -208,6 +232,7 @@ export class DataReader {
           toolName,
           ...(toolCallDescription ? { toolCallDescription } : {}),
           ...(groupId ? { groupId } : {}),
+          ...(groupKind ? { groupKind } : {}),
         });
       } else if (event.type === "tool_execution_end") {
         let preview = "";
@@ -246,6 +271,15 @@ export class DataReader {
             droppedMessages: event.droppedMessages ?? 0,
             budget: event.budget ?? 0,
           },
+        });
+      } else if (event.type === "qa_findings") {
+        all.push({
+          role: "qa_findings",
+          text: typeof event.summary === "string" ? event.summary : "",
+          ...(groupId ? { groupId } : {}),
+          ...(groupKind ? { groupKind } : {}),
+          qaVerdict: event.verdict,
+          qaFindings: Array.isArray(event.findings) ? event.findings : [],
         });
       }
     }

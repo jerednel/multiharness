@@ -167,7 +167,7 @@ private struct ConversationView: View {
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
+                LazyVStack(alignment: .leading, spacing: 12) {
                     ForEach(groupConversationTurns(store.turns), id: \.id) { row in
                         switch row {
                         case .single(let turn):
