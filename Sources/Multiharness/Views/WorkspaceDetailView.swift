@@ -9,6 +9,7 @@ struct WorkspaceDetailView: View {
     @Bindable var appStore: AppStore
     @Bindable var workspaceStore: WorkspaceStore
     let agentRegistry: AgentRegistryStore
+    let terminalRegistry: TerminalRegistryStore
     let branchListService: BranchListService
 
     @State private var draftMessage: String = ""
@@ -16,6 +17,7 @@ struct WorkspaceDetailView: View {
     @State private var sessionReady = false
     @State private var sessionError: String?
     @State private var showingOneClickPR = false
+    @State private var terminalVisible: Bool = false
 
     var body: some View {
         HSplitView {
@@ -47,6 +49,15 @@ struct WorkspaceDetailView: View {
                     Spacer()
                 }
             }
+            // Floating terminal overlay — pops on top of the conversation
+            // column when Ctrl+` is pressed. Inspector (the second
+            // HSplitView child) stays untouched. The keyboard monitor
+            // sits as a background NSView so it can swallow Ctrl+`
+            // before SwiftTerm sees it, even while the terminal has
+            // key focus.
+            .overlay { terminalOverlayLayer }
+            .background(TerminalKeyboardMonitor(isVisible: $terminalVisible))
+            .animation(.spring(duration: 0.25), value: terminalVisible)
             // HSplitView needs an `idealWidth` on each child to decide
             // how to apportion space — without it the conversation column
             // could end up at its `minWidth` while the inspector takes
@@ -78,6 +89,21 @@ struct WorkspaceDetailView: View {
             OneClickPRSheet(
                 workspace: workspace,
                 isPresented: $showingOneClickPR
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var terminalOverlayLayer: some View {
+        if terminalVisible {
+            TerminalOverlay(
+                workspace: workspace,
+                registry: terminalRegistry,
+                isVisible: $terminalVisible
+            )
+            .padding(EdgeInsets(top: 50, leading: 40, bottom: 50, trailing: 40))
+            .transition(
+                AnyTransition.move(edge: .bottom).combined(with: AnyTransition.opacity)
             )
         }
     }

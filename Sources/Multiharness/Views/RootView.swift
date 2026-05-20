@@ -7,6 +7,7 @@ struct RootView: View {
     @Bindable var appStore: AppStore
     @Bindable var workspaceStore: WorkspaceStore
     let agentRegistry: AgentRegistryStore
+    let terminalRegistry: TerminalRegistryStore
     let branchListService: BranchListService
 
     @State private var sidebarSelection: SidebarSelection = .workspaces
@@ -165,6 +166,7 @@ struct RootView: View {
                 appStore: appStore,
                 workspaceStore: workspaceStore,
                 agentRegistry: agentRegistry,
+                terminalRegistry: terminalRegistry,
                 branchListService: branchListService
             )
         } else {

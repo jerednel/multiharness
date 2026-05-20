@@ -23,6 +23,11 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/gonzalezreal/swift-markdown-ui", from: "2.4.0"),
+        // PTY + xterm-compatible terminal emulator for the embedded
+        // floating terminal overlay. macOS-only — the iOS companion
+        // doesn't use it, so the dep is wired to the executable target
+        // rather than MultiharnessClient.
+        .package(url: "https://github.com/migueldeicaza/SwiftTerm", from: "1.13.0"),
     ],
     targets: [
         // Portable code that ships in BOTH the macOS app and the iOS companion:
@@ -43,7 +48,11 @@ let package = Package(
         ),
         .executableTarget(
             name: "Multiharness",
-            dependencies: ["MultiharnessCore", "MultiharnessClient"],
+            dependencies: [
+                "MultiharnessCore",
+                "MultiharnessClient",
+                .product(name: "SwiftTerm", package: "SwiftTerm"),
+            ],
             path: "Sources/Multiharness",
             resources: [.process("Resources")]
         ),

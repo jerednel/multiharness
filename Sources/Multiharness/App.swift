@@ -8,6 +8,7 @@ struct MultiharnessApp: App {
     @State private var appStore: AppStore?
     @State private var workspaceStore: WorkspaceStore?
     @State private var agentRegistry = AgentRegistryStore()
+    @State private var terminalRegistry = TerminalRegistryStore()
     @State private var relayHandler = RelayHandler()
     @State private var bootError: String?
     @State private var branchListService: BranchListService?
@@ -21,6 +22,7 @@ struct MultiharnessApp: App {
                         appStore: appStore,
                         workspaceStore: workspaceStore,
                         agentRegistry: agentRegistry,
+                        terminalRegistry: terminalRegistry,
                         branchListService: branchListService
                     )
                 } else if let bootError {
