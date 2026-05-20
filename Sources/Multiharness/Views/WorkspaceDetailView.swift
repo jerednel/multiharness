@@ -165,46 +165,37 @@ private struct ConversationView: View {
     let workspaceId: UUID
 
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 12) {
-                    ForEach(groupConversationTurns(store.turns), id: \.id) { row in
-                        switch row {
-                        case .single(let turn):
-                            TurnCard(turn: turn).id(turn.id)
-                        case .group(let id, let children):
-                            ResponseGroupView(
-                                groupId: id,
-                                children: children,
-                                kind: store.groupKind(for: id)
-                            )
-                                .id(id)
-                        }
-                    }
-                    if store.isStreaming && !hasActiveGroup {
-                        ThinkingCard().id(thinkingCardId)
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 12) {
+                ForEach(groupConversationTurns(store.turns), id: \.id) { row in
+                    switch row {
+                    case .single(let turn):
+                        TurnCard(turn: turn).id(turn.id)
+                    case .group(let id, let children):
+                        ResponseGroupView(
+                            groupId: id,
+                            children: children,
+                            kind: store.groupKind(for: id)
+                        )
+                            .id(id)
                     }
                 }
-                .padding(16)
-            }
-            .onChange(of: store.turns.count) { _, _ in
-                if let last = store.turns.last {
-                    withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
+                if store.isStreaming && !hasActiveGroup {
+                    ThinkingCard()
                 }
             }
-            .onChange(of: store.isStreaming) { _, streaming in
-                if streaming {
-                    withAnimation { proxy.scrollTo(thinkingCardId, anchor: .bottom) }
-                }
-            }
-            .onChange(of: workspaceId, initial: true) { _, _ in
-                if let last = store.turns.last {
-                    proxy.scrollTo(last.id, anchor: .bottom)
-                } else if store.isStreaming {
-                    proxy.scrollTo(thinkingCardId, anchor: .bottom)
-                }
-            }
+            .padding(16)
         }
+        // Anchors the initial layout to the bottom of the conversation and
+        // keeps the bottom visible as content grows (new turns, streaming
+        // text deltas). Replaces the prior sentinel+geometry follow logic,
+        // which raced with async history rehydration and left the user
+        // stranded at the top when first opening a workspace.
+        .defaultScrollAnchor(.bottom)
+        // Force a fresh ScrollView per workspace so the bottom anchor
+        // re-applies to the new content instead of inheriting the prior
+        // workspace's scroll position.
+        .id(workspaceId)
     }
 
     /// True iff there's an in-progress group already at the bottom — in
@@ -214,8 +205,6 @@ private struct ConversationView: View {
         guard let last = store.turns.last, last.groupId != nil else { return false }
         return store.isStreaming
     }
-
-    private let thinkingCardId = "thinking-card"
 }
 
 private struct SidecarCrashBanner: View {
