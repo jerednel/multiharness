@@ -42,6 +42,11 @@ struct WorkspaceDetailView: View {
                         sessionReady: sessionReady && isSidecarHealthy,
                         sessionError: sessionError
                     )
+                    // Force a fresh Composer identity per workspace so
+                    // @State (draft text, pending images, attach errors)
+                    // resets when the user switches workspaces instead
+                    // of carrying over from the previous one.
+                    .id(workspace.id)
                     .padding(12)
                 } else {
                     Spacer()

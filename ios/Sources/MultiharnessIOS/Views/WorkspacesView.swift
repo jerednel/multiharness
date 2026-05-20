@@ -233,6 +233,9 @@ struct WorkspacesView: View {
             }
             .navigationDestination(for: RemoteWorkspace.self) { ws in
                 WorkspaceDetailView(connection: connection, workspace: ws)
+                    // Force a fresh view identity per workspace so @State
+                    // (draft text, pending images) resets on navigation.
+                    .id(ws.id)
             }
         }
     }
