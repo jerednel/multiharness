@@ -138,11 +138,11 @@ final class PullRequestServiceTests: XCTestCase {
 
     /// Full orchestrator up to (but not including) the `gh` step.
     /// Three outcomes are acceptable here, depending on the host:
-    ///   - `gh` not installed AND origin doesn't look like GitHub →
-    ///     fall back to `noFallbackUrl` (our bare local path).
-    ///   - `gh` installed but unauthenticated against the fake remote
-    ///     → `.ghFailed`.
-    ///   - `gh` somehow happy with the bare remote → success.
+    ///   - Origin doesn't look like a recognised forge →
+    ///     `.unrecognisedForge` (our bare local path lands here).
+    ///   - CLI installed but unauthenticated against the fake remote
+    ///     → `.cliFailed`.
+    ///   - CLI somehow happy with the bare remote → success.
     /// In every case, by the time the call returns we must have pushed
     /// to the bare remote and visited all four phases.
     func testOpenPullRequestRunsAllPhasesAndPushes() throws {
@@ -160,10 +160,11 @@ final class PullRequestServiceTests: XCTestCase {
             )
         } catch let err as PullRequestService.Failure {
             switch err {
-            case .noFallbackUrl, .ghFailed:
-                break  // expected on hosts without `gh` (local origin
-                       // isn't github.com, so no fallback URL) or with
-                       // `gh` that hates our fake remote.
+            case .noFallbackUrl, .cliFailed, .unrecognisedForge:
+                break  // expected on hosts without a recognised forge
+                       // (local bare-repo origin doesn't match github
+                       // or gitlab) or with a CLI that hates our fake
+                       // remote.
             default:
                 XCTFail("unexpected failure \(err)")
             }
@@ -186,12 +187,9 @@ final class PullRequestServiceTests: XCTestCase {
     /// directly. (Going through `openPullRequest` would require either
     /// hitting the network or stubbing gh discovery, neither of which
     /// belong in a unit test.)
-    func testFallbackCompareUrlForGithubSshOrigin() throws {
-        _ = try worktreeSvc.runGit(at: repoDir.path, args: [
-            "remote", "set-url", "origin", "git@github.com:acme/widgets.git",
-        ])
-        let url = try svc.fallbackCompareUrl(
-            worktreePath: repoDir.path,
+    func testFallbackCompareUrlForGithubSshOrigin() {
+        let url = svc.fallbackCompareUrl(
+            forge: .github(slug: "acme/widgets"),
             base: "main",
             head: "feature"
         )
@@ -201,42 +199,66 @@ final class PullRequestServiceTests: XCTestCase {
         )
     }
 
-    func testFallbackCompareUrlForGithubHttpsOrigin() throws {
-        _ = try worktreeSvc.runGit(at: repoDir.path, args: [
-            "remote", "set-url", "origin", "https://github.com/acme/widgets.git",
-        ])
-        let url = try svc.fallbackCompareUrl(
-            worktreePath: repoDir.path,
+    func testFallbackCompareUrlForGithubHttpsOriginWithSlashInBranch() {
+        let url = svc.fallbackCompareUrl(
+            forge: .github(slug: "acme/widgets"),
             base: "main",
             head: "feature/foo"
         )
         // GitHub accepts slashes literally in compare URLs (it's how
-        // `feature/foo`-style branch names work in the browser). We
-        // pass them through `.urlPathAllowed`, which leaves `/`
-        // unescaped — that's the intended behavior.
+        // `feature/foo`-style branch names work in the browser).
         XCTAssertEqual(
             url,
             "https://github.com/acme/widgets/compare/main...feature/foo?expand=1"
         )
     }
 
-    func testFallbackCompareUrlRejectsNonGithubOrigin() throws {
+    func testFallbackCompareUrlForGitlab() {
+        let url = svc.fallbackCompareUrl(
+            forge: .gitlab(slug: "acme/widgets"),
+            base: "main",
+            head: "feature"
+        )
+        // GitLab requires bracketed query parameters; we percent-encode
+        // them so URL(string:) accepts the result.
+        XCTAssertEqual(
+            url,
+            "https://gitlab.com/acme/widgets/-/merge_requests/new?"
+            + "merge_request%5Bsource_branch%5D=feature"
+            + "&merge_request%5Btarget_branch%5D=main"
+        )
+    }
+
+    func testDetectForgeFromOriginThrowsForUnrecognisedRemote() throws {
         _ = try worktreeSvc.runGit(at: repoDir.path, args: [
-            "remote", "set-url", "origin", "git@gitlab.com:acme/widgets.git",
+            "remote", "set-url", "origin", "git@bitbucket.org:acme/widgets.git",
         ])
         XCTAssertThrowsError(
-            try svc.fallbackCompareUrl(
-                worktreePath: repoDir.path,
-                base: "main",
-                head: "feature"
-            )
+            try svc.detectForgeFromOrigin(worktreePath: repoDir.path)
         ) { err in
-            if case PullRequestService.Failure.noFallbackUrl = err {
+            if case PullRequestService.Failure.unrecognisedForge = err {
                 // expected
             } else {
-                XCTFail("expected noFallbackUrl, got \(err)")
+                XCTFail("expected unrecognisedForge, got \(err)")
             }
         }
+    }
+
+    func testDetectForgeFromOriginIdentifiesGithubAndGitlab() throws {
+        _ = try worktreeSvc.runGit(at: repoDir.path, args: [
+            "remote", "set-url", "origin", "git@github.com:acme/widgets.git",
+        ])
+        XCTAssertEqual(
+            try svc.detectForgeFromOrigin(worktreePath: repoDir.path),
+            .github(slug: "acme/widgets")
+        )
+        _ = try worktreeSvc.runGit(at: repoDir.path, args: [
+            "remote", "set-url", "origin", "https://gitlab.com/acme/widgets.git",
+        ])
+        XCTAssertEqual(
+            try svc.detectForgeFromOrigin(worktreePath: repoDir.path),
+            .gitlab(slug: "acme/widgets")
+        )
     }
 
     func testGithubSlugParserHandlesCommonShapes() {
@@ -272,6 +294,37 @@ final class PullRequestServiceTests: XCTestCase {
             PullRequestService.githubSlug(fromRemoteUrl: ""),
             "empty input"
         )
+    }
+
+    func testDetectForgeRecognisesGitlabUrlShapes() {
+        XCTAssertEqual(
+            PullRequestService.detectForge(fromRemoteUrl: "git@gitlab.com:acme/widgets.git"),
+            .gitlab(slug: "acme/widgets")
+        )
+        XCTAssertEqual(
+            PullRequestService.detectForge(fromRemoteUrl: "https://gitlab.com/acme/widgets.git"),
+            .gitlab(slug: "acme/widgets")
+        )
+        XCTAssertEqual(
+            PullRequestService.detectForge(fromRemoteUrl: "ssh://git@gitlab.com/acme/widgets.git"),
+            .gitlab(slug: "acme/widgets")
+        )
+        // GitLab supports subgroups — owner/sub/repo should round-trip
+        // so glab can find the right project.
+        XCTAssertEqual(
+            PullRequestService.detectForge(fromRemoteUrl: "git@gitlab.com:acme/team/widgets.git"),
+            .gitlab(slug: "acme/team/widgets")
+        )
+    }
+
+    func testDetectForgeReturnsNilForUnknownHosts() {
+        XCTAssertNil(
+            PullRequestService.detectForge(fromRemoteUrl: "git@bitbucket.org:acme/widgets.git")
+        )
+        XCTAssertNil(
+            PullRequestService.detectForge(fromRemoteUrl: "https://example.com/acme/widgets.git")
+        )
+        XCTAssertNil(PullRequestService.detectForge(fromRemoteUrl: ""))
     }
 
     func testOpenPullRequestFailsWithNothingToPrOnCleanRepoWithNoAhead() throws {

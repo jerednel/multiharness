@@ -18,7 +18,12 @@ struct OneClickPRSheet: View {
     /// right label for the final step ("Opening PR via `gh`" vs.
     /// "Building compare URL"). Updating this once at the top of
     /// `startFlow()` avoids a re-probe on every redraw.
-    @State private var ghAvailable: Bool = true
+    @State private var cliAvailable: Bool = true
+    /// Forge detected from `origin` up front. Drives all PR-vs-MR
+    /// terminology + the CLI name in the checklist. Defaults to GitHub
+    /// so the first paint (before `startFlow` populates this) reads
+    /// sensibly for the most common case.
+    @State private var forge: Forge = .github(slug: "")
     private let service = PullRequestService()
 
     private enum ScreenState {
@@ -27,12 +32,16 @@ struct OneClickPRSheet: View {
         case failed(String)
     }
 
+    private var sheetTitle: String {
+        "Open \(forge.requestNoun.capitalized)"
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 8) {
                 Image(systemName: "arrow.up.right.square")
                     .font(.title2).foregroundStyle(Color.accentColor)
-                Text("Open Pull Request").font(.title2).bold()
+                Text(sheetTitle).font(.title2).bold()
             }
             HStack(spacing: 6) {
                 Image(systemName: "arrow.triangle.branch").font(.caption)
@@ -67,9 +76,9 @@ struct OneClickPRSheet: View {
                 stepRow(.pushing, label: "Pushing branch to origin")
                 stepRow(
                     .opening,
-                    label: ghAvailable
-                        ? "Opening PR via `gh`"
-                        : "Building GitHub compare URL"
+                    label: cliAvailable
+                        ? "Opening \(forge.requestAbbrev) via `\(forge.cliName)`"
+                        : "Building \(forge.displayName) compare URL"
                 )
             }
         case .done(let outcome):
@@ -81,14 +90,14 @@ struct OneClickPRSheet: View {
                         .foregroundStyle(outcome.didCreatePr ? .green : Color.accentColor)
                         .font(.title3)
                     Text(outcome.didCreatePr
-                         ? "Pull request opened"
-                         : "Branch pushed — click to open PR").font(.headline)
+                         ? "\(outcome.forge.requestNoun.capitalized) opened"
+                         : "Branch pushed — click to open \(outcome.forge.requestAbbrev)").font(.headline)
                 }
                 if !outcome.didCreatePr {
                     // Explain the fallback path so the user isn't left
-                    // wondering why the PR didn't auto-open. One
+                    // wondering why the request didn't auto-open. One
                     // sentence — anything longer reads as an apology.
-                    Text("`gh` isn't installed, so we couldn't create the PR for you. The branch is on GitHub; click below to open the create-PR form.")
+                    Text("`\(outcome.forge.cliName)` isn't installed, so we couldn't create the \(outcome.forge.requestAbbrev) for you. The branch is on \(outcome.forge.displayName); click below to open the create-\(outcome.forge.requestAbbrev) form.")
                         .font(.caption).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -121,7 +130,7 @@ struct OneClickPRSheet: View {
                 HStack(spacing: 8) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(.yellow).font(.title3)
-                    Text("Couldn't open PR").font(.headline)
+                    Text("Couldn't open \(forge.requestAbbrev)").font(.headline)
                 }
                 ScrollView {
                     Text(msg)
@@ -187,8 +196,8 @@ struct OneClickPRSheet: View {
                 } label: {
                     Label(
                         outcome.didCreatePr
-                            ? "Open PR in browser"
-                            : "Create PR on GitHub",
+                            ? "Open \(outcome.forge.requestAbbrev) in browser"
+                            : "Create \(outcome.forge.requestAbbrev) on \(outcome.forge.displayName)",
                         systemImage: "safari"
                     )
                 }
@@ -206,10 +215,23 @@ struct OneClickPRSheet: View {
     private func startFlow() {
         state = .running
         phase = .staging
-        // Probe gh once up front. The orchestrator does its own probe
-        // when deciding which branch to take; this copy is purely so
-        // the in-progress checklist labels its final step correctly.
-        ghAvailable = (service.locateGh() != nil)
+        // Resolve the forge up front so checklist labels read correctly
+        // before the orchestrator even starts. A failure here surfaces
+        // as the same .failed state the rest of the flow uses.
+        let detected: Forge
+        do {
+            detected = try service.detectForgeFromOrigin(worktreePath: workspace.worktreePath)
+        } catch {
+            let msg = (error as? LocalizedError)?.errorDescription
+                ?? String(describing: error)
+            state = .failed(msg)
+            return
+        }
+        forge = detected
+        // Probe the forge CLI once up front. The orchestrator does its
+        // own probe; this copy is purely so the in-progress checklist
+        // labels its final step correctly.
+        cliAvailable = (service.locateCli(name: detected.cliName) != nil)
         let svc = service
         let worktreePath = workspace.worktreePath
         let branch = workspace.branchName
