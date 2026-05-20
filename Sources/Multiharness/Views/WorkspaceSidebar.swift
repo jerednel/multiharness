@@ -192,6 +192,13 @@ struct AllProjectsSidebar: View {
     var onQuickCreate: (Project) -> Void
 
     @State private var pendingReconcileProject: Project? = nil
+    /// Hosted on the stable List parent (not inside a ForEach child)
+    /// so the sheet survives `appStore.projects` mutations — e.g.
+    /// saving the default base branch from inside the sheet itself.
+    /// When the sheet lived on ProjectDisclosure, the array mutation
+    /// re-identified ForEach children and SwiftUI/NavigationSplitView
+    /// dismissed-and-re-presented the sheet on a loop.
+    @State private var pendingProjectSettings: Project? = nil
 
     var body: some View {
         List(selection: $selection) {
@@ -204,7 +211,8 @@ struct AllProjectsSidebar: View {
                     branchListService: branchListService,
                     selection: $selection,
                     onQuickCreate: { onQuickCreate(project) },
-                    onReconcile: { pendingReconcileProject = project }
+                    onReconcile: { pendingReconcileProject = project },
+                    onOpenSettings: { pendingProjectSettings = project }
                 )
             }
         }
@@ -220,6 +228,14 @@ struct AllProjectsSidebar: View {
                 )
             )
         }
+        .sheet(item: $pendingProjectSettings) { proj in
+            ProjectSettingsSheet(
+                project: proj,
+                appStore: appStore,
+                branchListService: branchListService,
+                onClose: { pendingProjectSettings = nil }
+            )
+        }
     }
 }
 
@@ -232,10 +248,13 @@ private struct ProjectDisclosure: View {
     @Binding var selection: UUID?
     let onQuickCreate: () -> Void
     let onReconcile: () -> Void
+    /// Bubble settings-open up to the stable parent so the sheet
+    /// doesn't live inside this ForEach child (see AllProjectsSidebar
+    /// for the bug this avoids).
+    let onOpenSettings: () -> Void
 
     @State private var isExpanded: Bool
     @State private var groupByStatus: Bool
-    @State private var showSettings = false
     @State private var renameTarget: Workspace?
 
     init(
@@ -246,7 +265,8 @@ private struct ProjectDisclosure: View {
         branchListService: BranchListService,
         selection: Binding<UUID?>,
         onQuickCreate: @escaping () -> Void,
-        onReconcile: @escaping () -> Void
+        onReconcile: @escaping () -> Void,
+        onOpenSettings: @escaping () -> Void
     ) {
         self.project = project
         self.appStore = appStore
@@ -256,6 +276,7 @@ private struct ProjectDisclosure: View {
         self._selection = selection
         self.onQuickCreate = onQuickCreate
         self.onReconcile = onReconcile
+        self.onOpenSettings = onOpenSettings
         let expandedKey = Self.expandedKey(project.id)
         let groupKey = Self.groupKey(project.id)
         let defaults = UserDefaults.standard
@@ -277,14 +298,6 @@ private struct ProjectDisclosure: View {
         .onChange(of: groupByStatus) { _, new in
             UserDefaults.standard.set(new, forKey: Self.groupKey(project.id))
         }
-        .sheet(isPresented: $showSettings) {
-            ProjectSettingsSheet(
-                project: currentProject,
-                appStore: appStore,
-                branchListService: branchListService,
-                onClose: { showSettings = false }
-            )
-        }
         .sheet(item: $renameTarget) { ws in
             RenameWorkspaceSheet(
                 workspaceStore: workspaceStore,
@@ -297,10 +310,6 @@ private struct ProjectDisclosure: View {
         }
     }
 
-    private var currentProject: Project {
-        appStore.projects.first(where: { $0.id == project.id }) ?? project
-    }
-
     @ViewBuilder
     private var header: some View {
         HStack(spacing: 6) {
@@ -310,7 +319,7 @@ private struct ProjectDisclosure: View {
             Menu {
                 Toggle("Group by status", isOn: $groupByStatus)
                 Divider()
-                Button("Project settings…") { showSettings = true }
+                Button("Project settings…") { onOpenSettings() }
             } label: {
                 Image(systemName: "line.3.horizontal.decrease")
                     .font(.caption)
