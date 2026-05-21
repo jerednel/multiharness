@@ -32,7 +32,8 @@ enum ComposerPaste {
     /// screenshots; `.image` catches HEIC, TIFF, GIF, and image files
     /// dragged in from Finder. `.fileURL` is needed because some apps
     /// (Preview, Finder) put a file reference on the pasteboard rather
-    /// than the bytes.
+    /// than the bytes — and it also lets users drop text-based files
+    /// (CSV, JSON, etc.) which get inlined into the draft.
     static var acceptedTypes: [UTType] {
         [.png, .jpeg, .image, .fileURL]
     }
@@ -186,6 +187,92 @@ enum ComposerPaste {
         case "heic": return "image/heic"
         default: return "image/png"
         }
+    }
+
+    /// Walk a set of `NSItemProvider`s looking for file-URL drops that
+    /// point at text files (CSV, JSON, etc.). For each one found, reads
+    /// the file and returns a fenced code-block string ready to inline
+    /// into the draft. Image-file URLs are silently skipped (handled by
+    /// the parallel `absorb` call).
+    static func absorbTextFiles(
+        providers: [NSItemProvider],
+        completion: @escaping ([String]) -> Void
+    ) {
+        let group = DispatchGroup()
+        var blocks: [String] = []
+        let lock = NSLock()
+
+        for provider in providers {
+            guard provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier)
+            else { continue }
+            group.enter()
+            _ = provider.loadDataRepresentation(forTypeIdentifier: UTType.fileURL.identifier) { data, _ in
+                defer { group.leave() }
+                guard let data,
+                      let url = URL(dataRepresentation: data, relativeTo: nil),
+                      isTextFile(url)
+                else { return }
+                if case .success(let block) = loadTextFile(at: url) {
+                    lock.lock(); defer { lock.unlock() }
+                    blocks.append(block)
+                }
+            }
+        }
+
+        group.notify(queue: .main) {
+            completion(blocks)
+        }
+    }
+
+    // MARK: - Text file inlining
+
+    /// Hard cap on text file size we're willing to inline into the draft.
+    /// Anything larger is rejected with an error message so the user
+    /// isn't surprised by a 200 MB CSV landing in the text field.
+    private static let kMaxTextFileBytes = 2 * 1024 * 1024  // 2 MB
+
+    /// Extensions we recognise as "read the contents and inline as a
+    /// code block" rather than "encode as an image attachment".
+    private static let textFileExtensions: Set<String> = [
+        "csv", "tsv", "json", "jsonl", "ndjson",
+        "txt", "md", "markdown", "log",
+        "xml", "html", "htm", "svg",
+        "yaml", "yml", "toml", "ini", "cfg", "conf",
+        "py", "js", "ts", "swift", "rs", "go", "java", "kt",
+        "c", "cpp", "h", "hpp", "m", "mm",
+        "rb", "sh", "zsh", "bash", "fish",
+        "sql", "graphql", "proto",
+        "env", "properties",
+    ]
+
+    /// Returns `true` when the URL points to a file we should read as
+    /// text and inline into the draft rather than treat as an image.
+    static func isTextFile(_ url: URL) -> Bool {
+        textFileExtensions.contains(url.pathExtension.lowercased())
+    }
+
+    /// Read a text file and wrap its contents in a fenced code block
+    /// with the filename as a header. Returns a formatted string ready
+    /// to be appended to the draft.
+    static func loadTextFile(at url: URL) -> Swift.Result<String, ImageLoadError> {
+        guard let data = try? Data(contentsOf: url) else {
+            return .failure(ImageLoadError(message: "Could not read \(url.lastPathComponent)"))
+        }
+        guard data.count <= kMaxTextFileBytes else {
+            let sizeMB = String(format: "%.1f", Double(data.count) / 1_048_576)
+            return .failure(ImageLoadError(
+                message: "\(url.lastPathComponent) is too large (\(sizeMB) MB). Max is 2 MB."
+            ))
+        }
+        guard let text = String(data: data, encoding: .utf8) else {
+            return .failure(ImageLoadError(
+                message: "\(url.lastPathComponent) is not valid UTF-8 text."
+            ))
+        }
+        let ext = url.pathExtension.lowercased()
+        let fence = "```\(ext)"
+        let block = "**\(url.lastPathComponent)**\n\(fence)\n\(text)\n```"
+        return .success(block)
     }
 }
 
