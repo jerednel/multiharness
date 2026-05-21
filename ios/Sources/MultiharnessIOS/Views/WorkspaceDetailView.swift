@@ -46,6 +46,9 @@ struct WorkspaceDetailView: View {
                     }
                 }
             )
+            // Force a fresh Composer identity per workspace so @State
+            // resets when switching workspaces.
+            .id(workspace.id)
             .padding(8)
         }
         .navigationTitle(workspace.name)
