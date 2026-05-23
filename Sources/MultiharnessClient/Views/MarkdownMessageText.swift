@@ -9,13 +9,27 @@ public struct MarkdownMessageText: View {
     }
 
     public var body: some View {
+        #if canImport(AppKit) && !targetEnvironment(macCatalyst)
+        // macOS: use NSTextView-backed renderer for cross-block text
+        // selection. MarkdownUI renders each block as a separate SwiftUI
+        // view, so text selection is confined to individual paragraphs.
+        // NSTextView renders the entire markdown as one NSAttributedString,
+        // giving the user free-form selection across paragraphs, headings,
+        // code blocks, and tables.
+        SelectableMarkdownText(text)
+        #else
+        // iOS: MarkdownUI is fine — iOS text selection UX is tap-to-select,
+        // and the per-block limitation is less noticeable.
         Markdown(text)
             .markdownTheme(.multiharnessChat)
             .textSelection(.enabled)
+        #endif
     }
 }
 
-private extension Theme {
+// MARK: - iOS / MarkdownUI theme (kept for the iOS path)
+
+extension Theme {
     static let multiharnessChat: Theme = Theme()
         .text {
             ForegroundColor(.primary)
