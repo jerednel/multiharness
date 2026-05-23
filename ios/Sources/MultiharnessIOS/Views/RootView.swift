@@ -2,6 +2,7 @@ import SwiftUI
 
 struct RootView: View {
     @Bindable var pairing: PairingStore
+    let draftStore: ComposerDraftStore
     @State private var showingAddPairing = false
     @State private var showingMacSwitcher = false
 
@@ -10,6 +11,7 @@ struct RootView: View {
             if let conn = pairing.connection, let active = pairing.activePairing {
                 WorkspacesView(
                     connection: conn,
+                    draftStore: draftStore,
                     onUnpair: { pairing.forget(active.id) },
                     onSwitchMac: { showingMacSwitcher = true },
                     onAddMac: { showingAddPairing = true },

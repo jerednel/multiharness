@@ -11,6 +11,7 @@ struct WorkspaceDetailView: View {
     @Bindable var workspaceStore: WorkspaceStore
     let agentRegistry: AgentRegistryStore
     let terminalRegistry: TerminalRegistryStore
+    let draftStore: ComposerDraftStore
     let branchListService: BranchListService
 
     @State private var draftMessage: String = ""
@@ -40,6 +41,7 @@ struct WorkspaceDetailView: View {
                         store: store,
                         appStore: appStore,
                         workspaceStore: workspaceStore,
+                        draftStore: draftStore,
                         sessionReady: sessionReady && isSidecarHealthy,
                         sessionError: sessionError
                     )
@@ -574,16 +576,35 @@ private struct Composer: View {
     @Bindable var store: AgentStore
     @Bindable var appStore: AppStore
     @Bindable var workspaceStore: WorkspaceStore
+    @Bindable var draftStore: ComposerDraftStore
     let sessionReady: Bool
     let sessionError: String?
-    @State private var draft = ""
     @State private var switcherShown = false
-    /// Image attachments staged for the next send. Cleared after a
-    /// successful send; the user can also remove individual entries with
-    /// the X button on each thumbnail. Drop targets + paste both append
-    /// here.
-    @State private var pendingImages: [TurnImage] = []
     @State private var attachError: String?
+
+    /// Draft text and staged images live in `draftStore` (keyed by
+    /// workspace.id) so they survive the `.id(workspace.id)` teardown
+    /// that resets transient Composer UI on workspace switches.
+    private var draftBinding: Binding<String> {
+        Binding(
+            get: { draftStore.draft(for: workspace.id) },
+            set: { draftStore.setDraft($0, for: workspace.id) }
+        )
+    }
+    private var imagesBinding: Binding<[TurnImage]> {
+        Binding(
+            get: { draftStore.pendingImages(for: workspace.id) },
+            set: { draftStore.setPendingImages($0, for: workspace.id) }
+        )
+    }
+    private var draft: String {
+        get { draftStore.draft(for: workspace.id) }
+        nonmutating set { draftStore.setDraft(newValue, for: workspace.id) }
+    }
+    private var pendingImages: [TurnImage] {
+        get { draftStore.pendingImages(for: workspace.id) }
+        nonmutating set { draftStore.setPendingImages(newValue, for: workspace.id) }
+    }
     /// True from the moment the user clicks "Run QA" in the popover
     /// until the sidecar's `agent_start` (or an error) reaches us.
     /// Closes the small race where a double-click would fire two
@@ -657,7 +678,7 @@ private struct Composer: View {
                 PendingMessagesStrip(store: store)
             }
             if !pendingImages.isEmpty {
-                ComposerAttachmentStrip(images: $pendingImages)
+                ComposerAttachmentStrip(images: imagesBinding)
             }
             HStack(alignment: .bottom, spacing: 8) {
                 // Manual attach (file picker) — paste/drop are the primary
@@ -672,7 +693,7 @@ private struct Composer: View {
                 .buttonStyle(.multiharness)
                 .help("Attach images or text files (CSV, JSON, etc.)")
 
-                TextField("Message", text: $draft, axis: .vertical)
+                TextField("Message", text: draftBinding, axis: .vertical)
                     .textFieldStyle(.plain)
                     .lineLimit(1...8)
                     .padding(.horizontal, 8).padding(.vertical, 6)

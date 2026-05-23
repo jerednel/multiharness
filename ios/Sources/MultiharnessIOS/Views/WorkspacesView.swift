@@ -3,6 +3,7 @@ import MultiharnessClient
 
 struct WorkspacesView: View {
     @Bindable var connection: ConnectionStore
+    let draftStore: ComposerDraftStore
     let onUnpair: () -> Void
     let onSwitchMac: () -> Void
     let onAddMac: () -> Void
@@ -232,10 +233,11 @@ struct WorkspacesView: View {
                 }
             }
             .navigationDestination(for: RemoteWorkspace.self) { ws in
-                WorkspaceDetailView(connection: connection, workspace: ws)
-                    // Force a fresh view identity per workspace so @State
-                    // (draft text, pending images) resets on navigation.
-                    .id(ws.id)
+                WorkspaceDetailView(
+                    connection: connection,
+                    workspace: ws,
+                    draftStore: draftStore
+                )
             }
         }
     }
