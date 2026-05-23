@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import MultiharnessClient
 import MultiharnessCore
 
@@ -23,6 +24,7 @@ struct ProjectSettingsSheet: View {
     @State private var qaSaveState: SaveState = .idle
     @State private var qaAutoApplyEnabled: Bool = false
     @State private var qaAutoApplySaveState: SaveState = .idle
+    @State private var repoWebURL: URL?
 
     enum SaveState { case idle, saving, saved, error(String) }
 
@@ -34,7 +36,26 @@ struct ProjectSettingsSheet: View {
                     Spacer()
                     Button("Done", action: onClose).keyboardShortcut(.defaultAction)
                 }
-                Text(project.name).font(.headline)
+                HStack(spacing: 8) {
+                    Text(project.name).font(.headline)
+                    if let url = repoWebURL {
+                        Link(destination: url) {
+                            HStack(spacing: 3) {
+                                Image(systemName: "link")
+                                Text(url.absoluteString)
+                                    .lineLimit(1).truncationMode(.middle)
+                            }
+                            .font(.caption)
+                        }
+                        .onHover { inside in
+                            if inside {
+                                NSCursor.pointingHand.push()
+                            } else {
+                                NSCursor.pop()
+                            }
+                        }
+                    }
+                }
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
                         Text("Context").font(.subheadline).bold()
@@ -99,6 +120,7 @@ struct ProjectSettingsSheet: View {
             qaSaveState = .idle
             qaAutoApplyEnabled = project.defaultQaAutoApply
             qaAutoApplySaveState = .idle
+            repoWebURL = Self.resolveRepoWebURL(repoPath: project.repoPath)
         }
         .sheetEntry()
     }
@@ -243,6 +265,33 @@ struct ProjectSettingsSheet: View {
             } catch {
                 saveState = .error(String(describing: error))
             }
+        }
+    }
+
+    /// Reads `origin` from the project's git config and converts it to a
+    /// browsable HTTPS URL. Returns nil for repos without an origin or
+    /// with an unrecognised forge host.
+    private static func resolveRepoWebURL(repoPath: String) -> URL? {
+        let p = Process()
+        p.launchPath = "/usr/bin/git"
+        p.arguments = ["remote", "get-url", "origin"]
+        p.currentDirectoryURL = URL(fileURLWithPath: repoPath)
+        let pipe = Pipe()
+        p.standardOutput = pipe
+        p.standardError = FileHandle.nullDevice
+        do { try p.run() } catch { return nil }
+        p.waitUntilExit()
+        guard p.terminationStatus == 0 else { return nil }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        let raw = String(data: data, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !raw.isEmpty,
+              let forge = PullRequestService.detectForge(fromRemoteUrl: raw) else {
+            return nil
+        }
+        switch forge {
+        case .github(let slug): return URL(string: "https://github.com/\(slug)")
+        case .gitlab(let slug): return URL(string: "https://gitlab.com/\(slug)")
         }
     }
 
