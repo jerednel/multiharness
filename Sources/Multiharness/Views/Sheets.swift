@@ -808,6 +808,7 @@ private struct ProjectAccessRow: View {
     @Bindable var appStore: AppStore
     let project: Project
     @State private var status: AccessStatus = .checking
+    @State private var repoWebURL: URL?
 
     enum AccessStatus { case checking, granted, missing, stale }
 
@@ -818,6 +819,23 @@ private struct ProjectAccessRow: View {
                 Text(project.name).font(.body)
                 Text(project.repoPath).font(.caption2).foregroundStyle(.secondary)
                     .lineLimit(1).truncationMode(.head)
+                if let url = repoWebURL {
+                    Link(destination: url) {
+                        HStack(spacing: 3) {
+                            Image(systemName: "link")
+                            Text(url.absoluteString)
+                                .lineLimit(1).truncationMode(.middle)
+                        }
+                        .font(.caption2)
+                    }
+                    .onHover { inside in
+                        if inside {
+                            NSCursor.pointingHand.push()
+                        } else {
+                            NSCursor.pop()
+                        }
+                    }
+                }
             }
             Spacer()
             Button {
@@ -829,7 +847,10 @@ private struct ProjectAccessRow: View {
         }
         .padding(.horizontal, 8).padding(.vertical, 6)
         .background(.background)
-        .onAppear { status = check() }
+        .onAppear {
+            status = check()
+            repoWebURL = resolveRepoWebURL()
+        }
     }
 
     private var icon: String {
@@ -854,6 +875,27 @@ private struct ProjectAccessRow: View {
         guard let bm = project.repoBookmark else { return .missing }
         if BookmarkScope.isStale(bm) { return .stale }
         return .granted
+    }
+
+    /// Reads `origin` from the project's git config and converts it to a
+    /// browsable HTTPS URL. Returns nil for repos without an origin or
+    /// with an unrecognised forge host.
+    private func resolveRepoWebURL() -> URL? {
+        guard let raw = try? env.worktree.runGit(
+            at: project.repoPath,
+            args: ["remote", "get-url", "origin"]
+        ) else { return nil }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        guard let forge = PullRequestService.detectForge(fromRemoteUrl: trimmed) else {
+            return nil
+        }
+        switch forge {
+        case .github(let slug):
+            return URL(string: "https://github.com/\(slug)")
+        case .gitlab(let slug):
+            return URL(string: "https://gitlab.com/\(slug)")
+        }
     }
 
     private func regrant() {
