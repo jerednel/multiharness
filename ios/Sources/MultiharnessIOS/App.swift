@@ -3,11 +3,12 @@ import SwiftUI
 @main
 struct MultiharnessIOSApp: App {
     @State private var pairing = PairingStore()
+    @State private var draftStore = ComposerDraftStore()
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
-            RootView(pairing: pairing)
+            RootView(pairing: pairing, draftStore: draftStore)
         }
         .onChange(of: scenePhase) { _, newPhase in
             switch newPhase {

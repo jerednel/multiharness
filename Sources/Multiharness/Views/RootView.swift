@@ -8,6 +8,7 @@ struct RootView: View {
     @Bindable var workspaceStore: WorkspaceStore
     let agentRegistry: AgentRegistryStore
     let terminalRegistry: TerminalRegistryStore
+    let draftStore: ComposerDraftStore
     let branchListService: BranchListService
 
     @State private var sidebarSelection: SidebarSelection = .workspaces
@@ -167,6 +168,7 @@ struct RootView: View {
                 workspaceStore: workspaceStore,
                 agentRegistry: agentRegistry,
                 terminalRegistry: terminalRegistry,
+                draftStore: draftStore,
                 branchListService: branchListService
             )
         } else {

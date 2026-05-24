@@ -5,8 +5,7 @@ import PhotosUI
 struct WorkspaceDetailView: View {
     @Bindable var connection: ConnectionStore
     let workspace: RemoteWorkspace
-    @State private var draft = ""
-    @State private var draftImages: [TurnImage] = []
+    @Bindable var draftStore: ComposerDraftStore
     @State private var contextExpanded = false
 
     private var project: RemoteProject? {
@@ -33,8 +32,14 @@ struct WorkspaceDetailView: View {
             }
             Divider()
             Composer(
-                draft: $draft,
-                images: $draftImages,
+                draft: Binding(
+                    get: { draftStore.draft(for: workspace.id) },
+                    set: { draftStore.setDraft($0, for: workspace.id) }
+                ),
+                images: Binding(
+                    get: { draftStore.pendingImages(for: workspace.id) },
+                    set: { draftStore.setPendingImages($0, for: workspace.id) }
+                ),
                 isStreaming: connection.agents[workspace.id]?.isStreaming ?? false,
                 onSend: { text, imgs in
                     Task {
@@ -46,8 +51,9 @@ struct WorkspaceDetailView: View {
                     }
                 }
             )
-            // Force a fresh Composer identity per workspace so @State
-            // resets when switching workspaces.
+            // Force a fresh Composer identity per workspace so transient
+            // UI state resets. Draft text and images survive because
+            // they live in draftStore above the view tree.
             .id(workspace.id)
             .padding(8)
         }
