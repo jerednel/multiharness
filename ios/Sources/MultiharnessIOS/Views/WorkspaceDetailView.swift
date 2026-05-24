@@ -118,24 +118,47 @@ private struct ConversationList: View {
                     if agent.isStreaming && !hasActiveGroup {
                         ThinkingRow().id("thinking")
                     }
+                    // Invisible anchor at the very bottom for auto-scroll.
+                    Color.clear
+                        .frame(height: 1)
+                        .id("scroll-bottom-anchor")
                 }
                 .padding(12)
             }
+            .defaultScrollAnchor(.bottom)
             .onChange(of: agent.turns.count) { _, _ in
-                if let last = agent.turns.last {
-                    withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
+                scrollToBottom(proxy: proxy)
+            }
+            .onChange(of: agent.isStreaming) { _, streaming in
+                if streaming {
+                    scrollToBottom(proxy: proxy)
                 }
+            }
+            .onChange(of: streamingTextLength) { _, _ in
+                scrollToBottom(proxy: proxy)
             }
             .onChange(of: workspaceId, initial: true) { _, _ in
                 // Land at the most recent message on initial appearance and
                 // when switching workspaces. Instant jump avoids the
                 // "scroll-down" tease.
-                if let last = agent.turns.last {
-                    proxy.scrollTo(last.id, anchor: .bottom)
-                } else if agent.isStreaming {
-                    proxy.scrollTo("thinking", anchor: .bottom)
-                }
+                scrollToBottom(proxy: proxy)
             }
+        }
+    }
+
+    /// Approximate length of streaming text, quantized to ~80-char
+    /// buckets to drive auto-scroll without firing on every delta.
+    private var streamingTextLength: Int {
+        guard agent.isStreaming,
+              let last = agent.turns.last,
+              last.streaming
+        else { return 0 }
+        return last.text.count / 80
+    }
+
+    private func scrollToBottom(proxy: ScrollViewProxy) {
+        withAnimation(.easeOut(duration: 0.15)) {
+            proxy.scrollTo("scroll-bottom-anchor", anchor: .bottom)
         }
     }
 
@@ -334,7 +357,16 @@ private struct TurnRow: View {
                     }
                     if !turn.text.isEmpty {
                         if turn.role == .assistant {
-                            MarkdownMessageText(turn.text)
+                            // Render plain Text while streaming to avoid
+                            // re-parsing the full markdown on every delta.
+                            // Switch to rich MarkdownMessageText once the
+                            // turn finishes.
+                            if turn.streaming {
+                                Text(turn.text)
+                                    .textSelection(.enabled)
+                            } else {
+                                MarkdownMessageText(turn.text)
+                            }
                         } else {
                             Text(turn.text)
                                 .textSelection(.enabled)

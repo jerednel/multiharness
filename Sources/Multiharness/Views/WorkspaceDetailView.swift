@@ -198,38 +198,92 @@ private struct ConversationView: View {
     @Bindable var store: AgentStore
     let workspaceId: UUID
 
+    /// Whether the user has manually scrolled away from the bottom.
+    /// When true we stop auto-scrolling until a new agent run resets it.
+    @State private var userScrolledAway = false
+
     var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 12) {
-                ForEach(groupConversationTurns(store.turns), id: \.id) { row in
-                    switch row {
-                    case .single(let turn):
-                        TurnCard(turn: turn).id(turn.id)
-                    case .group(let id, let children):
-                        ResponseGroupView(
-                            groupId: id,
-                            children: children,
-                            kind: store.groupKind(for: id)
-                        )
-                            .id(id)
+        ScrollViewReader { proxy in
+            ScrollView {
+                // VStack (not LazyVStack). A conversation has tens to low
+                // hundreds of turns — well within VStack's budget. Lazy
+                // rendering caused views outside the viewport to never
+                // materialize, producing blank/black regions when the
+                // window lost focus or the user wasn't looking at the
+                // conversation pane. Eager rendering ensures every turn
+                // is painted regardless of viewport state.
+                VStack(alignment: .leading, spacing: 12) {
+                    ForEach(groupConversationTurns(store.turns), id: \.id) { row in
+                        switch row {
+                        case .single(let turn):
+                            TurnCard(turn: turn).id(turn.id)
+                        case .group(let id, let children):
+                            ResponseGroupView(
+                                groupId: id,
+                                children: children,
+                                kind: store.groupKind(for: id)
+                            )
+                                .id(id)
+                        }
                     }
+                    if store.isStreaming && !hasActiveGroup {
+                        ThinkingCard().id("thinking-sentinel")
+                    }
+                    // Invisible anchor always at the very bottom. Scrolling
+                    // to this keeps the latest content visible even when
+                    // the last real view changes height (streaming text).
+                    Color.clear
+                        .frame(height: 1)
+                        .id("scroll-bottom-anchor")
                 }
-                if store.isStreaming && !hasActiveGroup {
-                    ThinkingCard()
+                .padding(16)
+            }
+            // Anchors the initial layout to the bottom so the user lands
+            // at the most recent message when opening a workspace (or
+            // after history rehydration).
+            .defaultScrollAnchor(.bottom)
+            // Auto-scroll: follow new turns and streaming content.
+            .onChange(of: store.turns.count) { _, _ in
+                scrollToBottom(proxy: proxy)
+            }
+            .onChange(of: store.isStreaming) { _, streaming in
+                if streaming {
+                    // New agent run — reset the scroll-away latch so we
+                    // follow the response from the start.
+                    userScrolledAway = false
+                    scrollToBottom(proxy: proxy)
                 }
             }
-            .padding(16)
+            .onChange(of: streamingTextLength) { _, _ in
+                scrollToBottom(proxy: proxy)
+            }
         }
-        // Anchors the initial layout to the bottom of the conversation and
-        // keeps the bottom visible as content grows (new turns, streaming
-        // text deltas). Replaces the prior sentinel+geometry follow logic,
-        // which raced with async history rehydration and left the user
-        // stranded at the top when first opening a workspace.
-        .defaultScrollAnchor(.bottom)
         // Force a fresh ScrollView per workspace so the bottom anchor
         // re-applies to the new content instead of inheriting the prior
         // workspace's scroll position.
         .id(workspaceId)
+    }
+
+    /// Approximate length of the text in the last turn while it's
+    /// streaming. Sampled coarsely (every 80 chars) to drive
+    /// auto-scroll without firing on literally every delta.
+    private var streamingTextLength: Int {
+        guard store.isStreaming,
+              let last = store.turns.last,
+              last.streaming
+        else { return 0 }
+        // Quantize to ~80-char buckets so we don't scroll on every
+        // single character, but still keep up with fast-arriving text.
+        return last.text.count / 80
+    }
+
+    private func scrollToBottom(proxy: ScrollViewProxy) {
+        guard !userScrolledAway else { return }
+        // withAnimation keeps the jump smooth; .easeOut is snappy enough
+        // to not feel laggy during fast streaming.
+        withAnimation(.easeOut(duration: 0.15)) {
+            proxy.scrollTo("scroll-bottom-anchor", anchor: .bottom)
+        }
     }
 
     /// True iff there's an in-progress group already at the bottom — in
@@ -476,7 +530,21 @@ private struct TurnCard: View {
                 }
                 if !turn.text.isEmpty {
                     if turn.role == .assistant {
-                        MarkdownMessageText(turn.text)
+                        // While the turn is actively streaming, render as
+                        // plain Text to avoid re-parsing the entire
+                        // markdown tree on every text_delta (MarkdownUI
+                        // re-parses from scratch each time the string
+                        // changes). Once streaming finishes, switch to
+                        // full MarkdownMessageText for rich rendering.
+                        // This eliminates the main-thread stalls that
+                        // caused the UI to freeze / go black on long
+                        // responses.
+                        if turn.streaming {
+                            Text(turn.text)
+                                .textSelection(.enabled)
+                        } else {
+                            MarkdownMessageText(turn.text)
+                        }
                     } else {
                         Text(turn.text)
                             .textSelection(.enabled)
