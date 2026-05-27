@@ -530,21 +530,12 @@ private struct TurnCard: View {
                 }
                 if !turn.text.isEmpty {
                     if turn.role == .assistant {
-                        // While the turn is actively streaming, render as
-                        // plain Text to avoid re-parsing the entire
-                        // markdown tree on every text_delta (MarkdownUI
-                        // re-parses from scratch each time the string
-                        // changes). Once streaming finishes, switch to
-                        // full MarkdownMessageText for rich rendering.
-                        // This eliminates the main-thread stalls that
-                        // caused the UI to freeze / go black on long
-                        // responses.
-                        if turn.streaming {
-                            Text(turn.text)
-                                .textSelection(.enabled)
-                        } else {
-                            MarkdownMessageText(turn.text)
-                        }
+                        // Use StreamingMarkdownText for consistent
+                        // rendering between streaming and final states.
+                        // It throttles MarkdownUI re-parses to ~7 fps
+                        // during streaming to avoid main-thread stalls,
+                        // then renders the final text at full fidelity.
+                        StreamingMarkdownText(turn.text, isStreaming: turn.streaming)
                     } else {
                         Text(turn.text)
                             .textSelection(.enabled)

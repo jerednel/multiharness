@@ -357,16 +357,11 @@ private struct TurnRow: View {
                     }
                     if !turn.text.isEmpty {
                         if turn.role == .assistant {
-                            // Render plain Text while streaming to avoid
-                            // re-parsing the full markdown on every delta.
-                            // Switch to rich MarkdownMessageText once the
-                            // turn finishes.
-                            if turn.streaming {
-                                Text(turn.text)
-                                    .textSelection(.enabled)
-                            } else {
-                                MarkdownMessageText(turn.text)
-                            }
+                            // Use StreamingMarkdownText for consistent
+                            // rendering between streaming and final states.
+                            // Throttles MarkdownUI re-parses to ~7 fps
+                            // during streaming to avoid main-thread stalls.
+                            StreamingMarkdownText(turn.text, isStreaming: turn.streaming)
                         } else {
                             Text(turn.text)
                                 .textSelection(.enabled)
