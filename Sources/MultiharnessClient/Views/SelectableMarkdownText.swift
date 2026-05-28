@@ -148,10 +148,183 @@ enum MarkdownAttributedStringRenderer {
             ])
         }
 
-        let mutable = NSMutableAttributedString(fullParsed)
+        // Apple's `interpretedSyntax: .full` strips all newline
+        // characters and stores block structure *only* as presentation
+        // intent attributes. NSTextView needs actual `\n` characters
+        // to honour NSParagraphStyle — without them the entire response
+        // renders as a single run-on paragraph. We walk the parsed
+        // blocks, collect them with their intents, then rebuild the
+        // attributed string with explicit `\n` separators and list
+        // markers (bullets / ordinal numbers).
+        let mutable = buildBlockSeparatedString(from: fullParsed, bodyFont: bodyFont)
         applyThemeStyles(to: mutable, bodyFont: bodyFont, bodyColor: bodyColor)
         return mutable
     }
+
+    // MARK: - Block separation
+
+    /// Walks the attribute runs in the parsed `AttributedString` and
+    /// rebuilds an `NSMutableAttributedString` with `\n` characters
+    /// between distinct blocks, list-item markers (bullets / numbers),
+    /// and tab separators between table cells.
+    ///
+    /// Apple's `interpretedSyntax: .full` stores block boundaries
+    /// **only** as `PresentationIntent` attributes — the raw character
+    /// data contains no newlines at all. NSTextView needs real `\n`s
+    /// for `NSParagraphStyle` to take effect, so we insert them here.
+    ///
+    /// Within a single block (e.g. a paragraph with bold + italic
+    /// spans), multiple attribute runs share the same innermost
+    /// component identity; those are concatenated without any
+    /// separator.
+    private static func buildBlockSeparatedString(
+        from parsed: AttributedString,
+        bodyFont: NSFont
+    ) -> NSMutableAttributedString {
+        let result = NSMutableAttributedString()
+
+        /// Identity of the innermost presentation-intent component
+        /// for the previous run. When this changes between consecutive
+        /// runs we're crossing a block boundary and need a separator.
+        var prevInnerID: Int?
+
+        /// Identity of the list-item component for the previous run,
+        /// used to detect when we enter a new list item (and need to
+        /// prepend a marker).
+        var prevListItemID: Int?
+
+        /// Identity of the table-row component for the previous run,
+        /// used to decide whether a table-cell boundary should be a
+        /// tab (same row) or a newline (new row).
+        var prevTableRowID: Int?
+
+        for run in parsed.runs {
+            let slice = parsed[run.range]
+            let intent = run.presentationIntent
+
+            let innerID = intent?.components.first?.identity
+            let listItemID = intent.flatMap { listItemIdentity(in: $0) }
+            let tableRowID = intent.flatMap { tableRowIdentity(in: $0) }
+            let isCell = intent.map { hasTableCell(in: $0) } ?? false
+
+            // Decide what separator (if any) to insert before this run.
+            if let prevID = prevInnerID, innerID != prevID {
+                // Crossed a block boundary.
+                if isCell, let prevRow = prevTableRowID, tableRowID == prevRow {
+                    // Same table row, different cell → tab separator.
+                    result.append(NSAttributedString(string: "\t"))
+                } else {
+                    // Different block → newline.
+                    result.append(NSAttributedString(string: "\n"))
+                }
+            }
+
+            // Prepend a list marker if we just entered a new list item.
+            if let liID = listItemID, liID != prevListItemID {
+                let marker = listMarker(for: intent)
+                if !marker.isEmpty {
+                    // Carry the intent attribute through so the
+                    // marker inherits the same paragraph style as
+                    // the list item's content.
+                    let markerAttrs = markerAttributes(
+                        from: intent,
+                        bodyFont: bodyFont
+                    )
+                    result.append(NSAttributedString(string: marker, attributes: markerAttrs))
+                }
+            }
+
+            result.append(NSAttributedString(AttributedString(slice)))
+
+            prevInnerID = innerID
+            prevListItemID = listItemID
+            prevTableRowID = tableRowID
+        }
+
+        return result
+    }
+
+    // MARK: - Helpers for block separation
+
+    /// Finds the identity of the first list-item component, if any.
+    private static func listItemIdentity(
+        in intent: PresentationIntent
+    ) -> Int? {
+        for comp in intent.components {
+            switch comp.kind {
+            case .listItem: return comp.identity
+            default: continue
+            }
+        }
+        return nil
+    }
+
+    /// Finds the identity of the table-row component, if any.
+    private static func tableRowIdentity(
+        in intent: PresentationIntent
+    ) -> Int? {
+        for comp in intent.components {
+            switch comp.kind {
+            case .tableHeaderRow, .tableRow: return comp.identity
+            default: continue
+            }
+        }
+        return nil
+    }
+
+    /// True if the intent contains a tableCell component.
+    private static func hasTableCell(
+        in intent: PresentationIntent
+    ) -> Bool {
+        for comp in intent.components {
+            switch comp.kind {
+            case .tableCell: return true
+            default: continue
+            }
+        }
+        return false
+    }
+
+    /// Returns a prefix string for list items: `"• "` for unordered,
+    /// `"1. "` (etc.) for ordered. Non-list blocks return `""`.
+    private static func listMarker(for intent: PresentationIntent?) -> String {
+        guard let intent else { return "" }
+        var listItemOrdinal: Int?
+        var isOrdered = false
+        for component in intent.components {
+            switch component.kind {
+            case .listItem(let ordinal):
+                listItemOrdinal = ordinal
+            case .orderedList:
+                isOrdered = true
+            case .unorderedList:
+                isOrdered = false
+            default:
+                break
+            }
+        }
+        guard let ordinal = listItemOrdinal else { return "" }
+        return isOrdered ? "\(ordinal). " : "• "
+    }
+
+    /// Builds minimal attributes for list-marker text so the
+    /// presentation intent propagates and the marker picks up the
+    /// same paragraph style as its parent list item.
+    private static func markerAttributes(
+        from intent: PresentationIntent?,
+        bodyFont: NSFont
+    ) -> [NSAttributedString.Key: Any] {
+        var attrs: [NSAttributedString.Key: Any] = [
+            .font: bodyFont,
+            .foregroundColor: NSColor.secondaryLabelColor,
+        ]
+        if let intent {
+            attrs[.presentationIntentAttributeName] = intent
+        }
+        return attrs
+    }
+
+    // MARK: - Theme styling
 
     private static func applyThemeStyles(
         to mutable: NSMutableAttributedString,
@@ -219,12 +392,23 @@ enum MarkdownAttributedStringRenderer {
                         range: range
                     )
 
-                case .orderedList, .unorderedList:
+                case .listItem:
                     let paraStyle = NSMutableParagraphStyle()
-                    paraStyle.firstLineHeadIndent = 16
-                    paraStyle.headIndent = 16
-                    paraStyle.paragraphSpacing = 4
+                    // Hanging indent: the marker sits at the left edge,
+                    // wrapped text aligns past it.
+                    paraStyle.firstLineHeadIndent = 8
+                    paraStyle.headIndent = 24
+                    paraStyle.paragraphSpacing = 2
+                    // Use a tab stop so the content after the marker
+                    // aligns neatly.
+                    paraStyle.tabStops = [NSTextTab(textAlignment: .left, location: 24)]
                     mutable.addAttribute(.paragraphStyle, value: paraStyle, range: range)
+
+                case .orderedList, .unorderedList:
+                    // Styling is applied at the listItem level above;
+                    // the list-level component is used only for marker
+                    // generation in `listMarker(for:)`.
+                    break
 
                 case .table:
                     let smallMono = NSFont.monospacedSystemFont(
