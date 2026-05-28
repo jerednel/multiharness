@@ -242,6 +242,16 @@ private struct ConversationView: View {
             // at the most recent message when opening a workspace (or
             // after history rehydration).
             .defaultScrollAnchor(.bottom)
+            // When a fresh ScrollView appears (workspace switch via .id()),
+            // defaultScrollAnchor(.bottom) is unreliable if the content is
+            // already loaded. Explicitly jump to the bottom anchor after
+            // layout settles on the next run-loop tick.
+            .onAppear {
+                userScrolledAway = false
+                DispatchQueue.main.async {
+                    proxy.scrollTo("scroll-bottom-anchor", anchor: .bottom)
+                }
+            }
             // Auto-scroll: follow new turns and streaming content.
             .onChange(of: store.turns.count) { _, _ in
                 scrollToBottom(proxy: proxy)
