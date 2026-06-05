@@ -2,6 +2,24 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Workflow
+
+Every task follows this flow. Do these steps automatically without being asked.
+
+### Starting a task
+1. **Pull latest** — this runs in a worktree, so `main` can't be checked out directly. Instead:
+   ```bash
+   git fetch origin main
+   git checkout -b <branch-name> origin/main
+   ```
+2. **Branch naming** — use a descriptive branch name like `fix/short-description` or `feat/short-description`.
+
+### Finishing a task
+1. **Commit** with a conventional-commit message (`fix:`, `feat:`, `chore:`, etc.).
+2. **Push** the branch: `git push -u origin <branch-name>`
+3. **Open a PR** against `main` with a clear title and description.
+4. **Add `jerednel` as a reviewer** on every PR: `gh pr edit <number> --add-reviewer jerednel`
+
 ## What this is
 
 Multiharness — a local AI coding harness for macOS, modeled after conductor.build. It runs multiple coding agents in parallel, each isolated in its own git worktree, and lets the user manage them through a native SwiftUI Mac app. An iOS companion app pairs with the Mac over LAN/Tailscale to drive the same agents remotely.
