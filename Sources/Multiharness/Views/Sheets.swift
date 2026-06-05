@@ -20,27 +20,39 @@ struct NewProjectSheet: View {
             Text("New project").font(.title2).bold()
 
             GroupBox("Add existing repository") {
-                Form {
-                    TextField("Name", text: $name)
-                    HStack {
-                        Text(repoURL?.path ?? "(none)")
-                            .truncationMode(.head)
-                            .lineLimit(1)
-                            .foregroundStyle(repoURL == nil ? .secondary : .primary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        Button("Browse…") {
-                            let panel = NSOpenPanel()
-                            panel.canChooseFiles = false
-                            panel.canChooseDirectories = true
-                            panel.allowsMultipleSelection = false
-                            panel.prompt = "Select repo"
-                            if panel.runModal() == .OK, let url = panel.url {
-                                repoURL = url
-                                if name.isEmpty { name = url.lastPathComponent }
+                VStack(alignment: .leading, spacing: 8) {
+                    Form {
+                        TextField("Name", text: $name)
+                        HStack {
+                            Text(repoURL?.path ?? "(none)")
+                                .truncationMode(.head)
+                                .lineLimit(1)
+                                .foregroundStyle(repoURL == nil ? .secondary : .primary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            Button("Browse…") {
+                                let panel = NSOpenPanel()
+                                panel.canChooseFiles = false
+                                panel.canChooseDirectories = true
+                                panel.allowsMultipleSelection = false
+                                panel.prompt = "Select repo"
+                                if panel.runModal() == .OK, let url = panel.url {
+                                    repoURL = url
+                                    if name.isEmpty { name = url.lastPathComponent }
+                                }
                             }
                         }
+                        TextField("Default base branch", text: $baseBranch)
                     }
-                    TextField("Default base branch", text: $baseBranch)
+                    HStack {
+                        if !addExistingHint.isEmpty {
+                            Text(addExistingHint)
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button("Add existing") { commit() }
+                            .keyboardShortcut(.defaultAction)
+                            .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || repoURL == nil)
+                    }
                 }
             }
 
@@ -53,6 +65,10 @@ struct NewProjectSheet: View {
                         .lineLimit(1)
                         .truncationMode(.middle)
                     HStack {
+                        if name.trimmingCharacters(in: .whitespaces).isEmpty {
+                            Text("Enter a name above to create an empty project.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
                         Spacer()
                         Button("Create empty") {
                             creatingEmpty = true
@@ -70,13 +86,22 @@ struct NewProjectSheet: View {
             HStack {
                 Spacer()
                 Button("Cancel") { isPresented = false }
-                Button("Add existing") { commit() }
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || repoURL == nil)
             }
         }
         .padding(24).frame(width: 520)
         .sheetEntry()
+    }
+
+    private var addExistingHint: String {
+        let nameEmpty = name.trimmingCharacters(in: .whitespaces).isEmpty
+        if nameEmpty && repoURL == nil {
+            return "Enter a name and browse to a git repository."
+        } else if nameEmpty {
+            return "Enter a project name."
+        } else if repoURL == nil {
+            return "Browse to a git repository."
+        }
+        return ""
     }
 
     private func commit() {
