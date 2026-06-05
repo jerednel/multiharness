@@ -31,7 +31,7 @@ struct ModelPicker: View {
                 } label: { Image(systemName: "arrow.clockwise") }
                     .buttonStyle(.multiharnessIcon)
                     .disabled(provider == nil || loading)
-                Toggle("Manual", isOn: $manualMode).toggleStyle(.switch).controlSize(.mini)
+                Toggle("Auto", isOn: Binding(get: { !manualMode }, set: { manualMode = !$0 })).toggleStyle(.switch).controlSize(.mini)
             }
 
             if manualMode || provider == nil {

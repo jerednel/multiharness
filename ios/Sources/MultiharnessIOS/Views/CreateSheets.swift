@@ -77,7 +77,7 @@ struct NewWorkspaceSheet: View {
                             }
                         }
                     }
-                    Toggle("Enter model id manually", isOn: $manualMode)
+                    Toggle("Auto", isOn: Binding(get: { !manualMode }, set: { manualMode = !$0 }))
                         .font(.caption)
                 } header: {
                     HStack {
